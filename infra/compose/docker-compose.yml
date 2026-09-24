@@ -1,38 +1,72 @@
-# quanta production stack (Phase 0: recorder + monitoring).
+# quanta production stack.
 #
-#   cp config/recorder.example.yaml config/recorder.local.yaml       # edit
-#   cp infra/alertmanager/alertmanager.example.yml infra/alertmanager/alertmanager.yml
-#   mkdir -p secrets && (umask 077; echo "<telegram bot token>" > secrets/telegram_bot_token)
+# Default (what deploy/bootstrap.sh starts):  recorder + ui + lake-daily
 #   docker compose -f infra/compose/docker-compose.yml up -d --build
+# Optional metrics/alerting stack (Prometheus, Grafana, Alertmanager, node-exporter):
+#   docker compose -f infra/compose/docker-compose.yml --profile monitoring up -d
 #
-# Nothing listens on a public interface: UIs bind to 127.0.0.1 and are reached over
-# WireGuard/Tailscale or an SSH tunnel (ADR-007). See docs/runbooks/recorder.md.
+# On a server installed by deploy/bootstrap.sh use the `quanta-compose` wrapper instead: it
+# passes --env-file /etc/quanta/compose.env, which points the variables below at
+#   QUANTA_CONFIG=/etc/quanta/recorder.yaml   QUANTA_DATA=/var/lib/quanta/data
+#   QUANTA_SECRETS=/etc/quanta/secrets
+# Without them (local development) config/recorder.local.yaml, a named volume and ../../secrets
+# (git-ignored) are used.
+#
+# Nothing listens on a public interface. The status page binds to 127.0.0.1:8080 on the host
+# and is published to your tailnet only (`tailscale serve`, ADR-010). Secrets are mounted
+# read-only; none are required by default.
 name: quanta
+
+x-quanta: &quanta
+  build:
+    context: ../..
+    dockerfile: infra/docker/Dockerfile
+  image: quanta:latest
+  restart: unless-stopped
+  networks: [quanta]
+  logging:
+    driver: json-file
+    options: {max-size: "50m", max-file: "10"}
 
 services:
   recorder:
-    build:
-      context: ../..
-      dockerfile: infra/docker/Dockerfile
-    image: quanta:latest
+    <<: *quanta
     command: ["recorder", "run", "--config", "/etc/quanta/recorder.yaml"]
-    restart: unless-stopped
     stop_grace_period: 60s          # flush + finalize segments on SIGTERM
     volumes:
-      - quanta-data:/var/lib/quanta/data
-      - ../../config/recorder.local.yaml:/etc/quanta/recorder.yaml:ro
-    secrets:
-      - source: aws_credentials
-        target: aws_credentials
+      - ${QUANTA_DATA:-quanta-data}:/var/lib/quanta/data
+      - ${QUANTA_CONFIG:-../../config/recorder.local.yaml}:/etc/quanta/recorder.yaml:ro
+      - ${QUANTA_SECRETS:-../../secrets}:/run/quanta-secrets:ro
     environment:
-      AWS_SHARED_CREDENTIALS_FILE: /run/secrets/aws_credentials
-    networks: [quanta]
-    logging:
-      driver: json-file
-      options: {max-size: "50m", max-file: "10"}
+      # only used when the uploader targets S3 (file may be absent otherwise)
+      AWS_SHARED_CREDENTIALS_FILE: /run/quanta-secrets/aws_credentials
 
+  ui:
+    <<: *quanta
+    command: ["ui", "--data-dir", "/var/lib/quanta/data", "--host", "0.0.0.0", "--port", "8080",
+              "--metrics-url", "http://recorder:9101/metrics"]
+    volumes:
+      - ${QUANTA_DATA:-quanta-data}:/var/lib/quanta/data:ro
+    ports: ["127.0.0.1:8080:8080"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on: [recorder]
+
+  lake-daily:
+    <<: *quanta
+    command: ["lake", "schedule", "--data-dir", "/var/lib/quanta/data", "--at", "00:20"]
+    volumes:
+      - ${QUANTA_DATA:-quanta-data}:/var/lib/quanta/data
+    healthcheck:
+      disable: true                 # the image's check probes the recorder's metrics port
+
+  # ---- optional: metrics history + alerting (profile "monitoring") ------------------------
   prometheus:
     image: prom/prometheus:v3.5.0
+    profiles: [monitoring]
     restart: unless-stopped
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -47,35 +81,34 @@ services:
 
   alertmanager:
     image: prom/alertmanager:v0.28.1
+    profiles: [monitoring]
     restart: unless-stopped
     command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
     volumes:
       - ../alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-    secrets:
-      - source: telegram_bot_token
-        target: telegram_bot_token
+      - ${QUANTA_SECRETS:-../../secrets}:/run/secrets:ro      # telegram_bot_token
     ports: ["127.0.0.1:9093:9093"]
     networks: [quanta]
 
   grafana:
     image: grafana/grafana-oss:12.1.1
+    profiles: [monitoring]
     restart: unless-stopped
     environment:
-      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/quanta-secrets/grafana_admin_password
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
     volumes:
       - ../grafana/provisioning:/etc/grafana/provisioning:ro
       - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
-    secrets:
-      - source: grafana_admin_password
-        target: grafana_admin_password
+      - ${QUANTA_SECRETS:-../../secrets}:/run/quanta-secrets:ro
     ports: ["127.0.0.1:3000:3000"]
     networks: [quanta]
 
   node-exporter:
     image: prom/node-exporter:v1.9.1
+    profiles: [monitoring]
     restart: unless-stopped
     command: ["--path.rootfs=/host"]
     pid: host
@@ -89,11 +122,3 @@ volumes:
 
 networks:
   quanta:
-
-secrets:
-  aws_credentials:
-    file: ../../secrets/aws_credentials
-  telegram_bot_token:
-    file: ../../secrets/telegram_bot_token
-  grafana_admin_password:
-    file: ../../secrets/grafana_admin_password

@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quanta · Kayıt durumu</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10);
+    --series-1: #2a78d6; --wash: rgba(42,120,214,0.10);
+    --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --good-text: #006300;
+    --chip-good: rgba(12,163,12,0.12); --chip-warn: rgba(250,178,25,0.18); --chip-crit: rgba(208,59,59,0.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+      --series-1: #3987e5; --wash: rgba(57,135,229,0.12); --good-text: #0ca30c;
+      --chip-good: rgba(12,163,12,0.18); --chip-warn: rgba(250,178,25,0.16); --chip-crit: rgba(208,59,59,0.22);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --wash: rgba(57,135,229,0.12); --good-text: #0ca30c;
+    --chip-good: rgba(12,163,12,0.18); --chip-warn: rgba(250,178,25,0.16); --chip-crit: rgba(208,59,59,0.22);
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--page); color: var(--ink);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1120px; margin: 0 auto; padding: 16px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+           gap: 4px 16px; margin: 4px 0 16px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; }
+  h2 { font-size: 15px; font-weight: 600; margin: 28px 0 10px; color: var(--ink); }
+  .sub { color: var(--ink-2); font-size: 13px; }
+  .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 16px; }
+  .verdict { display: flex; gap: 14px; align-items: center; border-left: 4px solid var(--good); }
+  .verdict.warning { border-left-color: var(--warning); }
+  .verdict.critical { border-left-color: var(--critical); }
+  .verdict .icon { flex: none; width: 36px; height: 36px; }
+  .verdict .title { font-size: 24px; font-weight: 600; line-height: 1.2; }
+  .issues { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+  .issue { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: start;
+           padding: 10px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--ring); }
+  .issue .t { font-weight: 600; }
+  .issue .d { grid-column: 2; color: var(--ink-2); font-size: 13px; }
+  .issue a { grid-column: 2; font-size: 13px; color: var(--series-1); }
+  .chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px;
+          font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--ink); }
+  .chip svg { width: 12px; height: 12px; flex: none; }
+  .chip.good { background: var(--chip-good); } .chip.warning { background: var(--chip-warn); }
+  .chip.critical { background: var(--chip-crit); } .chip.none { background: var(--grid); color: var(--ink-2); }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+  .tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .tile .label { color: var(--ink-2); font-size: 13px; }
+  .tile .value { font-size: 26px; font-weight: 600; margin-top: 2px; }
+  .tile .note { color: var(--muted); font-size: 12px; }
+  .venue-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .venue-head .name { font-weight: 600; font-size: 16px; }
+  .rows { margin: 10px 0 0; display: grid; gap: 6px; }
+  .row { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-size: 14px; }
+  .row .k { color: var(--ink-2); }
+  .row .v { text-align: right; }
+  .books { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 10px 8px;
+           margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--grid); }
+  .stat .k { color: var(--ink-2); font-size: 12px; white-space: nowrap; } .stat .v { font-weight: 600; font-size: 16px; }
+  .spark { margin-top: 12px; position: relative; }
+  .spark .cap { display: flex; justify-content: space-between; color: var(--ink-2); font-size: 12px; margin-bottom: 4px; }
+  .spark svg { width: 100%; height: 56px; display: block; overflow: visible; }
+  .tip { position: absolute; pointer-events: none; transform: translate(-50%, -110%); background: var(--ink);
+         color: var(--surface); font-size: 12px; padding: 3px 7px; border-radius: 6px; white-space: nowrap; display: none; }
+  details { margin-top: 8px; font-size: 12px; color: var(--ink-2); }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { color: var(--ink-2); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .table-wrap { overflow-x: auto; }
+  .small { color: var(--muted); font-size: 12px; }
+  td.date { white-space: nowrap; }
+  .stale { opacity: 0.55; transition: opacity .2s; }
+  .banner { display: none; margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; background: var(--chip-crit); }
+  footer { margin-top: 32px; color: var(--muted); font-size: 12px; }
+  footer a { color: var(--series-1); }
+  @media (max-width: 480px) { .verdict .title { font-size: 20px; } .tile .value { font-size: 22px; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Kayıt durumu</h1>
+    <span class="sub" id="updated">Yükleniyor…</span>
+  </header>
+  <div class="banner" id="conn-banner" role="alert">Arayüz sunucusuna ulaşılamıyor; son bilinen durum gösteriliyor.</div>
+  <div id="content">
+    <section class="card verdict" id="verdict" aria-live="polite">
+      <span class="icon" id="verdict-icon"></span>
+      <div><div class="title" id="verdict-title">—</div><div class="sub" id="verdict-sub"></div></div>
+    </section>
+    <ul class="issues" id="issues"></ul>
+
+    <h2>Borsalar</h2>
+    <div class="grid" id="venues"></div>
+
+    <h2>Sistem</h2>
+    <div class="tiles" id="system"></div>
+
+    <div id="access-wrap" hidden>
+      <h2>Erişim kontrolü</h2>
+      <p class="small" id="access-when"></p>
+      <div class="card table-wrap"><table id="access"></table></div>
+    </div>
+
+    <h2>Günlük veri kalitesi</h2>
+    <div class="card table-wrap" id="quality"></div>
+
+    <h2>Kaydedilen veri (sıkıştırılmış)</h2>
+    <div class="card table-wrap" id="volume"></div>
+  </div>
+  <footer>Salt okunur · 10 saniyede bir yenilenir · <a id="runbook" href="#" target="_blank" rel="noopener">Runbook</a></footer>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const nf = new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 1 });
+const LEVEL = {
+  ok: { cls: "good", text: "İyi" }, good: { cls: "good", text: "İyi" },
+  warning: { cls: "warning", text: "Uyarı" }, degraded: { cls: "warning", text: "Sorunlu" },
+  critical: { cls: "critical", text: "Kritik" }, bad: { cls: "critical", text: "Kötü" },
+};
+const ICONS = {
+  good: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#0ca30c"/><path d="M4.5 8.2l2.3 2.3 4.7-4.9" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  warning: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1l7.5 13.5H.5z" fill="#fab219"/><path d="M8 5.5v4.2" stroke="#0b0b0b" stroke-width="1.7" stroke-linecap="round"/><circle cx="8" cy="12" r="1" fill="#0b0b0b"/></svg>',
+  critical: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#d03b3b"/><path d="M5.2 5.2l5.6 5.6M10.8 5.2l-5.6 5.6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  none: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="none" stroke="#898781" stroke-width="2"/></svg>',
+};
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v; else if (k === "html") e.innerHTML = v; else e.setAttribute(k, v);
+  }
+  for (const k of kids) if (k != null) e.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  return e;
+}
+function chip(level, text) {
+  const l = LEVEL[level] || { cls: "none", text: text || "—" };
+  const c = el("span", { class: "chip " + l.cls });
+  c.innerHTML = ICONS[l.cls] || ICONS.none;
+  c.append(document.createTextNode(text || l.text));
+  return c;
+}
+function ago(s) {
+  if (s == null) return "—";
+  if (s < 90) return Math.round(s) + " sn önce";
+  if (s < 5400) return Math.round(s / 60) + " dk önce";
+  return nf.format(s / 3600) + " sa önce";
+}
+const fmt = (v, unit = "") => (v == null ? "—" : nf.format(v) + unit);
+
+function sparkline(series, label, unit) {
+  const wrap = el("div", { class: "spark" });
+  const vals = series.map((p) => p[1]);
+  const last = vals.length ? vals[vals.length - 1] : null;
+  const max = Math.max(1e-9, ...vals);
+  wrap.append(el("div", { class: "cap" }, el("span", {}, label + " · son 24 saat"),
+    el("span", {}, "şu an " + fmt(last, unit) + " · en yüksek " + fmt(vals.length ? max : null, unit))));
+  if (vals.length < 2) {
+    wrap.append(el("div", { class: "small" }, "Grafik için veri birikiyor…"));
+    return wrap;
+  }
+  const W = 300, H = 48, t0 = series[0][0], t1 = series[series.length - 1][0];
+  const x = (t) => ((t - t0) / Math.max(1, t1 - t0)) * W;
+  const y = (v) => H - 2 - (v / max) * (H - 6);
+  const pts = series.map((p) => x(p[0]).toFixed(1) + "," + y(p[1]).toFixed(1)).join(" ");
+  const lx = x(t1), ly = y(last);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  for (const [k, val] of Object.entries({ viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", role: "img",
+    "aria-label": `${label}: şu an ${fmt(last, unit)}, son 24 saatte en yüksek ${fmt(max, unit)}` })) svg.setAttribute(k, val);
+  svg.innerHTML =
+    `<line x1="0" y1="${H - 2}" x2="${W}" y2="${H - 2}" stroke="var(--axis)" stroke-width="1" vector-effect="non-scaling-stroke"/>` +
+    `<polygon points="0,${H - 2} ${pts} ${W},${H - 2}" fill="var(--wash)"/>` +
+    `<polyline points="${pts}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>` +
+    `<line class="xh" x1="0" y1="0" x2="0" y2="${H}" stroke="var(--axis)" stroke-width="1" vector-effect="non-scaling-stroke" visibility="hidden"/>`;
+  const plot = el("div", { style: "position:relative" });
+  plot.append(svg);
+  wrap.append(plot);
+  // end marker as an HTML dot so it stays round when the SVG stretches horizontally
+  const dot = el("span");
+  dot.style.cssText = `position:absolute;width:10px;height:10px;border-radius:50%;background:var(--series-1);` +
+    `box-shadow:0 0 0 2px var(--surface);left:calc(${(lx / W) * 100}% - 5px);top:${(ly / H) * 56 - 5}px;pointer-events:none`;
+  plot.append(dot);
+  const tip = el("div", { class: "tip" });
+  plot.append(tip);
+  const xh = svg.querySelector(".xh");
+  svg.addEventListener("pointermove", (ev) => {
+    const r = svg.getBoundingClientRect();
+    const tx = t0 + ((ev.clientX - r.left) / r.width) * (t1 - t0);
+    let best = series[0];
+    for (const p of series) if (Math.abs(p[0] - tx) < Math.abs(best[0] - tx)) best = p;
+    const px = (x(best[0]) / W) * r.width;
+    xh.setAttribute("x1", x(best[0])); xh.setAttribute("x2", x(best[0])); xh.setAttribute("visibility", "visible");
+    tip.textContent = new Date(best[0] * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }) + " · " + fmt(best[1], unit);
+    tip.style.left = px + "px"; tip.style.top = "0px"; tip.style.display = "block";
+  });
+  svg.addEventListener("pointerleave", () => { tip.style.display = "none"; xh.setAttribute("visibility", "hidden"); });
+  const det = el("details", {}, el("summary", {}, "Tablo olarak göster"));
+  const tbl = el("table", {}, el("tr", {}, el("th", {}, "Saat"), el("th", { class: "num" }, label)));
+  const step = Math.max(1, Math.floor(series.length / 24));
+  for (let i = series.length - 1; i >= 0; i -= step) {
+    tbl.append(el("tr", {}, el("td", {}, new Date(series[i][0] * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })),
+      el("td", { class: "num" }, fmt(series[i][1], unit))));
+  }
+  det.append(tbl);
+  wrap.append(det);
+  return wrap;
+}
+
+function venueCard(v) {
+  const bad = v.streams.some((s) => !s.up) ? "critical" : v.books.some((b) => !b.synced) ? "warning" : "ok";
+  const card = el("article", { class: "card" });
+  card.append(el("div", { class: "venue-head" }, el("span", { class: "name" }, v.name),
+    chip(bad, bad === "ok" ? "Kayıt çalışıyor" : bad === "warning" ? "Senkronlanıyor" : "Bağlantı sorunu")));
+  const rows = el("div", { class: "rows" });
+  for (const s of v.streams) {
+    rows.append(el("div", { class: "row" }, el("span", { class: "k" }, s.label),
+      el("span", { class: "v" }, chip(s.up ? "ok" : "critical", s.up ? "Bağlı" : "Kopuk"), " ",
+        el("span", { class: "small" }, "son mesaj " + ago(s.last_msg_age_s)))));
+  }
+  card.append(rows);
+  if (v.books.length) {
+    const b = el("div", { class: "books" });
+    for (const x of v.books) b.append(chip(x.synced ? "ok" : "warning", x.symbol + (x.synced ? "" : " · senkron değil")));
+    card.append(el("div", { class: "small", style: "margin-top:10px" }, "Order book'lar"), b);
+  }
+  const stats = el("div", { class: "stats" });
+  const st = (k, v) => stats.append(el("div", { class: "stat" }, el("div", { class: "k" }, k), el("div", { class: "v" }, v)));
+  st("Mesaj/sn", fmt(v.msg_rate));
+  st("Gecikme (p50)", fmt(v.latency_p50_ms, " ms"));
+  st("Likidasyon (1 sa)", fmt(v.liquidations_1h));
+  st("Boşluk (1 sa)", fmt(v.gaps_1h));
+  st("Kopma (1 sa)", fmt(v.reconnects_1h));
+  card.append(stats);
+  card.append(sparkline(v.rate_series, "Mesaj/sn", ""));
+  return card;
+}
+
+function tile(label, value, note) {
+  return el("div", { class: "card tile" }, el("div", { class: "label" }, label),
+    el("div", { class: "value" }, value), note ? el("div", { class: "note" }, note) : null);
+}
+
+let NAMES = {};
+const vname = (id) => NAMES[id] || id;
+
+function render(d) {
+  NAMES = d.venue_names || {};
+  $("updated").textContent = "Son güncelleme " + new Date(d.generated_at).toLocaleTimeString("tr-TR") +
+    (d.scrape_ok ? "" : " · kayıt servisinden veri alınamıyor");
+  $("runbook").href = d.runbook_url;
+  const v = d.verdict, cls = LEVEL[v.level].cls;
+  $("verdict").className = "card verdict " + v.level;
+  $("verdict-icon").innerHTML = ICONS[cls];
+  $("verdict-title").textContent = v.title;
+  $("verdict-sub").textContent = v.issues.length ? v.issues.length + " konu aşağıda" : "Tüm bağlantılar ve kontroller normal.";
+  const issues = $("issues"); issues.replaceChildren();
+  for (const i of v.issues) {
+    const li = el("li", { class: "issue" }, chip(i.level), el("span", { class: "t" }, i.title));
+    if (i.detail) li.append(el("span", { class: "d" }, i.detail));
+    if (i.runbook) li.append(el("a", { href: d.runbook_url + "#" + i.runbook, target: "_blank", rel: "noopener" }, "Ne yapmalı?"));
+    issues.append(li);
+  }
+  const venues = $("venues"); venues.replaceChildren();
+  if (!d.venues.length) venues.append(el("div", { class: "card small" }, "Henüz borsa verisi yok."));
+  for (const x of d.venues) venues.append(venueCard(x));
+  const s = d.system || {};
+  $("system").replaceChildren(
+    tile("Disk boş", fmt(s.disk_free_gb, " GB")),
+    tile("Yükleme kuyruğu", fmt(s.pending_uploads), "buluta gönderilmeyi bekleyen dosya"),
+    tile("Saat farkı", fmt(s.clock_offset_ms, " ms"), "sunucu − borsa"),
+    tile("REST ağırlığı", fmt(s.rest_weight), "Binance, dakikada 2400 sınırından"));
+  const acc = d.access;
+  $("access-wrap").hidden = !acc;
+  if (acc) {
+    $("access-when").textContent = (acc.checked_at ? "Son kontrol " + new Date(acc.checked_at).toLocaleString("tr-TR") + ". " : "") +
+      "Yenilemek için sunucuda: deploy/bootstrap.sh --check-access";
+    const t = $("access"); t.replaceChildren(el("tr", {}, el("th", {}, "Borsa"), el("th", {}, "Durum"),
+      el("th", { class: "num" }, "Gidiş-dönüş"), el("th", {}, "Not")));
+    for (const [name, r] of Object.entries(acc.venues || {})) {
+      t.append(el("tr", {}, el("td", {}, vname(name)), el("td", {}, chip(r.ok ? "ok" : "critical", r.ok ? "Erişilebilir" : (r.restricted ? "Engelli (451)" : "Hata"))),
+        el("td", { class: "num" }, fmt(r.rtt_ms, " ms")), el("td", { class: "small" }, r.error || "")));
+    }
+  }
+  const q = $("quality"); q.replaceChildren();
+  const vids = [...new Set((d.quality || []).flatMap((r) => Object.keys(r.venues)))].sort();
+  if (!d.quality || !d.quality.length) {
+    q.append(el("div", { class: "small" }, "Henüz günlük rapor yok. İlk rapor, kaydın ilk tam gününden sonra 00:20 UTC'de oluşur."));
+  } else {
+    const t = el("table", {}, el("tr", {}, el("th", {}, "Gün"), ...vids.map((x) => el("th", {}, vname(x)))));
+    for (const r of d.quality) {
+      t.append(el("tr", {}, el("td", { class: "date" }, r.date), ...vids.map((x) => {
+        const c = r.venues[x];
+        if (!c) return el("td", { class: "small" }, "—");
+        const cov = c.coverage_min == null ? "" : "kapsama %" + nf.format(c.coverage_min * 100);
+        const miss = c.missing_trade_ids ? " · eksik işlem " + c.missing_trade_ids : "";
+        return el("td", {}, chip(c.flag), el("div", { class: "small" }, cov + miss));
+      })));
+    }
+    q.append(t);
+  }
+  const vol = $("volume"); vol.replaceChildren();
+  if (!d.volume || !d.volume.length) vol.append(el("div", { class: "small" }, "Henüz tamamlanmış kayıt dosyası yok."));
+  else {
+    const ids = [...new Set(d.volume.flatMap((r) => Object.keys(r.venues)))].sort();
+    const t = el("table", {}, el("tr", {}, el("th", {}, "Gün"), ...ids.map((x) => el("th", { class: "num" }, vname(x) + " (MB)"))));
+    for (const r of d.volume) t.append(el("tr", {}, el("td", { class: "date" }, r.date),
+      ...ids.map((x) => el("td", { class: "num" }, fmt(r.venues[x] ? r.venues[x].compressed_mb : null)))));
+    vol.append(t);
+  }
+}
+
+async function refresh() {
+  try {
+    const r = await fetch("api/status", { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    render(await r.json());
+    $("content").classList.remove("stale"); $("conn-banner").style.display = "none";
+  } catch (e) {
+    $("content").classList.add("stale"); $("conn-banner").style.display = "block";
+  }
+}
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>

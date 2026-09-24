@@ -83,3 +83,72 @@ jobs:
           load: true
       - name: Smoke test image
         run: docker run --rm quanta:ci --help
+
+  deploy-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          command -v shellcheck >/dev/null || sudo apt-get install -y -q shellcheck
+          shellcheck --severity=style deploy/*.sh
+      - name: Compose file (dev defaults, server env file, monitoring profile)
+        working-directory: infra/compose
+        run: |
+          docker compose config -q
+          docker compose --profile monitoring config -q
+          printf 'QUANTA_CONFIG=/etc/quanta/recorder.yaml\nQUANTA_DATA=/var/lib/quanta/data\nQUANTA_SECRETS=/etc/quanta/secrets\n' > "$RUNNER_TEMP/compose.env"
+          docker compose --env-file "$RUNNER_TEMP/compose.env" config -q
+          test "$(docker compose config --services | sort | tr '\n' ' ')" = "lake-daily recorder ui "
+      - name: bootstrap --check-only (changes nothing)
+        run: bash deploy/bootstrap.sh --check-only
+
+  # The real thing on a fresh Ubuntu 24.04 VM: install from this commit, check the stack,
+  # then re-run (idempotent update). Tailscale is skipped (needs a human login). The runner
+  # is in a region the exchanges geo-block, so the access check is expected to report that.
+  deploy-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: [deploy-smoke]
+    env:
+      QUANTA_BRANCH: ci-bootstrap
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install with deploy/bootstrap.sh
+        run: |
+          git checkout -q -B "$QUANTA_BRANCH"
+          sudo git config --system --add safe.directory '*'
+          sudo QUANTA_REPO_URL="file://$GITHUB_WORKSPACE" QUANTA_BRANCH="$QUANTA_BRANCH" \
+            bash deploy/bootstrap.sh --yes --no-tailscale
+      - name: Stack is up, status page answers, access result is shown
+        run: |
+          curl -fsS http://127.0.0.1:8080/healthz
+          curl -fsS http://127.0.0.1:8080/api/status > status.json
+          python3 - <<'PY'
+          import json
+          d = json.load(open("status.json"))
+          print("verdict:", d["verdict"]["level"], [i["code"] for i in d["verdict"]["issues"]])
+          access = d["access"]
+          assert access and set(access["venues"]) == {"binance_usdm", "bybit_linear", "deribit"}, access
+          for v, r in access["venues"].items():
+              print(v, "ok" if r["ok"] else ("restricted" if r["restricted"] else "failed"), r["error"])
+          PY
+          sudo quanta-compose ps
+          sudo stat -c '%U:%G %a %n' /var/lib/quanta/data /etc/quanta/secrets /etc/quanta/recorder.yaml
+          sudo grep -q '^host_id:' /etc/quanta/recorder.yaml
+      - name: Re-run is a safe update
+        run: |
+          sudo QUANTA_REPO_URL="file://$GITHUB_WORKSPACE" QUANTA_BRANCH="$QUANTA_BRANCH" \
+            bash deploy/bootstrap.sh --yes --no-tailscale
+          curl -fsS http://127.0.0.1:8080/healthz
+      - name: Operator commands
+        run: |
+          sudo bash deploy/bootstrap.sh --check-access
+          sudo quanta data volume -d /var/lib/quanta/data
+      - name: Diagnostics
+        if: failure()
+        run: |
+          sudo quanta-compose ps -a || true
+          sudo quanta-compose logs --no-color --tail 200 || true
+          sudo cat /var/log/quanta-bootstrap.log || true

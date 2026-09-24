@@ -36,6 +36,8 @@ class _Server:
         self.port = 0
         self.paused = False
         self.ws_connects = 0
+        self.geo_blocked = False  # answer REST and WS handshakes with HTTP 403
+        self.ws_blocked = False  # … WS handshakes only
         self._runner: web.AppRunner | None = None
         self._tasks: list[asyncio.Task[None]] = []
 
@@ -73,7 +75,12 @@ class _Server:
         raise NotImplementedError
 
     async def _ws_handler(self, request: web.Request) -> web.WebSocketResponse:
+        self.guard(ws=True)
         return await self.serve_ws(request, self._on_text)
+
+    def guard(self, ws: bool = False) -> None:
+        if self.geo_blocked or (ws and self.ws_blocked):
+            raise web.HTTPForbidden(text="The service is not available in your region")
 
     def send(self, conn: Conn, obj: dict[str, Any]) -> None:
         conn.queue.put_nowait(json.dumps(obj, separators=(",", ":")))
@@ -151,6 +158,7 @@ class FakeBybit(_Server):
         self.bad_price_once: set[str] = set()
         self.app.router.add_get("/v5/public/linear", self._ws_handler)
         self.app.router.add_get("/v5/market/instruments-info", self._instruments)
+        self.app.router.add_get("/v5/market/time", self._time)
 
     @property
     def ws_url(self) -> str:
@@ -279,6 +287,18 @@ class FakeBybit(_Server):
             ):
                 self.liquidations_sent[s] += 1
 
+    async def _time(self, request: web.Request) -> web.Response:
+        self.guard()
+        ns = time.time_ns()
+        return web.json_response(
+            {
+                "retCode": 0,
+                "retMsg": "OK",
+                "result": {"timeSecond": str(ns // 10**9), "timeNano": str(ns)},
+                "time": ns // 10**6,
+            }
+        )
+
     async def _instruments(self, request: web.Request) -> web.Response:
         s = request.query["symbol"]
         return web.json_response(
@@ -319,6 +339,7 @@ class FakeDeribit(_Server):
         self.unsubscribes = 0
         self.app.router.add_get("/ws/api/v2", self._ws_handler)
         self.app.router.add_get("/api/v2/public/get_instrument", self._get_instrument)
+        self.app.router.add_get("/api/v2/public/get_time", self._get_time)
 
     @property
     def ws_url(self) -> str:
@@ -458,6 +479,10 @@ class FakeDeribit(_Server):
                 {"timestamp": _ms(), "volatility": 45.1, "index_name": "btc_usd"},
             ),
         )
+
+    async def _get_time(self, request: web.Request) -> web.Response:
+        self.guard()
+        return web.json_response({"jsonrpc": "2.0", "result": _ms(), "usIn": 0, "usOut": 0})
 
     async def _get_instrument(self, request: web.Request) -> web.Response:
         return web.json_response(

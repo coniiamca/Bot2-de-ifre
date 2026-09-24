@@ -8,7 +8,8 @@
 
 | Faz | Durum | Not |
 |---|---|---|
-| Faz 0 — Temel + Binance recorder | **Kod tamam, canlı doğrulama bekliyor** | Recorder, segment/manifest/recovery, uploader, doğrulama araçları, izleme stack'i, CI (yeşil). Canlı 72 saatlik koşu seçilecek sunucuda yapılacak (geliştirme konteyneri Binance'ten HTTP 451 alıyor — bkz. runbook). |
+| Faz 0 — Temel + Binance recorder | **Kod tamam, canlı doğrulama bekliyor** | Recorder, segment/manifest/recovery, uploader, doğrulama araçları, izleme stack'i, CI (yeşil). Canlı 72 saatlik koşu kullanıcının Frankfurt sunucusunda yapılacak (`deploy/bootstrap.sh`; geliştirme konteyneri Binance'ten HTTP 451 alıyor — bkz. runbook). |
+| Kurulum + izleme | **Kod tamam** | Web durum sayfası (`quanta ui`, Tailscale ile yalnız tailnet'e açık, ADR-010); tek komutla sunucu kurulumu (`deploy/bootstrap.sh`, CI'da gerçek VM'de uçtan uca test); 3 venue erişim kontrolü (451/403); `lake schedule` (compose `lake-daily` servisi). |
 | Faz 1 — ilk dilim | **Kod tamam** | Bybit linear (tam likidasyon: `allLiquidation`) ve Deribit (trade `liquidation` bayrağı, `change_id` zinciri, heartbeat) capture'ları; deterministik Parquet lake (3 venue, ADR-009); data.binance.vision backfill (checksum doğrulamalı ayna + Parquet); günlük kalite raporu; `lake daily` + systemd timer. |
 | Faz 1 — kalan | Bekliyor | OKX, Coinbase spot, Hyperliquid, Binance spot adapter'ları; yedek recorder; OKX/Bybit L2 arşivleri; hedefli veri alımı değerlendirmesi. |
 | Faz 2–10 | Bekliyor | §17 |
@@ -50,13 +51,13 @@
 | Determinizm | Aynı veri + config + seed + commit → bit-bit aynı backtest çıktısı (hash) |
 | Reproducibility | Her sonuç: commit, veri partition hash'leri, config hash, seed ile izlenebilir |
 | Latency (in-process) | Olay → karar p99 < 50 ms; emir gönderim yolu ağ baskın (izlenir, alarm eşikli) |
-| Alarm gecikmesi | Kritik alarmlar ≤ 5 sn (RTS 6 Art. 16 ilkesi) |
+| Alarm gecikmesi | Kritik alarmlar ≤ 5 sn (RTS 6 Art. 16 ilkesi). **Faz 7'den (gerçek sermaye) itibaren.** Veri kaydı aşamasında varsayılan izleme alarmsız web durum sayfasıdır (ADR-010, kullanıcı kararı). |
 | Güvenlik | Secret'lar repo/log/env dump'ta yok; en az yetki; withdraw yetkili anahtarla çalışmayı reddet |
 | Bakım | Çekirdekte mypy strict, ruff, test kapsamı kritik modüllerde ≥ %90 satır + property testler |
 
 ### 6.3 Kapsam dışı (v1) — bilinçli
 
-HFT/market making, multi-venue execution, opsiyon trading, hedge mode, cross margin, multi-assets mode, portfolio margin, LLM ile karar, insan onayı olmadan strateji/parametre dağıtımı, Grafana + CLI dışında UI.
+HFT/market making, multi-venue execution, opsiyon trading, hedge mode, cross margin, multi-assets mode, portfolio margin, LLM ile karar, insan onayı olmadan strateji/parametre dağıtımı, salt-okunur durum sayfası + Grafana + CLI dışında UI (kontrol düğmeleri Faz 4+'da ayrı bir ADR ile).
 
 ## 7. Technical Architecture
 
@@ -126,8 +127,8 @@ HFT/market making, multi-venue execution, opsiyon trading, hedge mode, cross mar
 | Kalite | ruff, mypy (çekirdekte strict), pre-commit, gitleaks, pip-audit | — |
 | CI | GitHub Actions (lint, type, test, secret scan) | — |
 | Deploy | Docker Compose (host network) + systemd; Ansible ile host provizyonu | K8s/Nomad (gereksiz; Nomad BSL) |
-| Gözlem | Prometheus + Alertmanager + Grafana + Loki (Alloy; Promtail EOL) | VictoriaMetrics (kardinalite artarsa) |
-| Paging | Telegram (birincil, tek kişilik ekip) + telefon araması/PagerDuty (kritik) + harici dead-man (healthchecks tipi) | Grafana OnCall OSS arşivlendi; Opsgenie EOL |
+| Gözlem | Varsayılan: `quanta ui` web durum sayfası (Tailscale arkasında, ADR-010). İsteğe bağlı: Prometheus + Alertmanager + Grafana (compose `monitoring` profili); Loki (Alloy; Promtail EOL) | VictoriaMetrics (kardinalite artarsa) |
+| Paging | Veri kaydı aşamasında yok (kullanıcı kararı, ADR-010). Faz 7 öncesi yeniden karar: aday Telegram (birincil, tek kişilik ekip) + telefon araması/PagerDuty (kritik) + harici dead-man (healthchecks tipi) | Grafana OnCall OSS arşivlendi; Opsgenie EOL |
 | Secrets | SOPS + age (repo dışında şifreli dosya) veya systemd-creds; container'a dosya olarak mount | Vault (BSL) / OpenBao (tek kişi için ağır) |
 | Zaman | chrony (sağlayıcı NTP + kamu havuzları); Binance `serverTime` ofset izleme | — |
 
@@ -396,6 +397,7 @@ Shortfall (bps), markout eğrileri, pasif fill oranı ve süresi, yükseltme ora
 `size = min( vol_target_size × calibrated_conf_scale, 0.25 × Kelly(büzülmüş edge), liquidity_cap, risk_per_trade_cap, liq_distance_cap )`. Vol-target **risk kontrolü** olarak (alfa beklentisi yok).
 
 ### 13.4 Başlangıç limitleri (config; mikro canlıda daha sıkı)
+**Kullanıcı onayladı (2026-09-24).**
 İşlem başı risk ≤ %0.5 E (mikro canlıda %0.25) · efektif brüt kaldıraç ≤ 1.5× · sembol başı ≤ 1× E · günlük zarar %2 → REDUCING, %3 → FLATTEN + HALT · zirveden %10 drawdown → HALT + insan incelemesi · eşzamanlı pozisyon ≤ 3 · saatlik yeni pozisyon ≤ 6.
 
 ### 13.5 Stres senaryoları (her strateji terfisinde)
@@ -425,7 +427,8 @@ CI kapısı: lint + type + unit + property + golden + güvenlik; gece: demo kont
 - **Loglar**: structlog JSON; korelasyon kimlikleri (`intent_id`, `client_order_id`, `decision_id`); redaction filtresi; Loki.
 - **Emir/fill/karar telemetrisi**: Postgres (düşük hacim); analitik Parquet'e günlük export.
 - **Dashboard'lar**: Veri Sağlığı · Trading & Risk · Execution Kalitesi · Model Sağlığı · PnL Atfı · Sistem.
-- **Alarmlar** (≤ 5 sn kritik): pozisyonun koruyucu stop'u yok · guardian eylemi · günlük limit · UNKNOWN > 30 sn · açık pozisyon varken stale feed · reconcile farkı · saat ofseti · recorder gap · disk doluluğu · **watchdog-alive** (heartbeat gelmeyince tetiklenen) · **harici dead-man** (host tümden ölürse dışarıdan uyarı).
+- **Varsayılan izleme (Faz 0–6): web durum sayfası, alarm yok** (ADR-010). Sayfa, Prometheus kurallarıyla aynı eşiklerle "Her şey yolunda / Dikkat / Sorun" hükmü verir ve her sorunu runbook bağlantısıyla gösterir. Metrik geçmişi ve alarmlar `monitoring` profiliyle isteğe bağlı açılır.
+- **Alarmlar** (≤ 5 sn kritik; **Faz 7 öncesi kanal kararı zorunlu**): pozisyonun koruyucu stop'u yok · guardian eylemi · günlük limit · UNKNOWN > 30 sn · açık pozisyon varken stale feed · reconcile farkı · saat ofseti · recorder gap · disk doluluğu · **watchdog-alive** (heartbeat gelmeyince tetiklenen) · **harici dead-man** (host tümden ölürse dışarıdan uyarı).
 - **PnL atfı**: sinyal (karar mid'inden çıkış mid'ine), execution (giriş/çıkış vs karar mid), fee, funding, latency slippage; strateji/sembol/rejim bazında; özdeşlik testi: bileşenlerin toplamı = gerçekleşen PnL.
 
 ## 16. Security Strategy
@@ -499,6 +502,7 @@ Paralel izler: **A** veri · **B** motor/execution · **C** araştırma · **D**
 - **Ne**: gerçek hesap, çok küçük notional tavanı (ör. pozisyon başı $100–300), sıkı limitler; fill/slippage kalibrasyonu; ölçek basamakları.
 - **Neden**: gerçek dolum ve operasyonun tek güvenilir kanıtı.
 - **Bağımlılık**: Faz 6 kapısı. **Test**: live-sim farkı, SLO'lar.
+- **Giriş koşulu:** kritik bildirim kanalı seçildi ve tatbik edildi, ya da kullanıcı yazılı olarak yalnız borsa tarafı korumalar + guardian ile çalışmayı kabul etti (ADR-010 madde 5).
 - **Başarı** (kapı): ≥ 50 trade veya 6 hafta; sim–canlı slippage farkı ortalama ±2 bps, p90 ±5 bps içinde; risk olayı 0; PnL tahmin aralığında (küçük örnekte kârlılık şart değil).
 - **Ölçek**: her basamak ×2, her basamakta ≥ 4 hafta aynı kontroller; kapı başarısızsa bir basamak geri.
 
@@ -533,7 +537,7 @@ Platform "tamam" sayılır ancak ve ancak aşağıdakilerin **hepsi** kanıtlanm
 11. **Pozisyon state'i**: 7 günlük demo soak'ta yerel defter–borsa farkı 0 (veya otomatik çözülmüş + açıklanmış).
 12. **Restart sonrası toparlanma**: emir uçuştayken `kill -9` → restart → SAFE ≤ 60 sn → reconcile → doğru state; tek-yazar fencing testi.
 13. **Hata yönetimi**: chaos matrisi (WS kopması, 5xx/429/503-unknown/-1007, gecikme, sıra dışı/tekrar mesaj, saat kayması, Postgres kesintisi) tamamı güvenli durum + kurtarma ile geçiyor.
-14. **Monitoring**: tüm dashboard'lar; kritik alarmlar ≤ 5 sn; watchdog-alive ve harici dead-man test edilmiş.
+14. **Monitoring**: durum sayfası tüm sağlık kurallarını gösteriyor; canlı trading için seçilen bildirim kanalında kritik alarmlar ≤ 5 sn; watchdog-alive ve harici dead-man test edilmiş (ADR-010).
 15. **Testler**: CI yeşil (lint, mypy strict çekirdek, unit, property, golden, güvenlik); kritik modüllerde ≥ %90 satır kapsamı.
 16. **Güvenlik**: gitleaks temiz; log redaction testi; secrets repo dışında; host sertleştirme kontrol listesi.
 17. **Dokümantasyon**: araştırma raporu, ADR'ler, mimari, runbook'lar (deploy, restart, kill, anahtar rotasyonu, borsa kesintisi, veri gap'i), config referansı.
@@ -543,14 +547,23 @@ Platform "tamam" sayılır ancak ve ancak aşağıdakilerin **hepsi** kanıtlanm
 
 ## 19. Open Questions (kullanıcıya)
 
-1. **Hukuki uygunluk**: Bulunduğun ülke ve hesabın için Binance USDⓈ-M Futures kullanım uygunluğu (senin sorumluluğunda; ben doğrulayamam).
-2. **Cloud sağlayıcı/bölge**: tercih? (Önerim: Binance'e erişimi kısıtlı olmayan bir Avrupa bölgesi; 4 vCPU / 16 GB / ≥ 500 GB SSD + S3-uyumlu bucket; guardian için opsiyonel küçük 2. VM. Faz 0'da erişim ve latency testi.)
-3. **Risk iştahı**: §13.4 başlangıç limitleri uygun mu?
-4. **Hedefli veri alımı bütçesi**: tek seferlik ~$64–600 aralığı kabul mü? (Faz 1'de örneklerle karar.)
-5. **Alarm kanalı ve erişilebilirlik**: Telegram + kritik için telefon araması uygun mu? Gece alarmına kim yanıt verecek? (Yanıt yoksa sistem daha muhafazakâr çalışmalı: gece boyut azaltma/HALT politikası.)
-6. **LLM API bütçesi** (Faz 8) ve ücretli haber kaynakları (daha sonra).
-7. **Sub-account**: hesabında Binance sub-account kullanılabiliyor mu? (Değilse yedek plan §5.)
-8. **Dil**: kod/yorumlar İngilizce, dokümanlar Türkçe (teknik terimler İngilizce) — uygun mu?
+**Cevaplananlar (2026-09-24):**
+
+| # | Soru | Cevap | Sonucu |
+|---|---|---|---|
+| 1 | Hukuki uygunluk | Uygun (kullanıcının sorumluluğunda) | Canlı kayıt başlayabilir |
+| 2 | Sunucu / bölge | Frankfurt'ta **mevcut bir sunucu**; erişim **Tailscale** | `deploy/bootstrap.sh` (sağlayıcıdan bağımsız); erişim kontrolü 3 venue için kurulumda |
+| 3 | Risk iştahı | §13.4 varsayılanları onaylandı | Değerler "kullanıcı onaylı" |
+| 4 | Veri bütçesi | **$250** başlangıç | Önce ücretsiz kaynaklar; hedefli alım planı: [`docs/research/01-veri-satin-alma-plani.md`](../research/01-veri-satin-alma-plani.md) |
+| 5 | Alarm kanalı | Alarm istenmiyor; basit web arayüzü yeterli | ADR-010: durum sayfası, alarm yok. Canlı trading için kritik bildirim → Faz 7 öncesi yeniden sorulacak |
+| 8 | Dil | Kod/yorum İngilizce, dokümanlar Türkçe | Uygulanıyor (itiraz gelmedi) |
+
+**Açık:**
+1. **Canlı trading'de kritik bildirim** (Faz 7 öncesi zorunlu karar): Telegram / telefon araması / yalnız borsa tarafı korumalar + guardian. Bildirim yoksa gece boyut azaltma veya HALT politikası.
+2. **Depoyu private yapmak** (Faz 5 öncesi önerilir): strateji araştırması başlamadan. Kurulum betiği deploy key akışını destekliyor (runbook).
+3. **Veri alımı:** Crypto Lake fiyatı ve 2024-08 / 2025-10 kapsamının doğrulanması, sonra satın alma kararı (plan belgesi).
+4. **LLM API bütçesi** (Faz 8) ve ücretli haber kaynakları (daha sonra).
+5. **Sub-account**: hesabında Binance sub-account kullanılabiliyor mu? (Değilse yedek plan §5.) Faz 4'ten önce.
 
 ## 20. Implementation Roadmap
 

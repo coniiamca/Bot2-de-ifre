@@ -13,3 +13,4 @@ Her ADR: bağlam → karar → gerekçe → sonuçlar → yeniden değerlendirme
 | [007](ADR-007-secret-yonetimi.md) | Secret yönetimi ve log redaction | Kabul |
 | [008](ADR-008-raw-capture-formati.md) | Raw capture formatı: JSONL + bağımsız zstd frame + manifest + in-band meta | Kabul |
 | [009](ADR-009-lake-semasi.md) | Normalize lake: şema, tekilleştirme, determinizm, lineage, kalite bayrakları | Kabul |
+| [010](ADR-010-izleme-web-durum-sayfasi.md) | Varsayılan izleme: web durum sayfası (Tailscale), alarm yok; Faz 7 öncesi yeniden karar | Kabul |
