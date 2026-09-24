@@ -1,0 +1,62 @@
+# quanta recorder — example configuration (copy to config/recorder.local.yaml; *.local.yaml is
+# git-ignored). No secrets belong in this file: S3 credentials come from the standard AWS
+# credential chain (e.g. a mounted AWS_SHARED_CREDENTIALS_FILE), see docs/runbooks/recorder.md.
+
+data_dir: /var/lib/quanta/data
+min_free_disk_gb: 5
+
+binance_usdm:
+  enabled: true
+  environment: production        # production | demo
+  # Full L2 diff depth @100ms + REST snapshots — the largest data volume. Start small and
+  # widen after measuring GB/day (`quanta data volume`).
+  depth_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, XRPUSDT, DOGEUSDT]
+  depth_speed_ms: 100
+  snapshot_limit: 1000
+  # aggTrade + bookTicker + markPrice@1s + kline_1m (+ REST OI/stats polls) for each symbol.
+  universe: [BTCUSDT, ETHUSDT, SOLUSDT, XRPUSDT, DOGEUSDT, BNBUSDT, ADAUSDT, LINKUSDT,
+             AVAXUSDT, LTCUSDT, SUIUSDT, TRXUSDT, DOTUSDT, BCHUSDT, NEARUSDT, AAVEUSDT,
+             UNIUSDT, APTUSDT, ARBUSDT, OPUSDT, FILUSDT, ETCUSDT, INJUSDT, TIAUSDT,
+             WIFUSDT, 1000PEPEUSDT, ENAUSDT, HYPEUSDT, TAOUSDT, ONDOUSDT]
+  record_force_orders: true      # sampled by Binance: ≤1 liquidation/symbol/second
+  streams_per_connection: 200
+  max_weight_fraction: 0.5       # never use more than half of the 2400/min IP weight
+  pollers:
+    server_time_s: 30
+    exchange_info_s: 3600
+    funding_info_s: 3600
+    premium_index_s: 30
+    open_interest_s: 30
+    stats_s: 300                 # OI/long-short stats: the REST API keeps only 30 days
+    insurance_balance_s: 3600
+    depth_audit_s: 600           # periodic snapshots for `quanta data book-audit`
+
+segments:
+  rotate_s: 3600
+  flush_interval_s: 1.0
+  zstd_level: 3
+  fsync: true
+
+ws:
+  max_age_s: 82800               # rotate (make-before-break) after 23h; server limit is 24h
+  overlap_s: 5
+  idle_timeout_s: 60
+  heartbeat_s: 20
+
+uploader:
+  enabled: false
+  target: s3                     # s3 | local
+  s3_bucket: my-quanta-raw
+  s3_prefix: quanta
+  s3_endpoint_url: null          # set for non-AWS S3-compatible storage
+  scan_interval_s: 60
+  local_retention_days: 14
+
+metrics:
+  enabled: true
+  host: 0.0.0.0
+  port: 9101
+
+logging:
+  level: INFO
+  json_output: true

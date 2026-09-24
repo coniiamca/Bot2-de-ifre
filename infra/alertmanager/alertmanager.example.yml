@@ -1,0 +1,34 @@
+# Copy to alertmanager.yml (git-ignored) and fill in chat_id / heartbeat URL.
+# The Telegram bot token is read from a file secret, never from this file.
+route:
+  receiver: telegram
+  group_by: [alertname, severity]
+  group_wait: 10s
+  group_interval: 2m
+  repeat_interval: 3h
+  routes:
+    - matchers: [alertname="Watchdog"]
+      receiver: deadman
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 1m
+    - matchers: [severity="critical"]
+      receiver: telegram
+      group_wait: 0s
+      repeat_interval: 30m
+
+receivers:
+  - name: telegram
+    telegram_configs:
+      - bot_token_file: /run/secrets/telegram_bot_token
+        chat_id: 123456789                       # <- your chat id
+        parse_mode: HTML
+        send_resolved: true
+  - name: deadman
+    webhook_configs:
+      - url: https://hc-ping.com/REPLACE-WITH-YOUR-CHECK-UUID   # external dead-man switch
+        send_resolved: false
+
+inhibit_rules:
+  - source_matchers: [alertname="RecorderDown"]
+    target_matchers: [severity="warning"]

@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Secrets — never commit (see docs/adr/ADR-007)
+.env
+.env.*
+!.env.example
+secrets/
+*.key
+*.pem
+*.age
+*.sops.*
+credentials*
+
+# Data — raw captures and lake live outside git
+data/
+var/
+*.zst
+*.parquet
+
+# Local overrides
+config/*.local.yaml
+infra/compose/.env
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+infra/alertmanager/alertmanager.yml

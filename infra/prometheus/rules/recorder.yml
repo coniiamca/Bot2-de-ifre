@@ -1,0 +1,137 @@
+# Recorder alerting contract. Every alert has: severity, a summary, and a runbook anchor in
+# docs/runbooks/recorder.md. Data gaps are losses that can never be recovered from the free
+# exchange APIs, so they page quickly.
+groups:
+  - name: recorder.availability
+    rules:
+      - alert: RecorderDown
+        expr: up{job="recorder"} == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: "Recorder process is not scrapeable"
+          runbook: "docs/runbooks/recorder.md#recorderdown"
+      - alert: RecorderStreamDisconnected
+        expr: quanta_recorder_connection_up == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Stream {{ $labels.stream }} has no live connection"
+          runbook: "docs/runbooks/recorder.md#streams"
+      - alert: RecorderNoMessages
+        expr: time() - quanta_recorder_last_message_timestamp_seconds > 60
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: "No messages on {{ $labels.stream }} for >60s"
+          runbook: "docs/runbooks/recorder.md#streams"
+      - alert: RecorderRestrictedLocation
+        expr: quanta_recorder_restricted_location == 1
+        labels: {severity: critical}
+        annotations:
+          summary: "Exchange returns HTTP 451 — host location not served"
+          runbook: "docs/runbooks/recorder.md#http-451"
+
+  - name: recorder.integrity
+    rules:
+      - alert: DepthNotSynced
+        expr: quanta_recorder_depth_synced == 0
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.symbol }} order book not in sync for >2m"
+          runbook: "docs/runbooks/recorder.md#depth"
+      - alert: DepthGapsFrequent
+        expr: increase(quanta_recorder_depth_gaps_total[1h]) > 10
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.symbol }}: {{ $value | humanize }} depth gaps in 1h"
+          runbook: "docs/runbooks/recorder.md#depth"
+      - alert: TradesMissing
+        expr: increase(quanta_recorder_trade_missing_ids_total[15m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.symbol }}: aggTrades missing (data loss)"
+          runbook: "docs/runbooks/recorder.md#trades"
+      - alert: ParseErrors
+        expr: increase(quanta_recorder_parse_errors_total[10m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "Undecodable {{ $labels.kind }} payloads — possible exchange API change"
+          runbook: "docs/runbooks/recorder.md#api-drift"
+      - alert: SegmentWriteErrors
+        expr: quanta_recorder_segment_write_errors > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "Cannot write segments for {{ $labels.channel }} (disk?)"
+          runbook: "docs/runbooks/recorder.md#disk"
+
+  - name: recorder.resources
+    rules:
+      - alert: DiskSpaceLow
+        expr: quanta_recorder_disk_free_bytes < 20e9
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Data volume free space {{ $value | humanize1024 }}B"
+          runbook: "docs/runbooks/recorder.md#disk"
+      - alert: DiskSpaceCritical
+        expr: quanta_recorder_disk_free_bytes < 5e9
+        labels: {severity: critical}
+        annotations:
+          summary: "Data volume nearly full ({{ $value | humanize1024 }}B)"
+          runbook: "docs/runbooks/recorder.md#disk"
+      - alert: UploadBacklog
+        expr: quanta_recorder_pending_upload_files > 20
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $value }} finalized segments not uploaded"
+          runbook: "docs/runbooks/recorder.md#uploads"
+      - alert: UploadErrors
+        expr: increase(quanta_recorder_uploads_total{result="error"}[30m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "Segment uploads failing"
+          runbook: "docs/runbooks/recorder.md#uploads"
+      - alert: RestWeightHigh
+        expr: quanta_recorder_rest_used_weight > 1000
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "REST weight {{ $value }} / 2400 per minute"
+          runbook: "docs/runbooks/recorder.md#rate-limits"
+
+  - name: recorder.time
+    rules:
+      - alert: ClockOffsetHigh
+        expr: abs(quanta_recorder_clock_offset_seconds) > 0.25
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Clock offset vs exchange {{ $value | humanizeDuration }}"
+          runbook: "docs/runbooks/recorder.md#clock"
+      - alert: ClockOffsetCritical
+        expr: abs(quanta_recorder_clock_offset_seconds) > 1
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Clock offset vs exchange {{ $value | humanizeDuration }} — timestamps unreliable"
+          runbook: "docs/runbooks/recorder.md#clock"
+      - alert: EventLatencyHigh
+        expr: histogram_quantile(0.99, sum by (le, kind) (rate(quanta_recorder_event_latency_seconds_bucket[5m]))) > 2
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "p99 {{ $labels.kind }} latency {{ $value | humanizeDuration }}"
+          runbook: "docs/runbooks/recorder.md#latency"
+
+  - name: meta
+    rules:
+      # Always firing. Alertmanager forwards it to an external dead-man service; if the
+      # heartbeat stops (host, Prometheus or Alertmanager dead) the external service pages.
+      - alert: Watchdog
+        expr: vector(1)
+        labels: {severity: none}
+        annotations:
+          summary: "Alerting pipeline heartbeat"

@@ -1,0 +1,30 @@
+# Alert unit tests: promtool test rules infra/prometheus/tests/recorder_test.yml
+rule_files: [../rules/recorder.yml]
+evaluation_interval: 15s
+tests:
+  - interval: 15s
+    input_series:
+      - series: 'quanta_recorder_connection_up{venue="binance_usdm",stream="binance_usdm:depth0"}'
+        values: '1 1 0 0 0 0 0 0 0 0 0 0'
+      - series: 'quanta_recorder_trade_missing_ids_total{venue="binance_usdm",symbol="BTCUSDT"}'
+        values: '0 0 0 5 5 5 5 5 5 5'
+      - series: 'quanta_recorder_clock_offset_seconds{venue="binance_usdm"}'
+        values: '0.01 -1.5 -1.5 -1.5 -1.5 -1.5 -1.5 -1.5 -1.5 -1.5 -1.5 -1.5'
+    alert_rule_test:
+      - eval_time: 2m30s
+        alertname: RecorderStreamDisconnected
+        exp_alerts:
+          - exp_labels: {severity: critical, venue: binance_usdm, stream: "binance_usdm:depth0"}
+            exp_annotations:
+              summary: "Stream binance_usdm:depth0 has no live connection"
+              runbook: "docs/runbooks/recorder.md#streams"
+      - eval_time: 1m
+        alertname: TradesMissing
+        exp_alerts:
+          - exp_labels: {severity: warning, venue: binance_usdm, symbol: BTCUSDT}
+            exp_annotations:
+              summary: "BTCUSDT: aggTrades missing (data loss)"
+              runbook: "docs/runbooks/recorder.md#trades"
+      - eval_time: 30s
+        alertname: ClockOffsetCritical
+        exp_alerts: []

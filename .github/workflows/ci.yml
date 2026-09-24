@@ -1,0 +1,85 @@
+name: ci
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Lint
+        run: |
+          uv run ruff check src tests infra
+          uv run ruff format --check src tests infra
+      - name: Type check (strict)
+        run: uv run mypy
+      - name: Tests
+        run: uv run pytest -q
+
+  monitoring-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PROM_VERSION: "3.5.0"
+      AM_VERSION: "0.28.1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install promtool and amtool
+        run: |
+          curl -sSL "https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-amd64.tar.gz" | tar xz
+          curl -sSL "https://github.com/prometheus/alertmanager/releases/download/v${AM_VERSION}/alertmanager-${AM_VERSION}.linux-amd64.tar.gz" | tar xz
+      - name: Check alert rules and run alert unit tests
+        run: |
+          ./prometheus-${PROM_VERSION}.linux-amd64/promtool check rules infra/prometheus/rules/*.yml
+          ./prometheus-${PROM_VERSION}.linux-amd64/promtool test rules infra/prometheus/tests/*.yml
+      - name: Check Alertmanager config
+        run: ./alertmanager-${AM_VERSION}.linux-amd64/amtool check-config infra/alertmanager/alertmanager.example.yml
+      - name: Dashboard JSON is generated from source
+        run: |
+          python3 infra/grafana/generate_recorder_dashboard.py
+          git diff --exit-code infra/grafana/dashboards
+
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks (full history)
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz | tar xz gitleaks
+          ./gitleaks git --no-banner --redact --exit-code 1 .
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile
+          push: false
+          tags: quanta:ci
+          load: true
+      - name: Smoke test image
+        run: docker run --rm quanta:ci --help
