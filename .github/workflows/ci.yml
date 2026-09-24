@@ -136,6 +136,7 @@ jobs:
           PY
           sudo quanta-compose ps
           sudo stat -c '%U:%G %a %n' /var/lib/quanta/data /etc/quanta/secrets /etc/quanta/recorder.yaml
+          test "$(sudo stat -c '%U:%G' /var/lib/quanta/data)" = quanta:quanta
           sudo grep -q '^host_id:' /etc/quanta/recorder.yaml
       - name: Re-run is a safe update
         run: |

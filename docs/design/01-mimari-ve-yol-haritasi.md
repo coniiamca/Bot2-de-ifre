@@ -9,7 +9,7 @@
 | Faz | Durum | Not |
 |---|---|---|
 | Faz 0 — Temel + Binance recorder | **Kod tamam, canlı doğrulama bekliyor** | Recorder, segment/manifest/recovery, uploader, doğrulama araçları, izleme stack'i, CI (yeşil). Canlı 72 saatlik koşu kullanıcının Frankfurt sunucusunda yapılacak (`deploy/bootstrap.sh`; geliştirme konteyneri Binance'ten HTTP 451 alıyor — bkz. runbook). |
-| Kurulum + izleme | **Kod tamam** | Web durum sayfası (`quanta ui`, Tailscale ile yalnız tailnet'e açık, ADR-010); tek komutla sunucu kurulumu (`deploy/bootstrap.sh`, CI'da gerçek VM'de uçtan uca test); 3 venue erişim kontrolü (451/403); `lake schedule` (compose `lake-daily` servisi). |
+| Kurulum + izleme | **Kod tamam** | Web durum sayfası (`quanta ui`, Tailscale ile yalnız tailnet'e açık, ADR-010); tek komutla sunucu kurulumu (`deploy/bootstrap.sh`, CI'da gerçek VM'de uçtan uca test); 3 venue erişim kontrolü (451/403); `lake schedule` (compose `lake-daily` servisi); Tardis ücretsiz ay başı verisi içe aktarıcısı (`quanta data tardis`: md5 + tam gzip doğrulaması, akışla Parquet, kota farkındalığı; gerçek L2 günüyle doğrulandı); $250 veri planı ([`docs/research/01-veri-satin-alma-plani.md`](../research/01-veri-satin-alma-plani.md)). |
 | Faz 1 — ilk dilim | **Kod tamam** | Bybit linear (tam likidasyon: `allLiquidation`) ve Deribit (trade `liquidation` bayrağı, `change_id` zinciri, heartbeat) capture'ları; deterministik Parquet lake (3 venue, ADR-009); data.binance.vision backfill (checksum doğrulamalı ayna + Parquet); günlük kalite raporu; `lake daily` + systemd timer. |
 | Faz 1 — kalan | Bekliyor | OKX, Coinbase spot, Hyperliquid, Binance spot adapter'ları; yedek recorder; OKX/Bybit L2 arşivleri; hedefli veri alımı değerlendirmesi. |
 | Faz 2–10 | Bekliyor | §17 |
@@ -190,7 +190,8 @@ Olay modeli: tüm girdiler tipli olaylar (`ts_exchange`, `ts_arrival`, `conn_id`
 | Coinbase Advanced Trade | market_trades, level2 (+heartbeats) | BTC-USD, ETH-USD | Coinbase premium (ABD akışı vekili) | Ücretsiz |
 | Hyperliquid | trades, l2Book, activeAssetCtx | BTC, ETH | On-chain perp (follower), funding | Ücretsiz |
 | Arşivler | data.binance.vision (trades 2019-09+, aggTrades/klines 2019-12+, mark/index/premium klines, fundingRate, **metrics 5 dk 2020-09+ (boşluklu)**, bookDepth ±%'lik ~30 sn — L2 değil); Bybit public trading; OKX market-data-history (tick trades, 400-lv book, 5000-lv 2025-11+); Hyperliquid S3 (requester-pays) | — | Uzun geçmiş | Ücretsiz |
-| Hedefli alım | Crypto Lake (~$64/ay, book_delta_v2) vs Tardis (aylık plan 4 ay erişim penceresi) — kriz dönemleri L2 | — | Stres testi L2 | Tek seferlik, Faz 1'de örnekle karar |
+| Tardis ay başı günleri | Her ayın 1. günü anahtarsız: tam L2 + trades + likidasyon + ticker (binance-futures, bybit, deribit, okex-swap); anonim transfer kotası var | 2020+ | Ay başı L2 örnekleri, cross-venue | Ücretsiz (`quanta data tardis`) |
+| Hedefli alım | Crypto Lake bireysel ($64/ay, 300 GB/ay; book_delta_v2, trades, liquidations, funding, OI) — kriz günleri L2. Tardis ücretli planları bütçe dışı ($350+/ay, aylık ödemede son 4 ay) | — | Stres testi L2 | Plan: [`01-veri-satin-alma-plani.md`](../research/01-veri-satin-alma-plani.md) |
 | Olay | Binance duyuru WS (`com_announcement_en`, imzalı), FRED/ALFRED (vintage), ekonomik takvim, borsa status sayfaları, ücretsiz RSS; ücretli (Tree of Alpha vb.) sonra | — | Olay/risk kapısı | Ücretsiz → sonra |
 
 Coinbase INTX perp'leri Deribit'e taşınıyor (2026-10-01, paralel dönem yok) [VERIFIED-DOC] → INTX API'si üzerine inşa edilmez.
@@ -561,7 +562,7 @@ Platform "tamam" sayılır ancak ve ancak aşağıdakilerin **hepsi** kanıtlanm
 **Açık:**
 1. **Canlı trading'de kritik bildirim** (Faz 7 öncesi zorunlu karar): Telegram / telefon araması / yalnız borsa tarafı korumalar + guardian. Bildirim yoksa gece boyut azaltma veya HALT politikası.
 2. **Depoyu private yapmak** (Faz 5 öncesi önerilir): strateji araştırması başlamadan. Kurulum betiği deploy key akışını destekliyor (runbook).
-3. **Veri alımı:** Crypto Lake fiyatı ve 2024-08 / 2025-10 kapsamının doğrulanması, sonra satın alma kararı (plan belgesi).
+3. **Veri alımı:** fiyat doğrulandı ($64/ay). Açık kalanlar: Crypto Lake'in 2024-08-05 ve 2025-10-10 kapsamının doğrulanması ve OKX/Bybit'in ücretsiz L2 arşivlerinin kontrolü. Sonra satın alma kararı (plan belgesi §3).
 4. **LLM API bütçesi** (Faz 8) ve ücretli haber kaynakları (daha sonra).
 5. **Sub-account**: hesabında Binance sub-account kullanılabiliyor mu? (Değilse yedek plan §5.) Faz 4'ten önce.
 

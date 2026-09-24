@@ -218,9 +218,12 @@ def test_quality_report(rec: Recording) -> None:
     assert b["trade_latency"]["BTCUSDT"]["trades"] > 0
     assert b["schema_errors"] == {} and b["invalid_frames"] == 0
     # untouched venues: no integrity events. Coverage is measured from recorder start, so
-    # the connection handshake counts as uncovered — visible in a 4 s test (≈99.7 %),
-    # negligible over a real day.
+    # the connection handshake counts as uncovered: ≈99.7 % in this 4 s recording, and on a
+    # slow CI runner it can fall below 99 % (→ "bad"). Over a real day it is negligible.
+    # So check the flag follows the coverage rule instead of pinning it.
     for v in ("deribit", "bybit_linear"):
-        assert q[v]["events"] == {} and q[v]["flag"] != "bad", q[v]
-        assert min(q[v]["streams_connected_fraction"].values()) > 0.99
+        assert q[v]["events"] == {} and q[v]["schema_errors"] == {}, q[v]
+        cov = min(q[v]["streams_connected_fraction"].values())
+        assert cov > 0.9, q[v]
+        assert q[v]["flag"] == ("bad" if cov < 0.99 else "degraded" if cov < 0.999 else "good")
     assert (rec.root / "lake" / "_quality" / f"date={rec.day.isoformat()}.json").exists()

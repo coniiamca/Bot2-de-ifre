@@ -33,6 +33,8 @@ def test_end_to_end_logging_never_emits_secret(capsys) -> None:  # type: ignore[
     structlog.reset_defaults()
     configure_logging("INFO", json=True)
     structlog.get_logger("t").info("order", api_key="SUPERSECRET", params={"signature": "SIG"})
-    out = capsys.readouterr().out
-    assert "SUPERSECRET" not in out and "SIG" not in out
-    json.loads(out.strip().splitlines()[-1])
+    captured = capsys.readouterr()
+    assert captured.out == ""  # logs never mix with command output
+    err = captured.err
+    assert "SUPERSECRET" not in err and "SIG" not in err
+    json.loads(err.strip().splitlines()[-1])

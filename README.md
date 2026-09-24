@@ -8,6 +8,7 @@ Araştırma odaklı, üretim seviyesinde **vadeli kripto (perpetual futures) tra
 - [Araştırma raporu](docs/research/00-arastirma-raporu.md): bulgular, keşifler, reddedilen/önerilen yaklaşımlar, bilinmeyenler, kaynakça
 - [Mimari ve yol haritası](docs/design/01-mimari-ve-yol-haritasi.md): gereksinimler, mimari, veri/ML/nedensellik/backtest/execution/risk/test/gözlem/güvenlik stratejileri, fazlar, Definition of Done
 - [ADR'ler](docs/adr/README.md): mimari kararlar ve gerekçeleri
+- [Veri edinim planı ($250)](docs/research/01-veri-satin-alma-plani.md): ücretsiz kaynaklar, ölçülen boyutlar, hedefli alım
 - [Recorder runbook](docs/runbooks/recorder.md): sunucuya tek komutla kurulum, durum sayfası, günlük doğrulama, sorun prosedürleri
 
 ## Durum
@@ -30,6 +31,7 @@ Araştırma odaklı, üretim seviyesinde **vadeli kripto (perpetual futures) tra
 - **Web durum sayfası** (`quanta ui`): Türkçe, salt-okunur, tek sayfa. "Her şey yolunda / Dikkat / Sorun" hükmü, her sorun için runbook bağlantısı, venue kartları, günlük kalite ve hacim tabloları. Alarm yerine kullanılıyor (ADR-010).
 - **Tek komutla sunucu kurulumu** (`deploy/bootstrap.sh`): Docker, chrony, Tailscale, konfigürasyon, 3 borsa için erişim kontrolü ve servisler. Sayfa yalnız tailnet'e HTTPS ile açılır; internete port açılmaz. CI'da gerçek bir Ubuntu VM'de uçtan uca test edilir.
 - Compose varsayılanı `recorder + ui + lake-daily`. Prometheus/Grafana/Alertmanager isteğe bağlı `monitoring` profilinde.
+- **Tardis ücretsiz ay başı verisi** (`quanta data tardis`): 2020'den beri her ayın 1. günü için tam L2 + trade + likidasyon (4 borsa). md5 + gzip doğrulaması, akışla Parquet, kota farkındalığı. **$250 veri planı:** [docs/research/01-veri-satin-alma-plani.md](docs/research/01-veri-satin-alma-plani.md).
 
 Sonraki fazlar: [yol haritası §17](docs/design/01-mimari-ve-yol-haritasi.md).
 
@@ -45,6 +47,7 @@ uv run quanta recorder run -c config/recorder.local.yaml
 uv run quanta lake daily -d /var/lib/quanta/data          # dünü normalize et + kalite raporu
 uv run quanta ui -d /var/lib/quanta/data                  # durum sayfası → http://127.0.0.1:8080
 uv run quanta data backfill -d DATA --dataset aggTrades -s BTCUSDT --start 2026-09-01 --end 2026-09-20
+uv run quanta data tardis -d DATA --exchange deribit --from 2025-10 --to 2025-10   # ücretsiz ay başı
 ```
 **Sunucuya kurulum** (Ubuntu 22.04/24.04, Debian 12): [runbook → Sunucuya kurulum](docs/runbooks/recorder.md#sunucuya-kurulum-tek-komut)
 ```bash
@@ -62,7 +65,7 @@ src/quanta/
   marketstate/     L2 order book
   recorder/        segment formatı, venue capture'ları (binance_usdm, bybit_linear, deribit), uploader, servis
   lake/            raw → deterministik Parquet normalizer'ları, kalite raporu, tekrarlanabilirlik doğrulaması
-  archive/         data.binance.vision backfill
+  archive/         data.binance.vision backfill, Tardis ay başı içe aktarıcısı
   tools/           verify-aggtrades, book-audit, access (3 venue), volume
   ui/              durum sayfası: metrics okuyucu, sağlık kuralları, tek HTML sayfa
 deploy/            bootstrap.sh (sunucuya kurulum)

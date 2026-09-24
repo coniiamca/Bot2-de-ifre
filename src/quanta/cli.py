@@ -194,6 +194,83 @@ def data_backfill(
     raise typer.Exit(0 if _run(main()) else 1)
 
 
+@data_app.command("tardis")
+def data_tardis(
+    data_dir: Annotated[Path, typer.Option("--data-dir", "-d")],
+    exchange: Annotated[
+        list[str] | None,
+        typer.Option(help="binance-futures | bybit | deribit | okex-swap (default: all)"),
+    ] = None,
+    symbol: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--symbol",
+            "-s",
+            help="SYMBOL for every exchange, or exchange:SYMBOL (default: BTC and ETH perps)",
+        ),
+    ] = None,
+    first_month: Annotated[str, typer.Option("--from", help="YYYY-MM")] = "2020-01",
+    last_month: Annotated[str | None, typer.Option("--to", help="YYYY-MM (default: now)")] = None,
+    data_type: Annotated[
+        list[str] | None,
+        typer.Option("--type", help="default: trades, liquidations, derivative_ticker"),
+    ] = None,
+    l2_month: Annotated[
+        list[str] | None,
+        typer.Option(help="YYYY-MM: also fetch L2 (book_snapshot_25, incremental_book_L2)"),
+    ] = None,
+    day: Annotated[
+        list[str] | None, typer.Option(help="YYYY-MM-DD; days other than the 1st need a key")
+    ] = None,
+    api_key_file: Annotated[
+        Path | None, typer.Option(help="file holding a Tardis API key (never pass it inline)")
+    ] = None,
+    no_convert: bool = False,
+    concurrency: int = 2,
+    dry_run: bool = False,
+) -> None:
+    """Tardis.dev CSV datasets: first day of every month is free (no key). Verified mirror
+    (md5 + full gzip/CSV parse) and Parquet under lake/tardis. Exit 3 = quota reached, re-run
+    later to resume."""
+    from quanta.archive import tardis as td
+
+    exchanges = exchange or list(td.EXCHANGES)
+    bad = sorted(set(exchanges) - set(td.EXCHANGES))
+    types = data_type or list(td.SMALL_TYPES)
+    bad += sorted(set(types) - set(td.DATA_TYPES))
+    if bad:
+        typer.echo(f"unknown exchange/type: {bad}", err=True)
+        raise typer.Exit(2)
+    try:
+        symbols = td.parse_symbols(symbol, exchanges) if symbol else td.default_symbols(exchanges)
+        api_key = td.read_api_key(api_key_file)
+        today = date.today()
+        days = td.month_starts(first_month, last_month or f"{today:%Y-%m}")
+        days = [d for d in days if d < today]
+        days += [date.fromisoformat(x) for x in day or []]
+        l2_days = [td.month_starts(m, m)[0] for m in l2_month or []]
+    except (ValueError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    if api_key is None and any(d.day != 1 for d in days):
+        typer.echo("days other than the 1st of a month need --api-key-file", err=True)
+        raise typer.Exit(2)
+    jobs = td.plan_jobs(exchanges, symbols, days, types, l2_days)
+    if dry_run:
+        typer.echo(json.dumps({"files": len(jobs), "first": str(jobs[:3]), "last": str(jobs[-3:])}))
+        return
+    configure_logging("INFO", json=True)
+    report = _run(
+        td.run_import(
+            data_dir, jobs, api_key=api_key, convert=not no_convert, concurrency=concurrency
+        )
+    )
+    typer.echo(json.dumps(td.summary(report), indent=2))  # type: ignore[arg-type]
+    if report.quota_retry_after_s is not None:  # type: ignore[attr-defined]
+        raise typer.Exit(3)
+    raise typer.Exit(0 if report.ok else 1)  # type: ignore[attr-defined]
+
+
 @data_app.command("book-audit")
 def data_book_audit(
     data_dir: Annotated[Path, typer.Option("--data-dir", "-d")],

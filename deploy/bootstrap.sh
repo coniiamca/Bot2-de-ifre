@@ -212,13 +212,14 @@ preflight() {
 }
 
 # -- 2. packages ----------------------------------------------------------------------------
-apt_install() {
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends "$@" >/dev/null
-}
+# NEEDRESTART_MODE=l: needrestart only lists services using outdated libraries; it must not
+# restart anything else running on this (existing, shared) server.
+apt_get() { DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get "$@"; }
+apt_install() { apt_get install -y -q --no-install-recommends "$@" >/dev/null; }
 
 install_packages() {
   step "2/9 Temel paketler"
-  DEBIAN_FRONTEND=noninteractive apt-get update -q >/dev/null
+  apt_get update -q >/dev/null
   local pkgs=(ca-certificates curl gnupg git openssh-client iproute2 chrony)
   ((WITH_FIREWALL)) && pkgs+=(ufw)
   apt_install "${pkgs[@]}"
@@ -258,7 +259,7 @@ docker_repo() {
     printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/%s %s stable\n' \
       "$(dpkg --print-architecture)" "$OS_ID" "$OS_CODENAME" >"$list"
   fi
-  DEBIAN_FRONTEND=noninteractive apt-get update -q >/dev/null
+  apt_get update -q >/dev/null
 }
 
 install_docker() {
@@ -323,10 +324,17 @@ setup_dirs() {
   step "5/9 Kullanıcı ve dizinler"
   if getent passwd "$CONTAINER_UID" >/dev/null; then
     ok "uid $CONTAINER_UID mevcut: $(getent passwd "$CONTAINER_UID" | cut -d: -f1)"
+  elif getent passwd quanta >/dev/null; then
+    # an unrelated 'quanta' user exists: ownership below is numeric, so just leave it alone
+    warn "Başka bir uid ile 'quanta' kullanıcısı var; dosya sahipliği sayısal ($CONTAINER_UID) olacak"
   else
-    useradd --system --uid "$CONTAINER_UID" --user-group --no-create-home \
+    local grp="$CONTAINER_UID"
+    if ! getent group "$CONTAINER_UID" >/dev/null; then
+      if getent group quanta >/dev/null; then grp=quanta; else groupadd --gid "$CONTAINER_UID" quanta; fi
+    fi
+    useradd --uid "$CONTAINER_UID" --gid "$grp" --no-create-home \
       --home-dir /var/lib/quanta --shell /usr/sbin/nologin quanta
-    ok "Sistem kullanıcısı 'quanta' (uid $CONTAINER_UID, konteyner kullanıcısıyla aynı) oluşturuldu"
+    ok "Kullanıcı 'quanta' (uid $CONTAINER_UID, konteyner kullanıcısıyla aynı; giriş yapamaz) oluşturuldu"
   fi
   install -d -m 0755 "$ETC_DIR"
   install -d -m 0700 -o "$CONTAINER_UID" -g "$CONTAINER_UID" "$SECRETS_DIR"

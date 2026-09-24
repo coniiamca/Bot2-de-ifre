@@ -157,6 +157,19 @@ sudo quanta data backfill -d /var/lib/quanta/data --dataset fundingRate -s BTCUS
 ```
 Dosyalar yayınlanan `.CHECKSUM` ile doğrulanır, uyuşmayan dosya **saklanmaz** ve komut 1 ile çıkar. `missing` normaldir: dataset'lerin başlangıç tarihleri farklıdır, bazıları da durdurulmuştur (UM bookTicker 2024-03'te bitti). Tekrar çalıştırmak güvenlidir, aynalanmış dosyalar yeniden indirilmez.
 
+## Tardis ay başı verisi (ücretsiz)
+```bash
+sudo quanta data tardis -d /var/lib/quanta/data --from 2020-01          # BTC/ETH, 4 borsa, küçük tipler
+sudo quanta data tardis -d /var/lib/quanta/data --exchange binance-futures -s BTCUSDT \
+    --from 2025-10 --to 2025-10 --l2-month 2025-10                       # + o ayın L2 günü (~1 GB)
+sudo quanta data tardis … --dry-run                                     # kaç dosya indirileceği
+```
+- Her ayın 1. günü anahtarsız indirilir. Diğer günler için `--day` ve `--api-key-file /run/quanta-secrets/tardis_api_key` gerekir (anahtarı `/etc/quanta/secrets/tardis_api_key` dosyasına koy; komut satırına yazma).
+- Dosyalar `x-md5`, tam gzip açılışı ve CSV ayrıştırmasıyla doğrulanır. Doğrulanamayan dosya saklanmaz (`corrupt`). `missing` (404) ve `empty` (o gün veri yok) hata değildir.
+- **Çıkış kodu 3 = kota doldu:** Tardis'in anonim transfer limiti aşıldı. Çıktıdaki `resume_after` zamanından sonra aynı komutu tekrar çalıştır; indirilmiş dosyalar atlanır.
+- Çıktı: `archive/tardis/…csv.gz` (+ `.json` manifest) ve `lake/tardis/<borsa>/<tip>/symbol=…/date=…/part-0.parquet`. Kolonlar: `ts_exchange`, `ts_arrival` (Tardis toplayıcısının varış zamanı), ns UTC.
+- Neyi ne zaman indireceğimiz: [veri planı](../research/01-veri-satin-alma-plani.md).
+
 ## Alarmlar
 
 Aşağıdaki başlıklar hem durum sayfasındaki sorunlara ("Ne yapmalı?" bağlantıları) hem de isteğe bağlı Prometheus alarmlarına karşılık gelir.

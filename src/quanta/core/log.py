@@ -77,8 +77,20 @@ def redact_processor(
     return event_dict
 
 
+class _Stderr:
+    """Resolves ``sys.stderr`` on every write, so a replaced stream (test capture, a
+    reopened terminal) is followed instead of a stale, possibly closed, handle."""
+
+    def write(self, message: str) -> int:
+        return sys.stderr.write(message)
+
+    def flush(self) -> None:
+        sys.stderr.flush()
+
+
 def configure_logging(level: str = "INFO", json: bool = True) -> None:
-    logging.basicConfig(format="%(message)s", stream=sys.stdout, level=level.upper())
+    """Logs go to stderr; stdout is reserved for command results (JSON reports)."""
+    logging.basicConfig(format="%(message)s", stream=sys.stderr, level=level.upper())
     renderer: Any = structlog.processors.JSONRenderer() if json else structlog.dev.ConsoleRenderer()
     structlog.configure(
         processors=[
@@ -93,7 +105,7 @@ def configure_logging(level: str = "INFO", json: bool = True) -> None:
         wrapper_class=structlog.make_filtering_bound_logger(
             logging.getLevelNamesMapping()[level.upper()]
         ),
-        logger_factory=structlog.PrintLoggerFactory(),
+        logger_factory=structlog.PrintLoggerFactory(file=_Stderr()),  # type: ignore[arg-type]
         cache_logger_on_first_use=True,
     )
 
