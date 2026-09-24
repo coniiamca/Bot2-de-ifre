@@ -31,6 +31,7 @@ class BinancePollers(StrictModel):
     server_time_s: float = 30
     exchange_info_s: float = 3600
     funding_info_s: float = 3600
+    funding_rate_s: float = 3600  # realized funding settlements (history endpoint)
     premium_index_s: float = 30
     open_interest_s: float = 30
     stats_s: float = 300
@@ -66,6 +67,46 @@ class BinanceUsdmCaptureConfig(StrictModel):
         if missing:
             raise ValueError(f"depth_symbols not in universe: {sorted(missing)}")
         return self
+
+
+class BybitLinearCaptureConfig(StrictModel):
+    """Bybit v5 public linear (USDT perpetuals). Complete liquidation feed (allLiquidation)."""
+
+    enabled: bool = False
+    ws_url: str = "wss://stream.bybit.com/v5/public/linear"
+    rest_url: str = "https://api.bybit.com"
+    book_symbols: list[str] = Field(default_factory=lambda: ["BTCUSDT", "ETHUSDT"])
+    book_depth: Literal[1, 50, 200, 1000] = 50
+    universe: list[str] = Field(default_factory=lambda: ["BTCUSDT", "ETHUSDT"])
+    record_liquidations: bool = True
+    topics_per_connection: int = Field(100, ge=1, le=500)
+    ping_interval_s: float = Field(20.0, gt=0)
+    instruments_info_s: float = 3600
+
+    @field_validator("book_symbols", "universe")
+    @classmethod
+    def _upper(cls, v: list[str]) -> list[str]:
+        return [s.strip().upper() for s in v]
+
+    @model_validator(mode="after")
+    def _book_in_universe(self) -> BybitLinearCaptureConfig:
+        missing = set(self.book_symbols) - set(self.universe)
+        if missing:
+            raise ValueError(f"book_symbols not in universe: {sorted(missing)}")
+        return self
+
+
+class DeribitCaptureConfig(StrictModel):
+    """Deribit public data: perp books/trades (trades carry a liquidation flag), DVOL."""
+
+    enabled: bool = False
+    ws_url: str = "wss://www.deribit.com/ws/api/v2"
+    rest_url: str = "https://www.deribit.com/api/v2"
+    instruments: list[str] = Field(default_factory=lambda: ["BTC-PERPETUAL", "ETH-PERPETUAL"])
+    book_interval: Literal["100ms", "agg2"] = "100ms"
+    volatility_indices: list[str] = Field(default_factory=lambda: ["btc_usd", "eth_usd"])
+    heartbeat_s: int = Field(30, ge=10, le=600)
+    instruments_info_s: float = 3600
 
 
 class UploaderConfig(StrictModel):
@@ -104,6 +145,8 @@ class RecorderConfig(StrictModel):
     host_id: str | None = None
     min_free_disk_gb: float = 5.0
     binance_usdm: BinanceUsdmCaptureConfig = BinanceUsdmCaptureConfig()
+    bybit_linear: BybitLinearCaptureConfig = BybitLinearCaptureConfig()
+    deribit: DeribitCaptureConfig = DeribitCaptureConfig()
     segments: SegmentConfig = SegmentConfig()
     ws: WsConfig = WsConfig()
     uploader: UploaderConfig = UploaderConfig()

@@ -13,6 +13,10 @@ Guarantees and behaviours (plan §8.2, §12.4):
   (consumers deduplicate by exchange ids), then the old one is closed. If the new
   connection cannot be opened the old one is kept and rotation is retried.
 * Every state change is reported as a ``LifecycleEvent`` so gaps are explicit in the data.
+* Venue protocols plug in via ``on_open`` (e.g. send subscriptions — it runs for every new
+  physical connection, including rotations), ``send_text`` (replies such as heartbeat
+  responses), an optional application-level ping, and ``force_reconnect`` (e.g. to obtain a
+  fresh snapshot after a sequence gap).
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ import asyncio
 import contextlib
 import itertools
 import random
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -33,6 +37,7 @@ from quanta.core.log import get_logger
 log = get_logger(__name__)
 
 FrameHandler = Callable[[str, int, int, str], None]  # conn_id, conn_seq, recv_ts_ns, text
+OpenHandler = Callable[[str], Awaitable[None]]  # conn_id; use ManagedWebSocket.send_text
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +65,8 @@ class WsSettings:
     backoff_max_s: float = 30.0
     stable_after_s: float = 60.0
     max_msg_size: int = 16 * 1024 * 1024
+    app_ping_interval_s: float | None = None  # application-level ping (e.g. Bybit)
+    app_ping_payload: str | None = None
 
 
 class _Physical:
@@ -69,6 +76,7 @@ class _Physical:
         "first_frame",
         "frames",
         "opened_mono_ns",
+        "pinger",
         "rotate_at_ns",
         "ws",
     )
@@ -83,6 +91,7 @@ class _Physical:
         self.frames = 0
         self.first_frame = asyncio.Event()
         self.closed = asyncio.Event()
+        self.pinger: asyncio.Task[None] | None = None
 
 
 class ManagedWebSocket:
@@ -98,6 +107,7 @@ class ManagedWebSocket:
         on_lifecycle: LifecycleHandler | None = None,
         settings: WsSettings | None = None,
         rng: random.Random | None = None,
+        on_open: OpenHandler | None = None,
     ) -> None:
         self.name = name
         self.url = url
@@ -105,6 +115,8 @@ class ManagedWebSocket:
         self._clock = clock
         self._on_frame = on_frame
         self._on_lifecycle = on_lifecycle
+        self._on_open = on_open
+        self._phys: dict[str, _Physical] = {}
         self.settings = settings or WsSettings()
         self._rng = rng or random.Random()  # noqa: S311 — jitter, not cryptography
         self._stop = asyncio.Event()
@@ -126,6 +138,21 @@ class ManagedWebSocket:
     def stop(self) -> None:
         self._stop.set()
 
+    async def send_text(self, conn_id: str, text: str) -> None:
+        """Send on a specific physical connection (no-op if it is already gone)."""
+        phys = self._phys.get(conn_id)
+        if phys is None or phys.closed.is_set():
+            return
+        await phys.ws.send_str(text)
+
+    async def force_reconnect(self, reason: str) -> None:
+        """Close the active connection; the supervisor reconnects (fresh subscriptions)."""
+        phys = self._active
+        if phys is None or phys.closed.is_set():
+            return
+        self._emit("force_reconnect", phys.conn_id, reason=reason)
+        await self._close(phys)
+
     async def run(self) -> None:
         failures = 0  # consecutive failed connects / short-lived connections
         try:
@@ -144,6 +171,8 @@ class ManagedWebSocket:
                         continue
                     self._active = phys
                     self._start_reader(phys)
+                    if not await self._opened(phys):
+                        failures += 1
                     continue
 
                 phys = self._active
@@ -204,9 +233,35 @@ class ManagedWebSocket:
         return phys
 
     def _start_reader(self, phys: _Physical) -> None:
+        self._phys[phys.conn_id] = phys
         self._readers[phys.conn_id] = asyncio.create_task(
             self._read(phys), name=f"ws-read:{phys.conn_id}"
         )
+        s = self.settings
+        if s.app_ping_interval_s and s.app_ping_payload:
+            phys.pinger = asyncio.create_task(
+                self._ping_loop(phys, s.app_ping_interval_s, s.app_ping_payload),
+                name=f"ws-ping:{phys.conn_id}",
+            )
+
+    async def _opened(self, phys: _Physical) -> bool:
+        """Run the venue's on_open hook (subscriptions). On failure the socket is closed."""
+        if self._on_open is None:
+            return True
+        try:
+            await self._on_open(phys.conn_id)
+            return True
+        except Exception as exc:
+            self._emit("on_open_failed", phys.conn_id, error=repr(exc))
+            await self._close(phys)
+            return False
+
+    async def _ping_loop(self, phys: _Physical, interval_s: float, payload: str) -> None:
+        with contextlib.suppress(asyncio.CancelledError, ConnectionError, RuntimeError):
+            while not phys.closed.is_set():
+                await asyncio.sleep(interval_s)
+                if not phys.closed.is_set():
+                    await phys.ws.send_str(payload)
 
     async def _read(self, phys: _Physical) -> None:
         reason = "unknown"
@@ -249,7 +304,10 @@ class ManagedWebSocket:
             with contextlib.suppress(Exception):
                 await ws.close()
             phys.closed.set()
+            if phys.pinger is not None:
+                phys.pinger.cancel()
             self._readers.pop(phys.conn_id, None)
+            self._phys.pop(phys.conn_id, None)
             age = (self._clock.monotonic_ns() - phys.opened_mono_ns) / NS_PER_S
             self._emit(
                 "disconnected", phys.conn_id, reason=reason, age_s=round(age, 3), frames=phys.frames
@@ -265,6 +323,7 @@ class ManagedWebSocket:
             self._emit("rotation_failed", old.conn_id, retry_in_s=self.settings.rotation_retry_s)
             return
         self._start_reader(new)
+        await self._opened(new)
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(new.first_frame.wait(), self.settings.first_frame_timeout_s)
         if not new.first_frame.is_set() or new.closed.is_set():

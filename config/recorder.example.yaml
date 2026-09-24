@@ -31,6 +31,22 @@ binance_usdm:
     insurance_balance_s: 3600
     depth_audit_s: 600           # periodic snapshots for `quanta data book-audit`
 
+# Bybit linear perps — complete liquidation feed (allLiquidation) + L2 50 @20ms.
+bybit_linear:
+  enabled: true
+  book_symbols: [BTCUSDT, ETHUSDT, SOLUSDT]
+  book_depth: 50
+  universe: [BTCUSDT, ETHUSDT, SOLUSDT, XRPUSDT, DOGEUSDT]
+  ping_interval_s: 20
+
+# Deribit perps — trades carry a liquidation flag (complete); DVOL implied-volatility index.
+deribit:
+  enabled: true
+  instruments: [BTC-PERPETUAL, ETH-PERPETUAL]
+  book_interval: 100ms
+  volatility_indices: [btc_usd, eth_usd]
+  heartbeat_s: 30
+
 segments:
   rotate_s: 3600
   flush_interval_s: 1.0

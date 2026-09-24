@@ -1,0 +1,11 @@
+[Unit]
+Description=Run quanta daily lake job after the UTC day's last segment is finalized
+
+[Timer]
+# 00:20 UTC: the last hourly segment of the previous day is finalized at ~00:00 + flush.
+OnCalendar=*-*-* 00:20:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

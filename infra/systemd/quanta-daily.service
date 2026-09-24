@@ -1,0 +1,14 @@
+# Daily lake job: normalize yesterday's raw capture (all venues) + data quality report.
+# Install: copy both units to /etc/systemd/system, adjust paths, then
+#   systemctl daemon-reload && systemctl enable --now quanta-daily.timer
+[Unit]
+Description=quanta daily lake normalization and quality report
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=quanta
+WorkingDirectory=/opt/quanta
+ExecStart=/opt/quanta/.venv/bin/quanta lake daily --data-dir /var/lib/quanta/data
+Nice=10
+IOSchedulingClass=idle

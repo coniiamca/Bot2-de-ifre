@@ -55,6 +55,7 @@ WEIGHTS: dict[str, int] = {
     "/fapi/v1/openInterest": 1,
     "/fapi/v1/premiumIndex": 10,  # without symbol
     "/fapi/v1/fundingInfo": 1,
+    "/fapi/v1/fundingRate": 1,  # shares the 500 / 5 min IP limit with fundingInfo
     "/fapi/v1/insuranceBalance": 1,
     "/futures/data/openInterestHist": 0,  # separate IP limit (1000 / 5 min) on /futures/data
     "/futures/data/topLongShortAccountRatio": 0,
@@ -164,6 +165,10 @@ class BinanceUsdmRest:
 
     async def funding_info(self) -> RestResponse:
         return await self.get("/fapi/v1/fundingInfo")
+
+    async def funding_rate(self, symbol: str, limit: int = 3) -> RestResponse:
+        """Realized funding history (latest ``limit`` settlements)."""
+        return await self.get("/fapi/v1/fundingRate", {"symbol": symbol, "limit": limit})
 
     async def insurance_balance(self) -> RestResponse:
         return await self.get("/fapi/v1/insuranceBalance")

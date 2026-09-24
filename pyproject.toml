@@ -15,6 +15,7 @@ dependencies = [
     "zstandard>=0.23",
     "typer>=0.12",
     "uvloop>=0.20; sys_platform == 'linux'",
+    "pyarrow>=17",
 ]
 
 [project.optional-dependencies]
@@ -65,7 +66,7 @@ packages = ["quanta"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["zstandard.*", "boto3.*", "botocore.*", "uvloop.*"]
+module = ["zstandard.*", "boto3.*", "botocore.*", "uvloop.*", "pyarrow.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

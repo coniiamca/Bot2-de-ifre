@@ -37,6 +37,30 @@ uv run quanta data volume -d /var/lib/quanta/data
 `verify-aggtrades`: kayıt penceresi içinde `missing_in_window` her eksik için bir `trade_gap` meta kaydıyla açıklanmalı; `mismatched = 0`, `extra_ids = 0`.
 `book-audit`: `ok: true` (`compared > 0`, `mismatched = 0`, `errors = 0`).
 
+## Venue'ler
+| Venue | Neden | Protokol notu |
+|---|---|---|
+| `binance_usdm` | Execution venue'su; L2 diff + bookTicker + aggTrade + REST istatistikleri | `/public` ve `/market` rotaları; likidasyon stream'i **örneklenmiş** (sembol başı ≤1/sn) |
+| `bybit_linear` | **Tam likidasyon** (`allLiquidation`), ikinci likit perp defteri | Bağlantıda abonelik + 20 sn'de bir `{"op":"ping"}`. `u` ardışık garanti edilmediği için snapshot'larla senkron; `u=1` servis restart'ıdır (`book_reset`) |
+| `deribit` | Trade `liquidation` bayrağı (tam), DVOL implied volatility | JSON-RPC; `test_request` heartbeat'ine `public/test` ile cevap şart (yoksa sunucu kapatır). Gap'te yalnız book kanalı yeniden abone olur, trade'ler etkilenmez |
+
+Bybit ve Deribit ABD dahil bazı bölgelere hizmet vermez. Sunucu bölgesi seçilirken üçü de `check-access` benzeri bir testle doğrulanmalı (Bybit/Deribit için: WS bağlanıyor ve `depth_synced=1` oluyor mu?).
+
+## Günlük lake işi
+- `quanta lake daily -d /var/lib/quanta/data`: dünkü UTC gününü her venue için Parquet'e normalize eder (`lake/<venue>/<table>/date=…`) ve kalite raporunu yazar (`lake/_quality/date=….json`). Çıkış kodu 1 ise bir venue `bad` durumdadır ya da gün tamamlanmamıştır.
+- Zamanlama: `infra/systemd/quanta-daily.{service,timer}` (00:20 UTC), veya Docker ile `docker compose run --rm recorder lake daily -d /var/lib/quanta/data`.
+- Tekrarlanabilirlik kontrolü (haftalık önerilir): `quanta lake verify -d … --date …` → `ok: true`.
+- Kalite bayrakları (ADR-009): `bad` → araştırmada kullanılmaz; nedeni `streams_connected_fraction`, `schema_errors` (API drift) ve `events` alanlarından okunur.
+
+## Arşiv backfill'i (data.binance.vision)
+```bash
+uv run quanta data backfill -d /var/lib/quanta/data --dataset aggTrades -s BTCUSDT -s ETHUSDT \
+    --start 2026-01-01 --end 2026-09-23
+uv run quanta data backfill -d /var/lib/quanta/data --dataset metrics -s BTCUSDT --start 2021-01-01 --end 2026-09-23
+uv run quanta data backfill -d /var/lib/quanta/data --dataset fundingRate -s BTCUSDT --start 2020-01-01 --end 2026-08-31
+```
+Dosyalar yayınlanan `.CHECKSUM` ile doğrulanır, uyuşmayan dosya **saklanmaz** ve komut 1 ile çıkar. `missing` normaldir: dataset'lerin başlangıç tarihleri farklıdır, bazıları da durdurulmuştur (UM bookTicker 2024-03'te bitti). Tekrar çalıştırmak güvenlidir, aynalanmış dosyalar yeniden indirilmez.
+
 ## Alarmlar
 
 ### RecorderDown

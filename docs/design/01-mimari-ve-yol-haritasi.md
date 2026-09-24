@@ -8,8 +8,10 @@
 
 | Faz | Durum | Not |
 |---|---|---|
-| Faz 0 — Temel + Binance recorder | **Kod tamam, canlı doğrulama bekliyor** | Recorder, segment/manifest/recovery, uploader, doğrulama araçları, izleme stack'i, CI. Canlı 72 saatlik koşu seçilecek sunucuda yapılacak (geliştirme konteyneri Binance'ten HTTP 451 alıyor — bkz. runbook). |
-| Faz 1–10 | Bekliyor | §17 |
+| Faz 0 — Temel + Binance recorder | **Kod tamam, canlı doğrulama bekliyor** | Recorder, segment/manifest/recovery, uploader, doğrulama araçları, izleme stack'i, CI (yeşil). Canlı 72 saatlik koşu seçilecek sunucuda yapılacak (geliştirme konteyneri Binance'ten HTTP 451 alıyor — bkz. runbook). |
+| Faz 1 — ilk dilim | **Kod tamam** | Bybit linear (tam likidasyon: `allLiquidation`) ve Deribit (trade `liquidation` bayrağı, `change_id` zinciri, heartbeat) capture'ları; deterministik Parquet lake (3 venue, ADR-009); data.binance.vision backfill (checksum doğrulamalı ayna + Parquet); günlük kalite raporu; `lake daily` + systemd timer. |
+| Faz 1 — kalan | Bekliyor | OKX, Coinbase spot, Hyperliquid, Binance spot adapter'ları; yedek recorder; OKX/Bybit L2 arşivleri; hedefli veri alımı değerlendirmesi. |
+| Faz 2–10 | Bekliyor | §17 |
 
 # PART II — TASARIM
 

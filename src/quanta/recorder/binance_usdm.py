@@ -12,7 +12,6 @@ Principles (plan §8.2):
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import random
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -21,15 +20,15 @@ from typing import Any
 import aiohttp
 import msgspec
 
-from quanta.core.clock import NS_PER_MS, NS_PER_S, Clock
+from quanta.core.clock import Clock
 from quanta.core.log import get_logger
 from quanta.core.ticks import Scale, ScaleError
 from quanta.marketstate.orderbook import L2Book
 from quanta.net.ws import LifecycleEvent, ManagedWebSocket, WsSettings
+from quanta.recorder.base import VenueCapture, Writers, chunks
 from quanta.recorder.config import BinanceUsdmCaptureConfig
 from quanta.recorder.metrics import RecorderMetrics
-from quanta.recorder.records import meta_record, rest_record, ws_invalid_record, ws_record
-from quanta.recorder.segment import SegmentWriter
+from quanta.recorder.records import rest_record, ws_invalid_record, ws_record
 from quanta.venues.binance_usdm import endpoints as ep
 from quanta.venues.binance_usdm import messages as msg
 from quanta.venues.binance_usdm.ratelimit import WeightBudget
@@ -59,33 +58,12 @@ class DepthState:
     book: L2Book | None = None
     snapshot_requested: bool = False
     consecutive_failures: int = 0
-    audit_requested: bool = False
 
 
-class Writers:
-    """Segment writers per channel for this venue."""
+class BinanceUsdmCapture(VenueCapture):
+    VENUE = VENUE
+    CHANNELS = CHANNELS
 
-    def __init__(self, writers: dict[str, SegmentWriter], metrics: RecorderMetrics) -> None:
-        missing = set(CHANNELS) - set(writers)
-        if missing:
-            raise ValueError(f"missing writers for channels {sorted(missing)}")
-        self._w = writers
-        self._metrics = metrics
-
-    def write(self, channel: str, ts_ns: int, line: bytes) -> None:
-        self._w[channel].append(ts_ns, line)
-        self._metrics.bytes.labels(VENUE, channel).inc(len(line) + 1)
-
-    def meta(self, ts_ns: int, type_: str, **fields: Any) -> None:
-        self.write("meta", ts_ns, meta_record(ts_ns, type_, venue=VENUE, **fields))
-        self._metrics.meta_events.labels(type_).inc()
-
-
-def _chunks(items: list[str], size: int) -> list[list[str]]:
-    return [items[i : i + size] for i in range(0, len(items), size)]
-
-
-class BinanceUsdmCapture:
     def __init__(
         self,
         cfg: BinanceUsdmCaptureConfig,
@@ -96,58 +74,34 @@ class BinanceUsdmCapture:
         ws_settings: WsSettings,
         rng: random.Random | None = None,
     ) -> None:
+        super().__init__(session, clock, writers, metrics, ws_settings, rng)
         self.cfg = cfg
         env = ep.ENVIRONMENTS[cfg.environment]
         self.rest_url = cfg.rest_url or env.rest_url
         self.ws_url = cfg.ws_url or env.ws_url
-        self._session = session
-        self._clock = clock
-        self._w = writers
-        self._m = metrics
-        self._ws_settings = ws_settings
-        self._rng = rng or random.Random()  # noqa: S311 — scheduling jitter
         self.budget = WeightBudget(clock, fraction=cfg.max_weight_fraction)
         self.rest = BinanceUsdmRest(session, self.rest_url, self.budget, clock)
         self.depth: dict[str, DepthState] = {s: DepthState(s) for s in cfg.depth_symbols}
         self.trades: dict[str, ContiguousIdTracker] = {
             s: ContiguousIdTracker() for s in cfg.universe
         }
-        self.streams: list[ManagedWebSocket] = []
         self._depth_streams: list[ManagedWebSocket] = []
         self._snapshot_queue: asyncio.Queue[str] = asyncio.Queue()
-        self._stop = asyncio.Event()
-        self._tasks: list[asyncio.Task[None]] = []
         self.scales: dict[str, tuple[Scale, Scale]] = {}
         self.restricted = False
 
-    # -- lifecycle -----------------------------------------------------------------------
-    async def start(self) -> None:
-        self._w.meta(
-            self._clock.now_ns(),
-            "capture_start",
-            rest_url=self.rest_url,
-            ws_url=self.ws_url,
-            depth_symbols=self.cfg.depth_symbols,
-            universe=self.cfg.universe,
-        )
+    def describe(self) -> dict[str, Any]:
+        return {
+            "rest_url": self.rest_url,
+            "ws_url": self.ws_url,
+            "depth_symbols": self.cfg.depth_symbols,
+            "universe": self.cfg.universe,
+        }
+
+    async def prepare(self) -> None:
         await self._load_exchange_info(initial=True)
         self._build_streams()
-        for s in self.streams:
-            self._tasks.append(asyncio.create_task(s.run(), name=f"ws:{s.name}"))
-        self._tasks.append(asyncio.create_task(self._snapshot_worker(), name="depth-snapshots"))
-        self._start_pollers()
-
-    async def stop(self) -> None:
-        self._stop.set()
-        for s in self.streams:
-            s.stop()
-        for t in self._tasks:
-            if t.get_name().startswith(("poll:", "depth-snapshots")):
-                t.cancel()
-        for t in self._tasks:
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await t
-        self._w.meta(self._clock.now_ns(), "capture_stop")
+        self.spawn(self._snapshot_worker(), "depth-snapshots")
 
     # -- stream construction -------------------------------------------------------------
     def _build_streams(self) -> None:
@@ -155,34 +109,22 @@ class BinanceUsdmCapture:
         per = cfg.streams_per_connection
         groups: list[tuple[str, ep.Route, list[str], Callable[[str, int, int, str], None]]] = []
         depth = [ep.depth_stream(s, cfg.depth_speed_ms) for s in cfg.depth_symbols]
-        for i, chunk in enumerate(_chunks(depth, per)):
+        for i, chunk in enumerate(chunks(depth, per)):
             groups.append((f"depth{i}", ep.Route.PUBLIC, chunk, self._on_depth_frame))
         bbo = [ep.book_ticker_stream(s) for s in cfg.universe]
-        for i, chunk in enumerate(_chunks(bbo, per)):
+        for i, chunk in enumerate(chunks(bbo, per)):
             groups.append((f"bbo{i}", ep.Route.PUBLIC, chunk, self._on_bbo_frame))
         market: list[str] = []
         for s in cfg.universe:
             market += [ep.agg_trade_stream(s), ep.mark_price_stream(s), ep.kline_stream(s)]
         if cfg.record_force_orders:
             market.append(ep.ALL_FORCE_ORDERS)
-        for i, chunk in enumerate(_chunks(market, per)):
+        for i, chunk in enumerate(chunks(market, per)):
             groups.append((f"market{i}", ep.Route.MARKET, chunk, self._on_market_frame))
-
         for name, route, streams, handler in groups:
-            url = ep.combined_stream_url(self.ws_url, route, streams)
-            ws = ManagedWebSocket(
-                name=f"{VENUE}:{name}",
-                url=url,
-                session=self._session,
-                clock=self._clock,
-                on_frame=handler,
-                on_lifecycle=self._on_lifecycle,
-                settings=self._ws_settings,
-            )
-            self.streams.append(ws)
+            ws = self.add_stream(name, ep.combined_stream_url(self.ws_url, route, streams), handler)
             if name.startswith("depth"):
                 self._depth_streams.append(ws)
-            self._m.connection_up.labels(VENUE, ws.name).set(0)
 
     # -- frame handlers (synchronous, called from the WS reader) -------------------------
     def _decode(
@@ -198,14 +140,6 @@ class BinanceUsdmCapture:
         self._w.write(channel, recv_ns, ws_record(recv_ns, conn_id, seq, payload))
         return env
 
-    def _observe(self, kind: str, stream: str, recv_ns: int, event_ms: int) -> None:
-        self._m.messages.labels(VENUE, kind).inc()
-        if event_ms:
-            self._m.event_latency.labels(VENUE, kind).observe(
-                max(0.0, (recv_ns - event_ms * NS_PER_MS) / NS_PER_S)
-            )
-        self._m.last_message_ts.labels(VENUE, stream).set(recv_ns / NS_PER_S)
-
     def _on_depth_frame(self, conn_id: str, seq: int, recv_ns: int, text: str) -> None:
         env = self._decode("public_depth", conn_id, seq, recv_ns, text)
         if env is None:
@@ -215,11 +149,10 @@ class BinanceUsdmCapture:
         except msgspec.DecodeError:
             self._m.parse_errors.labels(VENUE, "depth").inc()
             return
-        self._observe("depth", conn_id.split("#")[0], recv_ns, ev.E)
+        self.observe("depth", conn_id.split("#")[0], recv_ns, ev.E)
         st = self.depth.get(ev.s)
-        if st is None:
-            return
-        self._sequence_depth(st, ev, recv_ns)
+        if st is not None:
+            self._sequence_depth(st, ev, recv_ns)
 
     def _sequence_depth(self, st: DepthState, ev: msg.DepthUpdate, recv_ns: int) -> None:
         res = st.sequencer.on_event(ev)
@@ -261,7 +194,7 @@ class BinanceUsdmCapture:
         st.sequencer.reset()
         st.book = None
         self._request_snapshot(st)
-        self._tasks.append(asyncio.create_task(self._refresh_exchange_info(), name="poll:xinfo"))
+        self.spawn(self._refresh_exchange_info(), "poll:xinfo")
 
     async def _refresh_exchange_info(self) -> None:
         try:
@@ -287,7 +220,7 @@ class BinanceUsdmCapture:
         except msgspec.DecodeError:
             self._m.parse_errors.labels(VENUE, "bookTicker").inc()
             return
-        self._observe("bookTicker", conn_id.split("#")[0], recv_ns, event_ms)
+        self.observe("bookTicker", conn_id.split("#")[0], recv_ns, event_ms)
 
     def _on_market_frame(self, conn_id: str, seq: int, recv_ns: int, text: str) -> None:
         env = self._decode("market", conn_id, seq, recv_ns, text)
@@ -298,16 +231,16 @@ class BinanceUsdmCapture:
         try:
             if kind == "aggTrade":
                 tr = msg.decode_agg_trade(env.data)
-                self._observe(kind, stream, recv_ns, tr.E)
+                self.observe(kind, stream, recv_ns, tr.E)
                 self._track_trade(tr, recv_ns)
             elif kind == "forceOrder":
                 orders = msg.decode_force_orders(env.data)
                 for fo in orders:
                     market = {1: "um", 2: "cm"}.get(fo.st or 1, "unknown")
                     self._m.liquidations.labels(VENUE, market).inc()
-                self._observe(kind, stream, recv_ns, orders[0].E if orders else 0)
+                self.observe(kind, stream, recv_ns, orders[0].E if orders else 0)
             else:
-                self._observe(kind, stream, recv_ns, msg.decode_event_time(env.data))
+                self.observe(kind, stream, recv_ns, msg.decode_event_time(env.data))
         except msgspec.DecodeError:
             self._m.parse_errors.labels(VENUE, kind).inc()
 
@@ -330,25 +263,9 @@ class BinanceUsdmCapture:
                 last_missing=gap.last_missing,
                 count=gap.count,
             )
-            log.warning("trade_gap", symbol=tr.s, missing=gap.count)
+            log.warning("trade_gap", venue=VENUE, symbol=tr.s, missing=gap.count)
 
-    def _on_lifecycle(self, ev: LifecycleEvent) -> None:
-        self._w.meta(
-            ev.ts_ns,
-            "ws_lifecycle",
-            stream=ev.name,
-            conn_id=ev.conn_id,
-            event=ev.event,
-            detail=ev.detail,
-        )
-        self._m.ws_events.labels(VENUE, ev.name, ev.event).inc()
-        ws = next((s for s in self.streams if s.name == ev.name), None)
-        if ws is None:
-            return
-        if ev.event == "connected":
-            self._m.connection_up.labels(VENUE, ws.name).set(1)
-        elif ev.event in ("disconnected", "connect_failed", "stopped"):
-            self._m.connection_up.labels(VENUE, ws.name).set(1 if ws.connected else 0)
+    def after_lifecycle(self, ev: LifecycleEvent, ws: ManagedWebSocket) -> None:
         if ev.event == "disconnected" and ws in self._depth_streams and not ws.connected:
             # Events were (or will be) missed: every book on this connection must resync.
             for st in self.depth.values():
@@ -490,13 +407,14 @@ class BinanceUsdmCapture:
         self.restricted = True
         self._m.restricted_location.labels(VENUE).set(1)
 
-    def _start_pollers(self) -> None:
+    def pollers(self) -> list[tuple[str, float, Callable[[], Awaitable[None]]]]:
         p = self.cfg.pollers
         stats_symbols = self.cfg.stats_symbols or self.cfg.universe
         jobs: list[tuple[str, float, Callable[[], Awaitable[None]]]] = [
             ("server_time", p.server_time_s, self._poll_server_time),
             ("exchange_info", p.exchange_info_s, lambda: self._load_exchange_info(False)),
             ("funding_info", p.funding_info_s, self._simple(self.rest.funding_info, "poll")),
+            ("funding_rate", p.funding_rate_s, self._poll_funding_rate),
             ("premium_index", p.premium_index_s, self._simple(self.rest.premium_index, "poll")),
             (
                 "insurance_balance",
@@ -508,11 +426,7 @@ class BinanceUsdmCapture:
         ]
         if p.depth_audit_s > 0 and self.cfg.depth_symbols:
             jobs.append(("depth_audit", p.depth_audit_s, self._poll_depth_audit))
-        for name, interval, fn in jobs:
-            if interval > 0:
-                self._tasks.append(
-                    asyncio.create_task(self._poll_loop(name, interval, fn), name=f"poll:{name}")
-                )
+        return jobs
 
     def _simple(
         self, call: Callable[[], Awaitable[RestResponse]], purpose: str
@@ -522,42 +436,30 @@ class BinanceUsdmCapture:
 
         return run
 
-    async def _poll_loop(
-        self, name: str, interval_s: float, fn: Callable[[], Awaitable[None]]
-    ) -> None:
-        await asyncio.sleep(self._rng.uniform(0, min(interval_s, 10.0)))
-        while not self._stop.is_set():
-            delay = interval_s
-            try:
-                await fn()
-            except RestrictedLocationError as exc:
-                self._record_rest_error(exc, name)
-                self._mark_restricted()
-                delay = max(interval_s, 300.0)
-            except RateLimitedError as exc:
-                self._record_rest_error(exc, name)
-                delay = max(interval_s, exc.retry_after_s)
-                log.error("rate_limited", poller=name, status=exc.status, retry_after=delay)
-            except BinanceRestError as exc:
-                self._record_rest_error(exc, name)
-                log.warning("poll_failed", poller=name, error=str(exc))
-            except (aiohttp.ClientError, TimeoutError) as exc:
-                log.warning("poll_failed", poller=name, error=repr(exc))
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                log.exception("poll_crashed", poller=name)
-            try:
-                await asyncio.wait_for(self._stop.wait(), timeout=delay)
-            except TimeoutError:
-                continue
+    def poll_error(self, name: str, exc: Exception, interval_s: float) -> float:
+        if isinstance(exc, RestrictedLocationError):
+            self._record_rest_error(exc, name)
+            self._mark_restricted()
+            return max(interval_s, 300.0)
+        if isinstance(exc, RateLimitedError):
+            self._record_rest_error(exc, name)
+            log.error("rate_limited", poller=name, status=exc.status, retry_after=exc.retry_after_s)
+            return max(interval_s, exc.retry_after_s)
+        if isinstance(exc, BinanceRestError):
+            self._record_rest_error(exc, name)
+            log.warning("poll_failed", venue=VENUE, poller=name, error=str(exc))
+            return interval_s
+        if isinstance(exc, aiohttp.ClientError | TimeoutError):
+            return super().poll_error(name, exc, interval_s)
+        log.error("poll_crashed", venue=VENUE, poller=name, error=repr(exc))
+        return interval_s
 
     async def _poll_server_time(self) -> None:
         resp = await self.rest.server_time()
         self._record_rest(resp, "server_time")
         server_ms = int(resp.json()["serverTime"])
         mid = (resp.sent_ns + resp.recv_ns) // 2
-        self._m.clock_offset.labels(VENUE).set((mid - server_ms * NS_PER_MS) / NS_PER_S)
+        self._m.clock_offset.labels(VENUE).set((mid - server_ms * 1_000_000) / 1e9)
         self._m.server_rtt.labels(VENUE).set(resp.latency_s)
         if self.restricted:
             self.restricted = False
@@ -617,6 +519,10 @@ class BinanceUsdmCapture:
     async def _poll_open_interest(self) -> None:
         for s in self.cfg.universe:
             self._record_rest(await self.rest.open_interest(s), "open_interest")
+
+    async def _poll_funding_rate(self) -> None:
+        for s in self.cfg.universe:
+            self._record_rest(await self.rest.funding_rate(s), "funding_rate")
 
     async def _poll_stats(self, symbols: list[str]) -> None:
         for s in symbols:

@@ -70,11 +70,12 @@ class FakeBinance:
         app.router.add_get("/fapi/v1/time", self._time)
         app.router.add_get("/fapi/v1/exchangeInfo", self._exchange_info)
         app.router.add_get("/fapi/v1/depth", self._depth)
-        app.router.add_get("/fapi/v1/openInterest", self._simple({"openInterest": "10.000"}))
-        app.router.add_get("/fapi/v1/premiumIndex", self._simple([{"symbol": "X"}]))
-        app.router.add_get("/fapi/v1/fundingInfo", self._simple([]))
+        app.router.add_get("/fapi/v1/openInterest", self._open_interest)
+        app.router.add_get("/fapi/v1/premiumIndex", self._premium_index)
+        app.router.add_get("/fapi/v1/fundingInfo", self._funding_info)
+        app.router.add_get("/fapi/v1/fundingRate", self._funding_rate)
         app.router.add_get("/fapi/v1/insuranceBalance", self._simple([]))
-        app.router.add_get("/futures/data/{name}", self._simple([{"x": 1}]))
+        app.router.add_get("/futures/data/{name}", self._stats)
         self.app = app
 
     def _init_symbol(self, s: str) -> SymbolState:
@@ -301,6 +302,73 @@ class FakeBinance:
         if self.snapshot_delay_s:
             await asyncio.sleep(self.snapshot_delay_s)
         return web.json_response(body, headers={"X-MBX-USED-WEIGHT-1M": "20"})
+
+    async def _open_interest(self, request: web.Request) -> web.Response:
+        self._guard(request)
+        return web.json_response(
+            {"openInterest": "10.000", "symbol": request.query["symbol"], "time": _ms()}
+        )
+
+    async def _premium_index(self, request: web.Request) -> web.Response:
+        self._guard(request)
+        now = _ms()
+        return web.json_response(
+            [
+                {
+                    "symbol": s,
+                    "markPrice": "100.0",
+                    "indexPrice": "100.0",
+                    "estimatedSettlePrice": "100.0",
+                    "lastFundingRate": "0.0001",
+                    "interestRate": "0.0001",
+                    "nextFundingTime": now + 3_600_000,
+                    "time": now,
+                }
+                for s in self.state
+            ]
+        )
+
+    async def _funding_info(self, request: web.Request) -> web.Response:
+        self._guard(request)
+        return web.json_response(
+            [
+                {
+                    "symbol": s,
+                    "adjustedFundingRateCap": "0.02",
+                    "adjustedFundingRateFloor": "-0.02",
+                    "fundingIntervalHours": 8,
+                    "disclaimer": False,
+                }
+                for s in self.state
+            ]
+        )
+
+    async def _funding_rate(self, request: web.Request) -> web.Response:
+        self._guard(request)
+        t0 = _ms() // 28_800_000 * 28_800_000
+        return web.json_response(
+            [
+                {
+                    "symbol": request.query["symbol"],
+                    "fundingRate": "0.00010000",
+                    "fundingTime": t0 - i * 28_800_000,
+                    "markPrice": "100.0",
+                }
+                for i in range(3)
+            ]
+        )
+
+    async def _stats(self, request: web.Request) -> web.Response:
+        self._guard(request)
+        s, name = request.query["symbol"], request.match_info["name"]
+        ts = _ms() // 300_000 * 300_000
+        if name == "openInterestHist":
+            row = {"sumOpenInterest": "10.0", "sumOpenInterestValue": "1000.0"}
+        elif name == "takerlongshortRatio":
+            row = {"buySellRatio": "1.1", "buyVol": "11.0", "sellVol": "10.0"}
+        else:
+            row = {"longShortRatio": "1.2", "longAccount": "0.55", "shortAccount": "0.45"}
+        return web.json_response([{"symbol": s, **row, "timestamp": ts}])
 
     def _simple(self, payload: Any):  # type: ignore[no-untyped-def]
         async def handler(request: web.Request) -> web.Response:

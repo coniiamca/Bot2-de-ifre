@@ -9,9 +9,7 @@ our capture with identical fields.
 from __future__ import annotations
 
 import csv
-import hashlib
 import io
-import urllib.request
 import zipfile
 from dataclasses import dataclass, field
 from datetime import date
@@ -65,18 +63,22 @@ def archive_url(symbol: str, day: date) -> str:
 
 
 def download_archive(symbol: str, day: date, cache_dir: Path) -> Path:
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    url = archive_url(symbol, day)
-    dest = cache_dir / url.rsplit("/", 1)[-1]
-    if not dest.exists():
-        with urllib.request.urlopen(url, timeout=120) as resp:  # noqa: S310 — fixed https URL
-            data = resp.read()
-        with urllib.request.urlopen(url + ".CHECKSUM", timeout=30) as resp:  # noqa: S310
-            expected = resp.read().decode().split()[0]
-        if hashlib.sha256(data).hexdigest() != expected:
-            raise OSError(f"checksum mismatch for {url}")
-        dest.write_bytes(data)
-    return dest
+    """Checksum-verified download via the shared archive mirror (quanta.archive)."""
+    import asyncio
+
+    import aiohttp
+
+    from quanta.archive.binance_vision import BASE_URL, archive_path, fetch
+
+    async def run() -> Path:
+        rel = archive_path("aggTrades", symbol, "daily", day.isoformat())
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=600)) as session:
+            res = await fetch(session, BASE_URL, rel, cache_dir)
+        if res.path is None:
+            raise OSError(f"archive {res.url}: {res.status} {res.error or ''}".strip())
+        return res.path
+
+    return asyncio.run(run())
 
 
 def read_archive(path: Path) -> dict[int, TradeRow]:

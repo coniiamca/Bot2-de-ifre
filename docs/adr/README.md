@@ -12,3 +12,4 @@ Her ADR: bağlam → karar → gerekçe → sonuçlar → yeniden değerlendirme
 | [006](ADR-006-hesap-yapilandirmasi.md) | Hesap: one-way, isolated, USDT-only, multi-assets kapalı | Kabul |
 | [007](ADR-007-secret-yonetimi.md) | Secret yönetimi ve log redaction | Kabul |
 | [008](ADR-008-raw-capture-formati.md) | Raw capture formatı: JSONL + bağımsız zstd frame + manifest + in-band meta | Kabul |
+| [009](ADR-009-lake-semasi.md) | Normalize lake: şema, tekilleştirme, determinizm, lineage, kalite bayrakları | Kabul |

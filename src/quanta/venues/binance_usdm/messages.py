@@ -77,6 +77,27 @@ class ForceOrder(msgspec.Struct, frozen=True):
     st: int | None = None  # 1 = USDⓈ-M, 2 = COIN-M (all-market streams mix both since 2026-06)
 
 
+class Kline(msgspec.Struct, frozen=True):
+    t: int  # open time (ms)
+    T: int  # close time (ms)
+    o: str
+    c: str
+    h: str
+    l: str  # noqa: E741 — exchange field name
+    v: str  # base volume
+    n: int  # trades
+    x: bool  # closed
+    q: str  # quote volume
+    V: str  # taker buy base volume
+    Q: str  # taker buy quote volume
+
+
+class KlineEvent(msgspec.Struct, frozen=True):
+    E: int
+    s: str
+    k: Kline
+
+
 class EventTime(msgspec.Struct, frozen=True):
     """Minimal view used when only the event time matters (latency metrics)."""
 
@@ -91,6 +112,7 @@ _mark_decoder = msgspec.json.Decoder(MarkPrice)
 _force_decoder = msgspec.json.Decoder(ForceOrder)
 _force_arr_decoder = msgspec.json.Decoder(list[ForceOrder] | ForceOrder)
 _event_time_decoder = msgspec.json.Decoder(EventTime)
+_kline_decoder = msgspec.json.Decoder(KlineEvent)
 
 
 def decode_envelope(raw: bytes | str) -> Envelope:
@@ -116,6 +138,10 @@ def decode_mark_price(raw: msgspec.Raw | bytes) -> MarkPrice:
 def decode_force_orders(raw: msgspec.Raw | bytes) -> list[ForceOrder]:
     value = _force_arr_decoder.decode(raw)
     return value if isinstance(value, list) else [value]
+
+
+def decode_kline(raw: msgspec.Raw | bytes) -> KlineEvent:
+    return _kline_decoder.decode(raw)
 
 
 def decode_event_time(raw: msgspec.Raw | bytes) -> int:

@@ -20,6 +20,12 @@ Araştırma odaklı, üretim seviyesinde **vadeli kripto (perpetual futures) tra
 - Doğrulama araçları: resmi arşive karşı trade tamlığı, offline order book denetimi, erişim ve latency kontrolü, hacim raporu
 - Prometheus metrikleri, 18 alarm kuralı (birim testli), Alertmanager (Telegram + dead-man), Grafana dashboard'u
 
+**Faz 1 (ilk dilim)** kodu tamam:
+- **Bybit** linear ve **Deribit** capture'ları: tam likidasyon kaynakları, protokole özgü sıralama ve heartbeat
+- Raw'dan **deterministik Parquet lake** (3 venue, bit-bit tekrarlanabilir, lineage metadata'lı; ADR-009)
+- **data.binance.vision backfill:** checksum doğrulamalı ayna + Parquet
+- **Günlük kalite raporu:** stream kapsaması, gap'ler, API drift, latency; `lake daily` + systemd timer
+
 Sonraki fazlar: [yol haritası §17](docs/design/01-mimari-ve-yol-haritasi.md).
 
 ## Hızlı başlangıç (geliştirme)
@@ -31,6 +37,8 @@ uv run quanta --help
 uv run quanta recorder check-access           # bu makine Binance'e erişebiliyor mu? (HTTP 451?)
 cp config/recorder.example.yaml config/recorder.local.yaml
 uv run quanta recorder run -c config/recorder.local.yaml
+uv run quanta lake daily -d /var/lib/quanta/data          # dünü normalize et + kalite raporu
+uv run quanta data backfill -d DATA --dataset aggTrades -s BTCUSDT --start 2026-09-01 --end 2026-09-20
 ```
 Production kurulumu: [runbook](docs/runbooks/recorder.md).
 
@@ -41,7 +49,9 @@ src/quanta/
   net/ws.py        yönetilen WebSocket (backoff, idle/heartbeat, make-before-break)
   venues/binance_usdm/  endpoints (rota eşlemesi), messages, sequencing (depth/id), rest, ratelimit
   marketstate/     L2 order book
-  recorder/        segment formatı, capture, uploader, servis, metrikler
+  recorder/        segment formatı, venue capture'ları (binance_usdm, bybit_linear, deribit), uploader, servis
+  lake/            raw → deterministik Parquet normalizer'ları, kalite raporu, tekrarlanabilirlik doğrulaması
+  archive/         data.binance.vision backfill
   tools/           verify-aggtrades, book-audit, access, volume
 infra/             Dockerfile, compose, Prometheus kuralları + testleri, Alertmanager, Grafana
 docs/              araştırma, tasarım, ADR, runbook

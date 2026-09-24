@@ -23,6 +23,8 @@ recorder_app = typer.Typer(help="Market data recorder")
 data_app = typer.Typer(help="Data verification and inspection tools")
 app.add_typer(recorder_app, name="recorder")
 app.add_typer(data_app, name="data")
+lake_app = typer.Typer(help="Normalized Parquet lake")
+app.add_typer(lake_app, name="lake")
 
 
 def _run(coro: object) -> object:
@@ -99,6 +101,62 @@ def data_verify_aggtrades(
     raise typer.Exit(0 if rep.ok else 1)
 
 
+@data_app.command("backfill")
+def data_backfill(
+    data_dir: Annotated[Path, typer.Option("--data-dir", "-d")],
+    dataset: Annotated[
+        str,
+        typer.Option(
+            help="aggTrades|trades|klines|markPriceKlines|"
+            "indexPriceKlines|premiumIndexKlines|"
+            "bookDepth|metrics|fundingRate"
+        ),
+    ],
+    symbol: Annotated[list[str], typer.Option("--symbol", "-s")],
+    start: Annotated[str, typer.Option(help="first UTC day YYYY-MM-DD")],
+    end: Annotated[str, typer.Option(help="last UTC day YYYY-MM-DD (inclusive)")],
+    interval: str = "1m",
+    no_convert: bool = False,
+    concurrency: int = 4,
+) -> None:
+    """Mirror + checksum-verify data.binance.vision files and convert them to Parquet."""
+    from quanta.archive.binance_vision import backfill
+
+    async def main() -> bool:
+        ok = True
+        for sym in symbol:
+            rep = await backfill(
+                data_dir,
+                dataset,
+                sym.upper(),
+                date.fromisoformat(start),
+                date.fromisoformat(end),
+                interval=interval,
+                convert_parquet=not no_convert,
+                concurrency=concurrency,
+            )
+            ok &= rep.ok
+            typer.echo(
+                json.dumps(
+                    {
+                        "symbol": rep.symbol,
+                        "dataset": dataset,
+                        "counts": rep.counts(),
+                        "rows": sum(rep.converted_rows.values()),
+                        "missing": [r.url for r in rep.results if r.status == "missing"][:20],
+                        "failed": [
+                            (r.url, r.status, r.error)
+                            for r in rep.results
+                            if r.status in ("checksum_mismatch", "error")
+                        ],
+                    }
+                )
+            )
+        return ok
+
+    raise typer.Exit(0 if _run(main()) else 1)
+
+
 @data_app.command("book-audit")
 def data_book_audit(
     data_dir: Annotated[Path, typer.Option("--data-dir", "-d")],
@@ -133,6 +191,106 @@ def data_cat(
     for line in iter_lines(path):
         if kind is None or f'"k":"{kind}"'.encode() in line[:48]:
             out.write(line + b"\n")
+
+
+@lake_app.command("normalize")
+def lake_normalize(
+    data_dir: Annotated[Path, typer.Option("--data-dir", "-d")],
+    day: Annotated[str, typer.Option("--date", help="UTC day YYYY-MM-DD")],
+    venue: Annotated[list[str] | None, typer.Option(help="venue(s); default: all")] = None,
+    allow_partial: bool = False,
+) -> None:
+    """Derive deterministic Parquet tables for one UTC day from raw capture."""
+    from quanta.lake.normalize import VENUES, PartialDataError, normalize_day
+
+    configure_logging("INFO", json=False)
+    failed = False
+    for v in venue or list(VENUES):
+        if not (data_dir / "raw" / v).exists():
+            continue
+        try:
+            m = normalize_day(data_dir, v, date.fromisoformat(day), allow_partial=allow_partial)
+        except PartialDataError as exc:
+            typer.echo(f"{v}: {exc} (finish the day or pass --allow-partial)", err=True)
+            failed = True
+            continue
+        rows = {t: x["rows"] for t, x in m.tables.items() if x["rows"]}
+        typer.echo(
+            json.dumps(
+                {
+                    "venue": v,
+                    "date": day,
+                    "sources": len(m.sources),
+                    "invalid_frames": m.invalid_frames,
+                    "schema_errors": m.schema_errors,
+                    "rows": rows,
+                }
+            )
+        )
+    raise typer.Exit(1 if failed else 0)
+
+
+@lake_app.command("quality")
+def lake_quality(
+    data_dir: Annotated[Path, typer.Option("--data-dir", "-d")],
+    day: Annotated[str | None, typer.Option("--date", help="UTC day; default yesterday")] = None,
+) -> None:
+    """Daily data quality report (coverage, gaps, drift, latency) → lake/_quality/."""
+    from quanta.lake.normalize import VENUES
+    from quanta.lake.quality import previous_utc_day, quality_report
+
+    d = date.fromisoformat(day) if day else previous_utc_day()
+    report = quality_report(data_dir, d, list(VENUES))
+    if not report:
+        typer.echo(f"no normalized data for {d}; run `quanta lake normalize` first", err=True)
+        raise typer.Exit(2)
+    typer.echo(json.dumps(report, indent=2))
+    raise typer.Exit(1 if any(v["flag"] == "bad" for v in report.values()) else 0)
+
+
+@lake_app.command("daily")
+def lake_daily(
+    data_dir: Annotated[Path, typer.Option("--data-dir", "-d")],
+    day: Annotated[str | None, typer.Option("--date", help="UTC day; default yesterday")] = None,
+) -> None:
+    """Daily job: normalize every venue for the (finished) day, then the quality report."""
+    from quanta.lake.normalize import VENUES, PartialDataError, normalize_day
+    from quanta.lake.quality import previous_utc_day, quality_report
+
+    configure_logging("INFO", json=True)
+    d = date.fromisoformat(day) if day else previous_utc_day()
+    venues = [v for v in VENUES if (data_dir / "raw" / v).exists()]
+    problems: list[str] = []
+    for v in venues:
+        try:
+            normalize_day(data_dir, v, d)
+        except PartialDataError as exc:
+            problems.append(f"{v}: {exc}")
+    report = quality_report(data_dir, d, venues)
+    typer.echo(
+        json.dumps(
+            {
+                "date": d.isoformat(),
+                "problems": problems,
+                "flags": {v: q["flag"] for v, q in report.items()},
+            }
+        )
+    )
+    bad = problems or any(q["flag"] == "bad" for q in report.values())
+    raise typer.Exit(1 if bad else 0)
+
+
+@lake_app.command("verify")
+def lake_verify(
+    data_dir: Annotated[Path, typer.Option("--data-dir", "-d")],
+    day: Annotated[str, typer.Option("--date", help="UTC day YYYY-MM-DD")],
+) -> None:
+    """Reproducibility check: re-derive the day in a temp dir and compare checksums."""
+    from quanta.lake.verify import verify_day
+
+    report = verify_day(data_dir, date.fromisoformat(day))
+    typer.echo(json.dumps(report, indent=2))
+    raise typer.Exit(0 if report["ok"] else 1)
 
 
 if __name__ == "__main__":

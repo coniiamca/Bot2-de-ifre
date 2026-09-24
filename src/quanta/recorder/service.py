@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import shutil
 import socket
+from collections.abc import Callable
 
 import aiohttp
 
@@ -15,13 +16,17 @@ from quanta.core.config import config_hash
 from quanta.core.log import get_logger
 from quanta.core.metrics import serve_metrics
 from quanta.net.ws import WsSettings
-from quanta.recorder.binance_usdm import CHANNELS, VENUE, BinanceUsdmCapture, Writers
+from quanta.recorder.base import VenueCapture, Writers
+from quanta.recorder.binance_usdm import BinanceUsdmCapture
+from quanta.recorder.bybit_linear import BybitLinearCapture
 from quanta.recorder.config import RecorderConfig
+from quanta.recorder.deribit import DeribitCapture
 from quanta.recorder.metrics import RecorderMetrics
 from quanta.recorder.segment import SegmentInfo, SegmentWriter, recover_all
 from quanta.recorder.uploader import Uploader, build_target
 
 log = get_logger(__name__)
+Factory = Callable[[aiohttp.ClientSession, Writers], VenueCapture]
 
 
 class RecorderService:
@@ -35,9 +40,14 @@ class RecorderService:
         self.clock = clock or LiveClock()
         self.metrics = metrics or RecorderMetrics()
         self.host = cfg.host_id or socket.gethostname()
-        self.writers: dict[str, SegmentWriter] = {}
-        self.capture: BinanceUsdmCapture | None = None
+        self.writers: dict[tuple[str, str], SegmentWriter] = {}
+        self.captures: dict[str, VenueCapture] = {}
         self.uploader: Uploader | None = None
+
+    @property
+    def capture(self) -> VenueCapture | None:
+        """The Binance capture (kept for backwards compatibility in tests/tools)."""
+        return self.captures.get("binance_usdm")
 
     def _ws_settings(self) -> WsSettings:
         w = self.cfg.ws
@@ -54,20 +64,13 @@ class RecorderService:
         self.metrics.segments_finalized.labels(info.venue, info.channel).inc()
         log.info("segment_finalized", file=info.file, records=info.records, bytes=info.bytes)
 
-    async def run(self, stop: asyncio.Event) -> None:
-        cfg = self.cfg
-        cfg.data_dir.mkdir(parents=True, exist_ok=True)
-        recovered = await asyncio.to_thread(recover_all, cfg.data_dir)
-        if cfg.metrics.enabled:
-            serve_metrics(self.metrics.registry, cfg.metrics.host, cfg.metrics.port)
-        self.metrics.build.info(
-            {"version": __version__, "config_hash": config_hash(cfg), "host": self.host}
-        )
-        seg = cfg.segments
-        for ch in CHANNELS:
-            self.writers[ch] = SegmentWriter(
-                cfg.data_dir,
-                VENUE,
+    def _venue_writers(self, venue: str, channels: tuple[str, ...]) -> Writers:
+        seg = self.cfg.segments
+        chans: dict[str, SegmentWriter] = {}
+        for ch in channels:
+            w = SegmentWriter(
+                self.cfg.data_dir,
+                venue,
                 ch,
                 self.clock,
                 rotate_ns=seg.rotate_s * NS_PER_S,
@@ -77,22 +80,67 @@ class RecorderService:
                 on_finalized=self._on_finalized,
                 host=self.host,
             )
-        writers = Writers(self.writers, self.metrics)
-        writers.meta(
-            self.clock.now_ns(),
-            "recorder_start",
-            version=__version__,
-            config_hash=config_hash(cfg),
-            host=self.host,
-            recovered_segments=[r.file for r in recovered],
-        )
+            self.writers[(venue, ch)] = w
+            chans[ch] = w
+        return Writers(venue, chans, self.metrics, channels)
+
+    async def run(self, stop: asyncio.Event) -> None:
+        cfg = self.cfg
+        cfg.data_dir.mkdir(parents=True, exist_ok=True)
+        recovered = await asyncio.to_thread(recover_all, cfg.data_dir)
+        if cfg.metrics.enabled:
+            serve_metrics(self.metrics.registry, cfg.metrics.host, cfg.metrics.port)
+        chash = config_hash(cfg)
+        self.metrics.build.info({"version": __version__, "config_hash": chash, "host": self.host})
+
+        ws = self._ws_settings()
+        factories: list[tuple[str, tuple[str, ...], Factory]] = []
+        if cfg.binance_usdm.enabled:
+            factories.append(
+                (
+                    BinanceUsdmCapture.VENUE,
+                    BinanceUsdmCapture.CHANNELS,
+                    lambda s, w: BinanceUsdmCapture(
+                        cfg.binance_usdm, s, self.clock, w, self.metrics, ws
+                    ),
+                )
+            )
+        if cfg.bybit_linear.enabled:
+            factories.append(
+                (
+                    BybitLinearCapture.VENUE,
+                    BybitLinearCapture.CHANNELS,
+                    lambda s, w: BybitLinearCapture(
+                        cfg.bybit_linear, s, self.clock, w, self.metrics, ws
+                    ),
+                )
+            )
+        if cfg.deribit.enabled:
+            factories.append(
+                (
+                    DeribitCapture.VENUE,
+                    DeribitCapture.CHANNELS,
+                    lambda s, w: DeribitCapture(cfg.deribit, s, self.clock, w, self.metrics, ws),
+                )
+            )
+        venue_writers = {v: self._venue_writers(v, chans) for v, chans, _ in factories}
+        for vw in venue_writers.values():
+            vw.meta(
+                self.clock.now_ns(),
+                "recorder_start",
+                version=__version__,
+                config_hash=chash,
+                host=self.host,
+                recovered_segments=[r.file for r in recovered if r.venue == vw.venue],
+            )
 
         flush_stop = asyncio.Event()
+        seg = cfg.segments
         tasks = [
             asyncio.create_task(
-                w.run_flusher(seg.flush_interval_s, flush_stop), name=f"flush:{name}"
+                w.run_flusher(seg.flush_interval_s, flush_stop), name=f"flush:{v}/{c}"
             )
-            for name, w in self.writers.items()
+            for (v, c), w in self.writers.items()
         ]
         tasks.append(asyncio.create_task(self._disk_monitor(flush_stop), name="disk"))
         if cfg.uploader.enabled:
@@ -115,22 +163,17 @@ class RecorderService:
             connector=connector,
             headers={"User-Agent": f"quanta-recorder/{__version__}"},
         ) as session:
-            if cfg.binance_usdm.enabled:
-                self.capture = BinanceUsdmCapture(
-                    cfg.binance_usdm,
-                    session,
-                    self.clock,
-                    writers,
-                    self.metrics,
-                    self._ws_settings(),
-                )
-                await self.capture.start()
-            log.info("recorder_started", data_dir=str(cfg.data_dir))
+            for venue, _, factory in factories:
+                capture = factory(session, venue_writers[venue])
+                self.captures[venue] = capture
+                await capture.start()
+            log.info("recorder_started", data_dir=str(cfg.data_dir), venues=list(self.captures))
             await stop.wait()
             log.info("recorder_stopping")
-            if self.capture is not None:
-                await self.capture.stop()
-        writers.meta(self.clock.now_ns(), "recorder_stop")
+            for capture in self.captures.values():
+                await capture.stop()
+        for vw in venue_writers.values():
+            vw.meta(self.clock.now_ns(), "recorder_stop")
         flush_stop.set()
         for t in tasks:
             with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -148,7 +191,7 @@ class RecorderService:
             self.metrics.disk_free.set(free)
             if free < min_free:
                 log.critical("disk_space_low", free_gb=round(free / 1e9, 2))
-            for name, w in self.writers.items():
-                self.metrics.segment_write_errors.labels(VENUE, name).set(w.write_errors)
+            for (venue, name), w in self.writers.items():
+                self.metrics.segment_write_errors.labels(venue, name).set(w.write_errors)
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=30)
