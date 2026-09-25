@@ -279,7 +279,7 @@ jobs:
 
           upd; test "$(result)" = skipped_failed; test "$(deployed)" = "$A"
 
-          git revert --no-edit HEAD -q; C=$(git rev-parse HEAD)
+          git revert --no-edit HEAD >/dev/null; C=$(git rev-parse HEAD)
           checks "$C" '{"check_runs":[{"status":"completed","conclusion":"failure"}]}'
           upd; test "$(result)" = ci_failed; test "$(deployed)" = "$A"
       - name: Diagnostics
