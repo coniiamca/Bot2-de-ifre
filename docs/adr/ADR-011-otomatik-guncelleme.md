@@ -1,6 +1,6 @@
 # ADR-011 — Otomatik güncelleme: çekme tabanlı, CI kapılı, geri dönüşlü
 
-**Durum:** Kabul (2026-09-25) · Faz 4'ten önce yeniden karar zorunlu (madde 5).
+**Durum:** Kabul (2026-09-25) · Madde 5, gerçek para anahtarlarından (Faz 7) önce zorunlu. Demo anahtarı için değerlendirme: ADR-012.
 
 ## Bağlam
 Kullanıcı her güncellemeyi sunucuda elle çalıştırmak istemiyor. Geliştirme oturumu sunucuya erişemiyor: dışarıya SSH kapalı ve bu doğru, çünkü sunucu erişim bilgisi sohbete girmemeli. Sunucu paylaşımlı; aynı makinede kullanıcının başka işleri de var.

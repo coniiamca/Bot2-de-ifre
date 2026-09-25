@@ -31,6 +31,8 @@ lake_app = typer.Typer(help="Normalized Parquet lake")
 app.add_typer(lake_app, name="lake")
 research_app = typer.Typer(help="Research and backtests (needs the 'research' extra)")
 app.add_typer(research_app, name="research")
+trader_app = typer.Typer(help="Order execution on Binance's demo account (Faz 4)")
+app.add_typer(trader_app, name="trader")
 
 
 def _run(coro: object) -> object:
@@ -499,13 +501,23 @@ def ui(
     access_file: Annotated[
         Path | None, typer.Option(help="default: <data-dir>/access.json")
     ] = None,
+    trader_state: Annotated[
+        Path | None, typer.Option(help="demo trader state.json (shown when it exists)")
+    ] = Path("/var/lib/quanta/trader-demo/state.json"),
 ) -> None:
     """Read-only web status page (publish to your tailnet with `tailscale serve`)."""
     from quanta.ui.app import UiConfig, run_ui
 
     configure_logging("INFO", json=True)
     run_ui(
-        UiConfig(metrics_url=metrics_url, data_dir=data_dir, access_file=access_file), host, port
+        UiConfig(
+            metrics_url=metrics_url,
+            data_dir=data_dir,
+            access_file=access_file,
+            trader_state=trader_state,
+        ),
+        host,
+        port,
     )
 
 
@@ -636,6 +648,120 @@ def research_run(
     doc = runner(prereg, sha, root, repo, final=final, exploratory=exploratory)
     out = write_report(repo, doc, render(doc), None if not doc["exploratory"] else root / "reports")
     typer.echo(json.dumps({"verdict": doc["verdict"], "report": str(out)}))
+
+
+TraderConfigOpt = Annotated[Path, typer.Option("--config", "-c")]
+StateDirOpt = Annotated[Path, typer.Option("--state-dir", help="the trader's state directory")]
+
+
+def _trader_config(config: Path) -> Any:
+    from quanta.trader.config import TraderConfig
+
+    try:
+        return load_yaml_config(config, TraderConfig)
+    except ConfigError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+
+
+@trader_app.command("run")
+def trader_run(config: TraderConfigOpt) -> None:
+    """Run the demo trader until SIGTERM/SIGINT (starts in safe mode, reconciles first)."""
+    import aiohttp
+
+    from quanta.trader.service import Trader
+    from quanta.venues.binance_usdm.signing import load_signer
+
+    cfg = _trader_config(config)
+    configure_logging(cfg.log_level, json=True)
+    signer = load_signer(cfg.keys.type, cfg.keys.api_key_file, cfg.keys.secret_file)
+
+    async def main() -> None:
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, stop.set)
+        async with aiohttp.ClientSession() as session:
+            await Trader(cfg, session, signer).run(stop)
+
+    _run(main())
+
+
+@trader_app.command("check")
+def trader_check(config: TraderConfigOpt) -> None:
+    """Can the key reach the demo account? Prints clock offset and balance (no orders)."""
+    import aiohttp
+
+    from quanta.core.clock import LiveClock
+    from quanta.venues.binance_usdm.ratelimit import WeightBudget
+    from quanta.venues.binance_usdm.signing import load_signer
+    from quanta.venues.binance_usdm.trade_rest import BinanceTradeRest, TradeError
+
+    cfg = _trader_config(config)
+    configure_logging("WARNING", json=True)
+    signer = load_signer(cfg.keys.type, cfg.keys.api_key_file, cfg.keys.secret_file)
+
+    async def main() -> dict[str, Any]:
+        clock = LiveClock()
+        async with aiohttp.ClientSession() as session:
+            rest = BinanceTradeRest(session, cfg.rest_url, signer, WeightBudget(clock), clock)
+            try:
+                offset = await rest.sync_time()
+                acct = await rest.account()
+            except TradeError as e:
+                return {"ok": False, "error": f"{e.action}: {e.code} {e.msg}"}
+            return {
+                "ok": True,
+                "clock_offset_ms": round(offset * 1000, 1),
+                "balance_usdt": acct.get("totalWalletBalance"),
+                "key_type": signer.kind,
+            }
+
+    out = _run(main())
+    typer.echo(json.dumps(out))
+    raise typer.Exit(0 if out["ok"] else 1)  # type: ignore[index]
+
+
+@trader_app.command("keygen")
+def trader_keygen(
+    out: Annotated[Path, typer.Option(help="private key file (0400)")] = Path(
+        "/etc/quanta/secrets/binance_demo_ed25519.pem"
+    ),
+) -> None:
+    """Create an Ed25519 key pair on this machine; prints the PUBLIC key for Binance."""
+    from quanta.venues.binance_usdm.signing import generate_ed25519, public_key_pem
+
+    if out.exists():
+        typer.echo(public_key_pem(out), nl=False)
+        return
+    typer.echo(generate_ed25519(out), nl=False)
+
+
+def _command(state_dir: Path, cmd: str) -> None:
+    import getpass
+
+    from quanta.trader.service import write_command
+
+    path = write_command(state_dir, cmd, getpass.getuser())
+    typer.echo(f"{cmd}: {path.name} (the running trader applies it within a second)")
+
+
+@trader_app.command("halt")
+def trader_halt(state_dir: StateDirOpt = Path("/var/lib/quanta/trader-demo")) -> None:
+    """Stop opening new positions (HALTED); only `resume` undoes it."""
+    _command(state_dir, "halt")
+
+
+@trader_app.command("flatten")
+def trader_flatten(state_dir: StateDirOpt = Path("/var/lib/quanta/trader-demo")) -> None:
+    """Emergency close: cancel all orders, close all positions reduce-only, then HALTED."""
+    _command(state_dir, "flatten")
+
+
+@trader_app.command("resume")
+def trader_resume(state_dir: StateDirOpt = Path("/var/lib/quanta/trader-demo")) -> None:
+    """A person's decision to leave HALTED."""
+    _command(state_dir, "resume")
 
 
 if __name__ == "__main__":

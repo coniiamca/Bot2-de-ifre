@@ -1,0 +1,41 @@
+# quanta demo trader — Binance DEMO account only (no real money). Created by bootstrap.sh
+# as /etc/quanta/trader-demo.yaml and never overwritten. The service starts only after the
+# key was added with:  sudo quanta-demo-anahtar
+environment: demo
+rest_url: https://demo-fapi.binance.com
+ws_url: wss://demo-fstream.binance.com
+symbols: [BTCUSDT]
+leverage: 3                   # isolated margin, one-way mode (set by the trader)
+keys:
+  type: ed25519               # the private key is generated on this server and never leaves it
+  api_key_file: /etc/quanta/secrets/binance_demo_api_key
+  secret_file: /etc/quanta/secrets/binance_demo_ed25519.pem
+state_dir: /var/lib/quanta/trader-demo
+limits:                       # design §13.4 (user approved 2026-09-24)
+  max_order_notional_usdt: 1000
+  max_symbol_exposure: 1.0    # × equity
+  max_gross_exposure: 1.5     # × equity
+  max_positions: 3
+  max_orders_per_min: 30
+  max_new_positions_per_hour: 6
+  price_band: 0.01            # refuse prices more than 1 % from the mark
+  max_spread: 0.002
+  stale_book_s: 2
+  stale_mark_s: 5
+  stale_stream_s: 10
+  clock_pause_s: 0.25
+  clock_halt_s: 1.0
+  daily_loss_reduce: 0.02     # −2 % in a UTC day → reduce only
+  daily_loss_halt: 0.03       # −3 % → close everything, halt (a person resumes)
+  drawdown_halt: 0.10         # −10 % from the peak → halt
+canary:                       # plumbing test cycles, not a strategy
+  enabled: true
+  symbol: BTCUSDT
+  every_s: 900
+  entry_wait_s: 30
+  hold_s: 120
+  stop_pct: 0.01
+drills:
+  enabled: true
+  first_after_s: 600
+  every_s: 86400

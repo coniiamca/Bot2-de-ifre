@@ -93,6 +93,7 @@ def evaluate(
     update: dict[str, Any] | None = None,
     checks: list[dict[str, Any]] | None = None,
     projection: dict[str, Any] | None = None,
+    trader: dict[str, Any] | None = None,
 ) -> Verdict:
     issues: list[Issue] = []
     snap = hist.latest
@@ -114,6 +115,7 @@ def evaluate(
     issues += _quality_issues(quality or [])
     issues += _access_issues(access)
     issues += _update_issues(update)
+    issues += trader_issues(trader)
     today = datetime.fromtimestamp(now, UTC).date()
     issues += _checks_issues(checks or [], today, cfg)
     guard = snap is not None and snap.get("quanta_recorder_disk_guard_active") == 1
@@ -447,3 +449,82 @@ def _access_detail(r: dict[str, Any]) -> str:
             f"Bu borsa için kayıt yapılamaz; sunucu bölgesi değişmeli. Ayrıntı: {error}"
         )
     return error
+
+
+TRADER_STALE_S = 60.0
+TRADER_ANCHOR = "demo-işlem-binance-demo-hesabı-gerçek-para-yok"
+
+
+def trader_issues(t: dict[str, Any] | None) -> list[Issue]:
+    """The demo trader (only when installed and a key was added)."""
+    if not t:
+        return []
+    out: list[Issue] = []
+    age = t.get("age_s")
+    if age is None or age > TRADER_STALE_S:
+        out.append(
+            Issue(
+                "warning",
+                "trader_down",
+                "Demo işlem servisi yanıt vermiyor",
+                f"Durum dosyası {_mins(age) if age is not None else 'hiç'} güncellenmedi.",
+                TRADER_ANCHOR,
+            )
+        )
+        return out
+    level = t.get("level", "")
+    reasons = "; ".join(t.get("reasons") or []) or "sebep kaydı yok"
+    if not t.get("ready"):
+        last = (t.get("errors") or [{}])[-1].get("detail", "")
+        out.append(
+            Issue(
+                "warning",
+                "trader_starting",
+                "Demo işlem güvenli modda (açılış)",
+                f"Borsa bağlantısı ve uzlaştırma bekleniyor. {last}".strip(),
+                TRADER_ANCHOR,
+            )
+        )
+    elif level in ("HALTED", "FLATTENING"):
+        out.append(
+            Issue(
+                "warning",
+                "trader_halted",
+                f"Demo işlem {t.get('level_tr', level)}",
+                f"{reasons}. Devam etmek için insan onayı gerekir.",
+                TRADER_ANCHOR,
+            )
+        )
+    elif level in ("PAUSED", "REDUCING"):
+        out.append(
+            Issue(
+                "warning",
+                "trader_paused",
+                f"Demo işlem {t.get('level_tr', level)}",
+                reasons,
+                TRADER_ANCHOR,
+            )
+        )
+    bad = [c for c in (t.get("canary") or [])[-3:] if c.get("result") == "error"]
+    if bad:
+        out.append(
+            Issue(
+                "warning",
+                "canary_failed",
+                "Demo test çevrimi başarısız",
+                str(bad[-1].get("why") or bad[-1].get("stop") or ""),
+                TRADER_ANCHOR,
+            )
+        )
+    failed = [n for n, r in (t.get("drills") or {}).items() if r.get("result") == "error"]
+    if failed:
+        out.append(
+            Issue(
+                "warning",
+                "drill_failed",
+                "Demo tatbikatı başarısız: " + ", ".join(failed),
+                "Ayrıntı durum sayfasının Demo işlem bölümünde.",
+                TRADER_ANCHOR,
+            )
+        )
+    return out

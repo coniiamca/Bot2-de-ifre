@@ -273,3 +273,39 @@ def test_disk_projection() -> None:
     codes = [i.code for i in evaluate(hist, now, now, CFG, projection=warn).issues]
     assert codes == ["disk_projection"]
     assert evaluate(hist, now, now, CFG, projection={**warn, "days_left": 9.0}).issues == []
+
+
+def test_demo_trader_issues(tmp_path: Path) -> None:
+    import json
+    import time
+
+    from quanta.ui.health import trader_issues
+    from quanta.ui.sources import load_trader
+
+    assert load_trader(None, 0.0) is None and load_trader(tmp_path / "none.json", 0.0) is None
+    now = time.time()
+    base = {
+        "ts_ns": int(now * 1e9),
+        "ready": True,
+        "level": "ACTIVE",
+        "level_tr": "AKTİF",
+        "reasons": [],
+        "canary": [{"result": "ok"}],
+        "drills": {"flatten": {"result": "ok"}},
+    }
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps(base))
+    doc = load_trader(path, now)
+    assert doc is not None and doc["age_s"] is not None and doc["age_s"] < 1
+    assert trader_issues(doc) == []
+    codes = lambda d: [i.code for i in trader_issues(d)]  # noqa: E731
+    assert codes(doc | {"age_s": 120}) == ["trader_down"]
+    assert codes(doc | {"ready": False}) == ["trader_starting"]
+    halted = doc | {"level": "HALTED", "level_tr": "DURDURULDU", "reasons": ["günlük zarar %3.1"]}
+    issue = trader_issues(halted)[0]
+    assert issue.code == "trader_halted" and "insan onayı" in issue.detail
+    assert codes(doc | {"level": "PAUSED", "reasons": ["stale_data: …"]}) == ["trader_paused"]
+    assert codes(doc | {"canary": [{"result": "error", "why": "pozisyon kapanmadı"}]}) == [
+        "canary_failed"
+    ]
+    assert codes(doc | {"drills": {"deadman": {"result": "error"}}}) == ["drill_failed"]

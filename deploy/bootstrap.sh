@@ -47,6 +47,12 @@ LOG_FILE=/var/log/quanta-bootstrap.log
 UV_CACHE=/var/cache/quanta-uv
 UV_PYTHON_DIR=/opt/quanta-python      # only used when the OS has no Python 3.12
 UNITS=(quanta-recorder quanta-ui quanta-lake)
+# demo trader: installed and enabled, but systemd starts it only once a demo API key exists
+# (sudo quanta-demo-anahtar); never started by this script before that
+TRADER_UNIT=quanta-trader-demo
+TRADER_CONF="$ETC_DIR/trader-demo.yaml"
+TRADER_STATE=/var/lib/quanta/trader-demo
+TRADER_KEY="$ETC_DIR/secrets/binance_demo_api_key"
 LOCK_FILE=/run/quanta-bootstrap.lock
 CONTAINER_UID=10001
 UI_LOCAL="http://127.0.0.1:8080"
@@ -447,6 +453,7 @@ setup_dirs() {
   install -d -m 0755 "$ETC_DIR"
   install -d -m 0700 -o "$CONTAINER_UID" -g "$CONTAINER_UID" "$SECRETS_DIR"
   install -d -m 0750 -o "$CONTAINER_UID" -g "$CONTAINER_UID" "$DATA_DIR"
+  install -d -m 0750 -o "$CONTAINER_UID" -g "$CONTAINER_UID" "$TRADER_STATE"
   # A re-run with an existing data dir keeps its content; only the top-level owner is fixed.
   chown "$CONTAINER_UID:$CONTAINER_UID" "$DATA_DIR"
   ok "$ETC_DIR, $SECRETS_DIR (0700), $DATA_DIR"
@@ -564,6 +571,10 @@ write_config() {
     fi
     ok "$CONFIG_FILE oluşturuldu ($template; Binance + Bybit + Deribit açık; disk koruması: $(sed -n 's/^min_free_disk_gb: *\([0-9.]*\).*/\1/p' "$CONFIG_FILE") GB)"
   fi
+  if ((NATIVE)) && [[ ! -f "$TRADER_CONF" ]]; then
+    install -m 0644 "$INSTALL_DIR/config/trader-demo.example.yaml" "$TRADER_CONF"
+    ok "$TRADER_CONF oluşturuldu (Binance DEMO; anahtar eklenince çalışır: sudo quanta-demo-anahtar)"
+  fi
   local new mode=docker
   ((NATIVE)) && mode=native
   local ts=on
@@ -667,7 +678,13 @@ PrivateTmp=yes"
       ;;
     quanta-ui)
       printf 'Description=quanta status page (127.0.0.1:8080)\nAfter=quanta-recorder.service\n\n[Service]\n%s\n' "$common"
-      printf 'ExecStart=%s/.venv/bin/quanta ui --data-dir %s --host 127.0.0.1 --port 8080 --metrics-url http://127.0.0.1:9101/metrics\n' "$INSTALL_DIR" "$DATA_DIR"
+      printf 'ExecStart=%s/.venv/bin/quanta ui --data-dir %s --host 127.0.0.1 --port 8080 --metrics-url http://127.0.0.1:9101/metrics --trader-state %s/state.json\n' "$INSTALL_DIR" "$DATA_DIR" "$TRADER_STATE"
+      ;;
+    quanta-trader-demo)
+      printf 'Description=quanta demo trader (Binance demo account, no real money)\nAfter=network-online.target\nWants=network-online.target\n'
+      printf '# starts only after: sudo quanta-demo-anahtar\nConditionPathExists=%s\n\n[Service]\n%s\n' "$TRADER_KEY" "$common"
+      printf 'ExecStart=%s/.venv/bin/quanta trader run --config %s\n' "$INSTALL_DIR" "$TRADER_CONF"
+      printf 'ReadWritePaths=%s\nTimeoutStopSec=30\nMemoryMax=1G\n' "$TRADER_STATE"
       ;;
     quanta-lake)
       printf 'Description=quanta daily lake job (00:20 UTC) and data checks (every 6 h)\nAfter=quanta-recorder.service\n\n[Service]\n%s\n' "$common"
@@ -684,7 +701,7 @@ UNITS_CHANGED=0
 write_units() {
   local user unit tmp
   user="$(getent passwd "$CONTAINER_UID" | cut -d: -f1)"
-  for unit in "${UNITS[@]}"; do
+  for unit in "${UNITS[@]}" "$TRADER_UNIT"; do
     tmp="$(mktemp)"
     unit_text "$unit" "$user" >"$tmp"
     if ! cmp -s "$tmp" "/etc/systemd/system/$unit.service"; then
@@ -711,11 +728,15 @@ start_native() {
   if ((ACCESS_RESTRICTED)) && ! ask "Yine de servisler başlatılsın mı?" y; then
     die "Durduruldu. Yapılandırmayı düzeltip betiği tekrar çalıştır."
   fi
-  systemctl enable "${UNITS[@]}" >/dev/null 2>&1
+  systemctl enable "${UNITS[@]}" "$TRADER_UNIT" >/dev/null 2>&1
+  install -m 0755 "$INSTALL_DIR/deploy/quanta-demo-anahtar.sh" /usr/local/sbin/quanta-demo-anahtar
   if ((UNITS_CHANGED)) || [[ "$OLD_HEAD" != "$(git -C "$INSTALL_DIR" rev-parse HEAD)" ]]; then
     systemctl restart "${UNITS[@]}"   # new code or units: a brief gap, recorded in-band
+    # the demo trader restarts in safe mode and reconciles with the exchange first
+    if [[ -f "$TRADER_KEY" ]]; then systemctl restart "$TRADER_UNIT" || true; fi
   else
     systemctl start "${UNITS[@]}"
+    if [[ -f "$TRADER_KEY" ]]; then systemctl start "$TRADER_UNIT" || true; fi
   fi
   local _ up=0 u
   for _ in $(seq 1 60); do

@@ -228,6 +228,20 @@ jobs:
           test ! -e /usr/local/bin/quanta-compose
           systemd-analyze verify /etc/systemd/system/quanta-*.service
           sudo quanta data volume -d /var/lib/quanta/data
+      - name: Demo trader installed but waiting for a key
+        run: |
+          test "$(systemctl is-enabled quanta-trader-demo)" = enabled
+          test "$(systemctl is-active quanta-trader-demo || true)" = inactive  # condition: no key
+          systemctl show -p ConditionResult quanta-trader-demo
+          test -x /usr/local/sbin/quanta-demo-anahtar
+          sudo test -f /etc/quanta/trader-demo.yaml
+          test "$(sudo stat -c '%U %a' /var/lib/quanta/trader-demo)" = "quanta 750"
+          python3 - <<'PY'
+          import json, urllib.request
+          d = json.load(urllib.request.urlopen("http://127.0.0.1:8080/api/status"))
+          assert d["trader"] is None, d["trader"]  # no key yet: no demo section, no warning
+          assert not [i for i in d["verdict"]["issues"] if i["code"].startswith("trader")]
+          PY
           # daily checks as the service user: nothing finished to verify on a fresh install
           sudo quanta lake checks -d /var/lib/quanta/data -c /etc/quanta/recorder.yaml > checks.json
           test "$(tr -d '[:space:]' < checks.json)" = "[]"

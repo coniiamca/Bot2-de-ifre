@@ -45,6 +45,8 @@ Araştırma odaklı, üretim seviyesinde **vadeli kripto (perpetual futures) tra
 - Az işlemli fikir H5 (çeyrek saat açılış dengesizliği, Kim & Hansen 2026): maliyet öncesi küçük etki var, maliyet iki katı → ELENDİ
 - Hızlı işlem ([özet](docs/research/03-hizli-islem.md)): 1 dakikalık mumlarda dört hipotez (I1–I4, 5/10/20 coin) ELENDİ — maliyet öncesi yön bilgisi ≈ 0, maliyet işlem başı %0,08–0,15
 
+**Demo emir altyapısı (Faz 4, dilim 1)** kodu tamam: Binance **demo** hesabında emir açma-kapama, borsada zarar kes, kill switch, günlük zarar sınırı, bayat veri / bağlantı kopması / beklenmeyen fiyat / mükerrer emir korumaları, acil kapatma, test çevrimleri ve tatbikatlar. Anahtar ekleme: [runbook → Demo işlem](docs/runbooks/recorder.md#demo-işlem-binance-demo-hesabı-gerçek-para-yok) (`sudo quanta-demo-anahtar`).
+
 Sonraki fazlar: [yol haritası §17](docs/design/01-mimari-ve-yol-haritasi.md).
 
 ## Hızlı başlangıç (geliştirme)

@@ -172,6 +172,62 @@ Durum sayfası: tarayıcıda **http://127.0.0.1:8080**.
   - Güncelle: `git pull && $C up -d --build`
   - Araçlar: `$C run --rm --no-deps recorder data volume -d /var/lib/quanta/data`
 
+## Demo işlem (Binance demo hesabı, gerçek para yok)
+Sunucuda `quanta-trader-demo` servisi kuruludur ama **anahtar eklenene kadar çalışmaz**. Anahtar eklenince:
+- Açılışta güvenli modda başlar ve borsayla uzlaşır.
+- 15 dakikada bir küçük bir test çevrimi yapar:
+  1. post-only alış;
+  2. borsada zarar kes;
+  3. 2 dakika tutma;
+  4. reduce-only kapatma.
+- Günde bir kez tatbikat yapar: acil kapatma, ölü adam anahtarı, bağlantı kopması.
+- Sonuçlar durum sayfasının **"Demo işlem"** bölümünde görünür.
+
+Bu bir strateji değildir; emir altyapısının güvenle çalıştığını gösterir. Canlı Binance adresleriyle çalışmayı reddeder.
+
+### Anahtarı ekleme (bir kez)
+1. Sunucuya bağlan: `ssh root@<sunucu>` (ya da Tailscale ile).
+2. Çalıştır: `sudo quanta-demo-anahtar`
+3. Betik bu sunucuda bir **Ed25519** anahtar çifti üretir. **Özel anahtar sunucudan hiç çıkmaz.** Ekrana yalnız **açık anahtarı** (public key) yazar.
+4. Tarayıcıda https://demo.binance.com adresine Binance hesabınla gir. Profil → **API Management** → **Create API** → **Self-generated**. Ekrandaki açık anahtar bloğunu olduğu gibi yapıştır. İzinler:
+   - yalnız vadeli işlem;
+   - **para çekme kapalı**.
+5. Binance'in verdiği **API Key**'i betiğe yapıştır. Yazdığın ekranda görünmez.
+6. Betik bağlantıyı dener (emir göndermez) ve servisi başlatır. Birkaç dakika içinde durum sayfasında ilk test çevrimi görünür.
+
+Demo Ed25519'u kabul etmezse: `sudo quanta-demo-anahtar --hmac`. Bu durumda Binance'in "System generated" anahtarını ve gizli anahtarını gir; ikisi de yalnız sunucuda saklanır.
+
+**Gerçek (canlı) hesabın anahtarını asla kullanma.** Bu derleme yalnız demo ortamında çalışır.
+
+### Kontrol komutları (sunucuda)
+| Ne | Komut |
+|---|---|
+| Yeni işlem açmayı durdur | `sudo -u quanta /opt/quanta/.venv/bin/quanta trader halt` |
+| Acil kapat: bütün emirleri iptal et, pozisyonları reduce-only kapat, sonra dur | `sudo -u quanta /opt/quanta/.venv/bin/quanta trader flatten` |
+| Durdurulmuşken devam et (yalnız insan) | `sudo -u quanta /opt/quanta/.venv/bin/quanta trader resume` |
+| Servisi kapat | `sudo systemctl stop quanta-trader-demo` |
+| Kayıtlar | `journalctl -u quanta-trader-demo -n 100` |
+
+### Korumalar (tasarım §13, kullanıcı onaylı limitler)
+- **Kill switch seviyeleri:** AKTİF → DURAKLATILDI → YALNIZ AZALTMA → DURDURULDU → KAPATILIYOR.
+  - DURDURULDU yeniden başlatmada da korunur. Yalnız `resume` ile, yani insan kararıyla çıkılır.
+  - Kendiliğinden düzelen durumlar yalnız **duraklatır**, sebep geçince devam edilir: bayat piyasa verisi (defter > 2 sn, mark > 5 sn), kullanıcı akışı kopuk (> 10 sn), saat farkı (> 250 ms), sonucu bilinmeyen emir, uzlaştırma farkı.
+- **Günlük zarar:** %2 → yalnız azaltma; %3 → her şeyi kapat ve dur; zirveden %10 → dur.
+- **Pozisyon sınırları:**
+  - emir başına en fazla 1000 USDT;
+  - coin başına en fazla 1× sermaye, toplam en fazla 1,5×;
+  - en fazla 3 pozisyon, saatte en fazla 6 yeni pozisyon;
+  - kaldıraç ≤ 3×, izole marj, tek yön.
+- **Beklenmeyen fiyat:** Mark fiyatından %1'den uzak fiyat ya da çok geniş spread → emir gönderilmez.
+- **Mükerrer emir:** Her niyet önce diske yazılır ve bir kez gönderilir. Emir kimlikleri yeniden başlatmalarda tekrar etmez. Dakikada en fazla 30 emir.
+- **Bağlantı kopması / belirsiz sonuç:**
+  - Zaman aşımında ya da "Unknown error"da emir **tekrar gönderilmez**. Sembol dondurulur ve emir borsaya sorulur.
+  - Açılışta, 60 saniyede bir ve her yeniden bağlanmada borsayla uzlaşılır.
+  - Tanınmayan emir veya pozisyon farkı yeni işlemleri durdurur.
+- **Borsada koruma:**
+  - Her pozisyon için borsada STOP_MARKET (mark fiyatıyla, closePosition) zarar kes bulunur.
+  - Giriş emri açıkken ölü adam anahtarı (`countdownCancelAll`) kurulur: trader çökerse bekleyen giriş emirleri 60 sn içinde borsa tarafından iptal edilir.
+
 ## Durum sayfası ve alarmsız işletim (ADR-010)
 
 Varsayılan izleme, salt-okunur tek sayfadır (`quanta ui`). Alarm/bildirim gönderilmez; sayfaya günde birkaç kez bakılır.

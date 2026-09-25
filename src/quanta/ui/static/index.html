@@ -112,6 +112,14 @@
     <h2>Sistem</h2>
     <div class="tiles" id="system"></div>
 
+    <div id="trader-wrap" hidden>
+      <h2>Demo işlem</h2>
+      <p class="small" style="margin-top:-4px">Binance <b>demo</b> hesabında (gerçek para yok) emir altyapısının
+        testi: küçük test çevrimleri (aç → borsada zarar kes → kapat) ve günlük tatbikatlar (acil kapatma,
+        ölü adam anahtarı, bağlantı kopması). Bu bir strateji değildir; tesisatın doğru çalıştığını gösterir.</p>
+      <div class="card" id="trader"></div>
+    </div>
+
     <h2>Faz 0 doğrulaması</h2>
     <p class="small" style="margin-top:-4px">Başarı ölçütleri: 72 saat (3 tam gün) kesintisiz kayıt ·
       açıklanamayan boşluk 0 · Binance işlemleri resmî günlük arşivle birebir aynı · yeniden kurulan
@@ -306,6 +314,7 @@ function render(d) {
     diskDays,
     tile("REST ağırlığı", fmt(s.rest_weight), "Binance, dakikada 2400 sınırından"));
   renderPhase0(d);
+  renderTrader(d);
   const acc = d.access;
   $("access-wrap").hidden = !acc;
   if (acc) {
@@ -377,6 +386,55 @@ function renderPhase0(d) {
       el("td", { class: "small wide-only" }, r.checked_at ? new Date(r.checked_at).toLocaleString("tr-TR") : "—")));
   }
   box.append(el("div", { class: "table-wrap", style: "margin-top:10px" }, t));
+}
+
+const LEVEL_CHIP = { ACTIVE: "ok", PAUSED: "warning", REDUCING: "warning", HALTED: "critical", FLATTENING: "critical" };
+const RESULT = { ok: ["ok", "Başarılı"], error: ["critical", "Hata"], not_filled: ["none", "Dolmadı (normal)"],
+  skipped: ["none", "Atlandı"], rejected: ["warning", "Reddedildi"] };
+function resultChip(r) { const [lvl, text] = RESULT[r] || ["none", r || "—"]; return chip(lvl, text); }
+function nsTime(ns) { return ns ? new Date(ns / 1e6).toLocaleString("tr-TR") : "—"; }
+function renderTrader(d) {
+  const t = d.trader;
+  $("trader-wrap").hidden = !t;
+  if (!t) return;
+  const box = $("trader"); box.replaceChildren();
+  const lvl = t.ready ? (LEVEL_CHIP[t.level] || "none") : "warning";
+  box.append(el("div", { class: "venue-head" },
+    el("span", { class: "name" }, "Durum: " + (t.level_tr || t.level)),
+    chip(lvl, t.ready ? (t.level === "ACTIVE" ? "Çalışıyor" : "Yeni işlem yok") : "Açılıyor")));
+  if (t.reasons && t.reasons.length) box.append(el("p", { class: "small" }, "Sebep: " + t.reasons.join(" · ")));
+  const pos = Object.entries(t.positions || {}).map(([s, q]) => s + " " + q).join(", ") || "yok";
+  box.append(el("p", { class: "small" },
+    "Demo bakiye: " + fmt(t.equity) + " USDT · bugün: " + fmt(t.daily_pnl_pct) + " % · açık pozisyon: " + pos +
+    " · açık emir: " + (t.open_orders || []).length + " · kullanıcı akışı: " + (t.user_stream && t.user_stream.connected ? "bağlı" : "kopuk") +
+    " · saat farkı: " + fmt(t.clock_offset_ms) + " ms · son onay: " + (t.last_ack_ms == null ? "—" : fmt(t.last_ack_ms) + " ms")));
+  const cyc = t.canary || [];
+  if (cyc.length) {
+    const tb = el("table", {}, el("tr", {}, el("th", {}, "Test çevrimi"), el("th", {}, "Sonuç"),
+      el("th", { class: "num" }, "Kâr/zarar (USDT)"), el("th", { class: "wide-only" }, "Not")));
+    for (const c of cyc.slice().reverse()) tb.append(el("tr", {}, el("td", { class: "date" }, nsTime(c.ts_ns)),
+      el("td", {}, resultChip(c.result)), el("td", { class: "num" }, c.pnl_usdt == null ? "—" : fmt(c.pnl_usdt)),
+      el("td", { class: "small wide-only" }, c.why || (c.entry_price ? "giriş " + c.entry_price : ""))));
+    box.append(el("div", { class: "table-wrap", style: "margin-top:10px" }, tb));
+  } else {
+    box.append(el("p", { class: "small" }, "Henüz test çevrimi yok (her 15 dakikada bir)."));
+  }
+  const names = { flatten: "Acil kapatma", deadman: "Ölü adam anahtarı", reconnect: "Bağlantı kopması" };
+  const dr = t.drills || {};
+  if (Object.keys(dr).length) {
+    const tb = el("table", {}, el("tr", {}, el("th", {}, "Tatbikat"), el("th", {}, "Sonuç"), el("th", {}, "Ayrıntı")));
+    for (const [n, r] of Object.entries(dr)) {
+      let note = r.why || "";
+      if (n === "deadman" && r.result === "ok") note = "bekleyen emir iptal edildi; koşullu (zarar kes) emirler " + (r.algo_cancelled ? "de iptal edildi" : "yerinde kaldı");
+      if (r.seconds != null) note = (note ? note + " · " : "") + r.seconds + " sn";
+      tb.append(el("tr", {}, el("td", {}, names[n] || n), el("td", {}, resultChip(r.result)), el("td", { class: "small" }, note)));
+    }
+    box.append(el("div", { class: "table-wrap", style: "margin-top:10px" }, tb));
+  } else {
+    box.append(el("p", { class: "small" }, "Tatbikatlar açılıştan 10 dakika sonra, sonra her gün çalışır."));
+  }
+  const errs = t.errors || [];
+  if (errs.length) box.append(el("p", { class: "small" }, "Son hata: " + nsTime(errs[errs.length - 1].ts_ns) + " — " + errs[errs.length - 1].detail));
 }
 
 async function refresh() {

@@ -28,6 +28,7 @@ from quanta.ui.sources import (
     load_access,
     load_checks,
     load_quality,
+    load_trader,
     load_update,
     phase0_progress,
 )
@@ -44,6 +45,7 @@ class UiConfig:
     metrics_url: str
     data_dir: Path
     access_file: Path | None = None
+    trader_state: Path | None = None
     scrape_interval_s: float = 10.0
     runbook_url: str = RUNBOOK_URL
     health: HealthConfig = field(default_factory=HealthConfig)
@@ -87,6 +89,7 @@ class UiState:
         access = load_access(access_file)
         update = load_update(self.cfg.data_dir)
         checks = load_checks(self.cfg.data_dir)
+        trader = load_trader(self.cfg.trader_state, now)
         volume = self.volume.get()
         snap = self.history.latest
         projection = None
@@ -109,6 +112,7 @@ class UiState:
             update,
             checks,
             projection,
+            trader,
         )
         venues: list[dict[str, Any]] = []
         system: dict[str, Any] = {}
@@ -206,6 +210,7 @@ class UiState:
             "checks": checks,
             "phase0": phase0_progress(checks, quality),
             "volume": volume,
+            "trader": trader,
         }
 
 

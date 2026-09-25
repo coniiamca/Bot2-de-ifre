@@ -249,3 +249,18 @@ class VolumeCache:
             self._value = rows
             self._at = time.monotonic()
         return self._value
+
+
+def load_trader(path: Path | None, now: float) -> dict[str, Any] | None:
+    """The demo trader's state.json (None when no trader is installed), with its age."""
+    if path is None:
+        return None
+    doc = _load_json(path)
+    if doc is None:
+        return None
+    ts_ns = doc.get("ts_ns") or 0
+    doc["age_s"] = round(now - ts_ns / 1e9, 1) if ts_ns else None
+    doc["journal"] = (doc.get("journal") or [])[:8]
+    doc["canary"] = (doc.get("canary") or [])[-8:]
+    doc["errors"] = (doc.get("errors") or [])[-5:]
+    return doc
