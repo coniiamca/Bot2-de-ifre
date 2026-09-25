@@ -27,6 +27,7 @@ credentials*
 data/
 var/
 research-data/
+!research/data/
 *.zst
 *.parquet
 
