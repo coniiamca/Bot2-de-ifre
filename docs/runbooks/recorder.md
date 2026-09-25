@@ -40,10 +40,28 @@ Hedef: mevcut bir Linux sunucusunda (Frankfurt) recorder + durum sayfası + gün
    - İlk 2–3 dakika "Dikkat" görmek normaldir: bağlantılar kuruluyor, gecikme ve hız için iki ölçüm gerekiyor.
 6. **Faz 0 başlar:** 72 saat kesintisiz kayıt. Her gün [günlük doğrulama](#günlük-doğrulama-faz-0-başarı-kriterleri) adımlarına bak.
 
+### Docker'sız kurulum (`--native`)
+Sunucuda Docker durdurulmuşsa veya başka işler içinse kullanılır. Örnek: Docker başlarsa mevcut konteynerler de kalkıp diski doldurur.
+```bash
+sudo bash bootstrap.sh --native --lite --min-free-gb 20
+```
+- **Docker'a hiç dokunulmaz.** Ön kontrol de varsayılan modda durdurulmuş bir Docker'ı başlatmayı reddeder; yine de başlatmak için `--start-docker` verilmelidir.
+- **Python ortamı:** `/opt/quanta/.venv`. `uv` ile ve kilit dosyasındaki sürümlerle kurulur. Sistemde Python 3.12 yoksa `uv` ayrı bir kopyasını `/opt/quanta-python` altına indirir.
+- **Üç systemd servisi:** `quanta-recorder`, `quanta-ui` (127.0.0.1:8080) ve `quanta-lake` (00:20 UTC).
+  - Servisler `quanta` kullanıcısıyla çalışır.
+  - Yalnız veri dizinine yazabilirler (`ProtectSystem=strict`).
+  - Metrik portu 9101 yalnız 127.0.0.1'de dinler.
+- **Mod hatırlanır** (`/etc/quanta/compose.env`, `QUANTA_MODE=native`). Güncelleme için bayraksız `sudo bash /opt/quanta/deploy/bootstrap.sh` yeterlidir.
+- **Günlük işler:**
+  - Durum: `systemctl status quanta-recorder quanta-ui quanta-lake`
+  - Günlük: `journalctl -u quanta-recorder -f`
+  - Config değişikliği sonrası: `sudo systemctl restart quanta-recorder quanta-lake`
+  - Araçlar: `sudo quanta data volume -d /var/lib/quanta/data` (komut `quanta` kullanıcısıyla çalışır)
+
 ### Betik sunucuda neyi değiştirir?
 | Ne | Nerede |
 |---|---|
-| Paketler | `git curl chrony` (saat senkronu), Docker Engine + compose (resmi Docker deposundan; zaten kuruluysa dokunmaz), Tailscale |
+| Paketler | `git curl chrony` (saat senkronu), Docker Engine + compose (resmi Docker deposundan; zaten kuruluysa dokunmaz; durdurulmuşsa başlatmaz) ya da `--native` ile `uv`, Tailscale |
 | Kod | `/opt/quanta` (git checkout; burada elle değişiklik yapma) |
 | Yapılandırma | `/etc/quanta/recorder.yaml` (örnekten bir kez oluşturulur, **sonra hiç ezilmez**), `/etc/quanta/compose.env` |
 | Secret dizini | `/etc/quanta/secrets` (0700; varsayılan kurulumda boş) |
@@ -83,8 +101,13 @@ sudo ufw delete allow 22/tcp                             # herkese açık SSH'yi
 
 ### Kaldırma
 ```bash
+# Docker modu
 sudo quanta-compose down && sudo tailscale serve reset
-sudo rm -rf /opt/quanta /usr/local/bin/quanta /usr/local/bin/quanta-compose
+# Docker'sız (--native) mod
+sudo systemctl disable --now quanta-recorder quanta-ui quanta-lake && sudo tailscale serve reset
+sudo rm -f /etc/systemd/system/quanta-*.service && sudo systemctl daemon-reload
+
+sudo rm -rf /opt/quanta /opt/quanta-python /var/cache/quanta-uv /usr/local/bin/quanta /usr/local/bin/quanta-compose
 # veri ve yapılandırma bilinçli olarak ayrı silinir: /var/lib/quanta/data, /etc/quanta
 ```
 

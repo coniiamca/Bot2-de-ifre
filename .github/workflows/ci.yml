@@ -170,3 +170,67 @@ jobs:
           sudo quanta-compose ps -a || true
           sudo quanta-compose logs --no-color --tail 200 || true
           sudo cat /var/log/quanta-bootstrap.log || true
+
+  # Docker-free install (systemd) on a server whose Docker is stopped: the default mode must
+  # refuse to start it, --native must install without ever touching it.
+  deploy-e2e-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: [deploy-smoke]
+    env:
+      QUANTA_BRANCH: ci-bootstrap
+    steps:
+      - uses: actions/checkout@v4
+      - name: A stopped Docker is never started without consent
+        run: |
+          sudo systemctl stop docker.socket docker.service
+          if bash deploy/bootstrap.sh --check-only > pre.txt 2>&1; then
+            cat pre.txt; echo "expected a preflight obstacle for the stopped Docker"; exit 1
+          fi
+          grep -q -- '--native' pre.txt
+          bash deploy/bootstrap.sh --check-only --native --lite --min-free-gb 3
+      - name: Native install (systemd, no Docker)
+        run: |
+          git checkout -q -B "$QUANTA_BRANCH"
+          sudo git config --system --add safe.directory '*'
+          sudo QUANTA_REPO_URL="file://$GITHUB_WORKSPACE" QUANTA_BRANCH="$QUANTA_BRANCH" \
+            bash deploy/bootstrap.sh --yes --no-tailscale --native --lite --min-free-gb 3
+      - name: Services up, Docker untouched, metrics on loopback only
+        run: |
+          systemctl is-active quanta-recorder quanta-ui quanta-lake
+          test "$(systemctl is-active docker || true)" != active
+          curl -fsS http://127.0.0.1:8080/healthz
+          curl -fsS http://127.0.0.1:8080/api/status > status.json
+          python3 - <<'PY'
+          import json
+          d = json.load(open("status.json"))
+          print("verdict:", d["verdict"]["level"], [i["code"] for i in d["verdict"]["issues"]])
+          assert set(d["access"]["venues"]) == {"binance_usdm", "bybit_linear", "deribit"}
+          assert d["system"]["disk_floor_gb"] == 3.0, d["system"]
+          PY
+          m=""
+          for _ in $(seq 1 30); do
+            m=$(curl -fsS http://127.0.0.1:9101/metrics || true)
+            grep -q '^quanta_recorder_disk_floor_bytes 3e+09' <<<"$m" && break
+            sleep 2
+          done
+          grep -q '^quanta_recorder_disk_floor_bytes 3e+09' <<<"$m"
+          ss -ltnH 'sport = :9101' | tee listen.txt
+          test -z "$(grep -v '127.0.0.1:9101' listen.txt || true)"
+          sudo grep -qx 'data_dir: /var/lib/quanta/data' /etc/quanta/recorder.yaml
+          sudo grep -qx 'QUANTA_MODE=native' /etc/quanta/compose.env
+          test ! -e /usr/local/bin/quanta-compose
+          systemd-analyze verify /etc/systemd/system/quanta-*.service
+          sudo quanta data volume -d /var/lib/quanta/data
+      - name: Re-run remembers native mode and is a safe update
+        run: |
+          sudo QUANTA_REPO_URL="file://$GITHUB_WORKSPACE" QUANTA_BRANCH="$QUANTA_BRANCH" \
+            bash deploy/bootstrap.sh --yes --no-tailscale
+          systemctl is-active quanta-recorder quanta-ui quanta-lake
+          test "$(systemctl is-active docker || true)" != active
+          sudo bash deploy/bootstrap.sh --check-access
+      - name: Diagnostics
+        if: failure()
+        run: |
+          sudo journalctl -u quanta-recorder -u quanta-ui -u quanta-lake --no-pager -n 150 || true
+          sudo cat /var/log/quanta-bootstrap.log || true

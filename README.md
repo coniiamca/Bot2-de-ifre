@@ -29,7 +29,7 @@ Araştırma odaklı, üretim seviyesinde **vadeli kripto (perpetual futures) tra
 
 **Kurulum ve izleme** kodu tamam:
 - **Web durum sayfası** (`quanta ui`): Türkçe, salt-okunur, tek sayfa. "Her şey yolunda / Dikkat / Sorun" hükmü, her sorun için runbook bağlantısı, venue kartları, günlük kalite ve hacim tabloları. Alarm yerine kullanılıyor (ADR-010).
-- **Tek komutla sunucu kurulumu** (`deploy/bootstrap.sh`): Docker, chrony, Tailscale, konfigürasyon, 3 borsa için erişim kontrolü ve servisler. Sayfa yalnız tailnet'e HTTPS ile açılır; internete port açılmaz. CI'da gerçek bir Ubuntu VM'de uçtan uca test edilir.
+- **Tek komutla sunucu kurulumu** (`deploy/bootstrap.sh`; Docker ile ya da `--native` ile Docker'sız, systemd servisleri olarak): Docker, chrony, Tailscale, konfigürasyon, 3 borsa için erişim kontrolü ve servisler. Sayfa yalnız tailnet'e HTTPS ile açılır; internete port açılmaz. CI'da gerçek bir Ubuntu VM'de uçtan uca test edilir.
 - Compose varsayılanı `recorder + ui + lake-daily`. Prometheus/Grafana/Alertmanager isteğe bağlı `monitoring` profilinde.
 - **Disk koruması:** boş alan `min_free_disk_gb` altına inince kayıt durur, yer açılınca kendiliğinden sürer; paylaşılan sunucuda diğer işler diski kaybetmez. Yazılamayan veri için bellek sınırı var. Küçük sunucu için `bootstrap.sh --lite --min-free-gb 20`.
 - **Tardis ücretsiz ay başı verisi** (`quanta data tardis`): 2020'den beri her ayın 1. günü için tam L2 + trade + likidasyon (4 borsa). md5 + gzip doğrulaması, akışla Parquet, kota farkındalığı. **$250 veri planı:** [docs/research/01-veri-satin-alma-plani.md](docs/research/01-veri-satin-alma-plani.md).

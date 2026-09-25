@@ -5,20 +5,25 @@
 # checks what is already there, and re-running is also how you update. See
 # docs/runbooks/recorder.md ("Sunucuya kurulum") for the walkthrough.
 #
-#   sudo bash bootstrap.sh                  # install / update
+#   sudo bash bootstrap.sh                  # install / update (Docker Compose)
+#   sudo bash bootstrap.sh --native         # install / update without Docker (systemd)
 #   bash bootstrap.sh --check-only          # report only, changes nothing, no root needed
 #   sudo bash bootstrap.sh --check-access   # re-run the exchange access check only
 #
 # What it does:
 #   1. preflight: OS, CPU/RAM/disk, clock sync, listening ports
 #   2. packages: git, curl, chrony (+ ufw with --firewall)
-#   3. Docker Engine + compose plugin from Docker's apt repository (skipped if present)
+#   3. Docker Engine + compose plugin (skipped if present; a *stopped* Docker is never
+#      started without --start-docker) — or, with --native, uv (Python tool) instead
 #   4. Tailscale (official installer) and `tailscale up` (prints a login link)
 #   5. user `quanta` (uid 10001, the container user) and directories
 #   6. repository → /opt/quanta (public: HTTPS; private: generates a read-only deploy key)
 #   7. /etc/quanta/recorder.yaml from config/recorder.example.yaml (never overwritten)
-#   8. image build, access check for Binance/Bybit/Deribit → <data>/access.json, compose up
+#   8. image build (or --native: locked Python env + systemd units), access check for
+#      Binance/Bybit/Deribit → <data>/access.json, services up
 #   9. `tailscale serve` → status page over HTTPS, reachable from your tailnet only
+#
+# The chosen mode is remembered in /etc/quanta/compose.env, so a re-run needs no flags.
 #
 # Nothing is exposed to the internet: the status page listens on 127.0.0.1:8080 and is
 # published to the tailnet only (never use `tailscale funnel` for it). No secret is needed.
@@ -38,6 +43,9 @@ GITHUB_KNOWN_HOSTS=/root/.ssh/quanta_github_known_hosts
 # GitHub's published SSH host key (docs.github.com → "GitHub's SSH key fingerprints").
 GITHUB_HOST_KEY="github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
 LOG_FILE=/var/log/quanta-bootstrap.log
+UV_CACHE=/var/cache/quanta-uv
+UV_PYTHON_DIR=/opt/quanta-python      # only used when the OS has no Python 3.12
+UNITS=(quanta-recorder quanta-ui quanta-lake)
 CONTAINER_UID=10001
 UI_LOCAL="http://127.0.0.1:8080"
 MIN_CPUS=2
@@ -52,6 +60,8 @@ WITH_FIREWALL=0
 FORCE_DEPLOY_KEY=0
 LITE=0
 MIN_FREE_GB=""
+NATIVE=""                 # "" = not given (a previous install's choice is remembered)
+START_DOCKER=0
 
 # -- output helpers -------------------------------------------------------------------------
 if [[ -t 1 ]]; then
@@ -99,6 +109,10 @@ Kullanım: sudo bash bootstrap.sh [seçenekler]
   --branch NAME       Kurulacak git branch'i (varsayılan: $BRANCH)
   --repo OWNER/NAME   GitHub deposu (varsayılan: $REPO_SLUG)
   --deploy-key        Depo private: HTTPS'i deneme, doğrudan salt-okunur deploy key kullan
+  --native            Docker'sız kurulum: Python ortamı + systemd servisleri (Docker'a hiç
+                      dokunmaz). Sunucuda Docker durdurulmuşsa veya başka işler içinse bunu kullan
+  --start-docker      Docker kurulu ama durdurulmuşsa yine de başlat (restart politikası olan
+                      mevcut konteynerler de başlar!)
   --lite              Küçük/paylaşılan sunucu: daha az sembol kaydeder (config/recorder.lite.yaml;
                       L2 yalnız BTC+ETH, 20 GB disk koruması). Yalnız yeni config'e uygulanır
   --min-free-gb N     Disk koruması: boş alan N GB'ın altına inince kayıt durur (sunucudaki
@@ -119,6 +133,8 @@ while (($#)); do
     --branch) BRANCH="${2:?--branch bir isim ister}"; shift ;;
     --repo) REPO_SLUG="${2:?--repo OWNER/NAME ister}"; shift ;;
     --deploy-key) FORCE_DEPLOY_KEY=1 ;;
+    --native) NATIVE=1 ;;
+    --start-docker) START_DOCKER=1 ;;
     --lite) LITE=1 ;;
     --min-free-gb) MIN_FREE_GB="${2:?--min-free-gb bir sayı ister}"; shift ;;
     --firewall) WITH_FIREWALL=1 ;;
@@ -130,9 +146,20 @@ while (($#)); do
   shift
 done
 
-# A previous install remembers its data directory in the compose env file.
-if [[ -z "$DATA_DIR" && -r "$ENV_FILE" ]]; then
-  DATA_DIR="$(sed -n 's/^QUANTA_DATA=//p' "$ENV_FILE" | tail -n1)"
+# A previous install remembers its data directory and mode in the env file.
+PREV_MODE=""
+if [[ -r "$ENV_FILE" ]]; then
+  [[ -n "$DATA_DIR" ]] || DATA_DIR="$(sed -n 's/^QUANTA_DATA=//p' "$ENV_FILE" | tail -n1)"
+  PREV_MODE="$(sed -n 's/^QUANTA_MODE=//p' "$ENV_FILE" | tail -n1)"
+  PREV_MODE="${PREV_MODE:-docker}"
+fi
+if [[ -z "$NATIVE" ]]; then
+  if [[ "$PREV_MODE" == native ]]; then NATIVE=1; else NATIVE=0; fi
+fi
+if [[ -n "$PREV_MODE" && "$MODE" == install ]]; then
+  if { ((NATIVE)) && [[ "$PREV_MODE" != native ]]; } || { ((!NATIVE)) && [[ "$PREV_MODE" == native ]]; }; then
+    die "Önceki kurulum '$PREV_MODE' modunda. Mod değiştirmek için önce eskisini durdur (runbook: Kaldırma), sonra $ENV_FILE dosyasını sil."
+  fi
 fi
 DATA_DIR="${DATA_DIR:-/var/lib/quanta/data}"
 [[ "$DATA_DIR" == /* ]] || die "--data-dir mutlak bir yol olmalı: $DATA_DIR"
@@ -152,6 +179,8 @@ detect_os() {
   # shellcheck disable=SC1091
   OS_NAME="$(. /etc/os-release && printf '%s' "${PRETTY_NAME:-unknown}")"
 }
+
+docker_active() { systemctl is-active --quiet docker 2>/dev/null; }
 
 existing_parent() {
   local p="$1"
@@ -204,7 +233,20 @@ preflight() {
     warn "Saat senkronu doğrulanamadı; kurulum chrony'yi açar (borsa saatiyle fark < 250 ms olmalı)"
   fi
 
-  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  if ((NATIVE)); then
+    ok "Docker kullanılmayacak (--native): servisler systemd ile çalışır; Docker'a dokunulmaz"
+    if command -v python3.12 >/dev/null 2>&1; then
+      ok "Python 3.12 mevcut"
+    else
+      say "  · Python 3.12 yok; uv ayrı bir kopyasını $UV_PYTHON_DIR altına indirecek"
+    fi
+  elif command -v docker >/dev/null 2>&1 && ! docker_active; then
+    if ((START_DOCKER)); then
+      warn "Docker durdurulmuş; --start-docker verildiği için başlatılacak (restart politikası olan mevcut konteynerler de başlar)"
+    else
+      bad "Docker kurulu ama durdurulmuş. Başlatılırsa mevcut konteynerler de kendiliğinden başlayabilir. Docker'sız kurulum için --native kullan (önerilen); yine de başlatmak için --start-docker"
+    fi
+  elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
     ok "Docker: $(docker --version | sed 's/,.*//') + compose $(docker compose version --short 2>/dev/null)"
   else
     say "  · Docker (compose eklentisiyle) kurulacak"
@@ -220,7 +262,8 @@ preflight() {
   if command -v ss >/dev/null 2>&1; then
     local l8080 public
     l8080="$(ss -ltnpH 'sport = :8080' 2>/dev/null || true)"
-    if [[ -n "$l8080" && "$l8080" != *docker-proxy* ]]; then
+    if [[ -n "$l8080" && "$l8080" != *docker-proxy* ]] \
+      && ! systemctl is-active --quiet quanta-ui 2>/dev/null; then
       warn "127.0.0.1:8080 başka bir süreç tarafından kullanılıyor; durum sayfası bu portu kullanır: ${l8080//$'\n'/ }"
     fi
     public="$(ss -ltnH 2>/dev/null | awk '{print $4}' | grep -Ev '^(127\.|\[::1\]|\[?::ffff:127\.|100\.)' | sort -u | tr '\n' ' ' || true)"
@@ -283,7 +326,14 @@ docker_repo() {
 }
 
 install_docker() {
+  if ((NATIVE)); then
+    install_uv
+    return
+  fi
   step "3/9 Docker"
+  if command -v docker >/dev/null 2>&1 && ! docker_active && ((!START_DOCKER)); then
+    die "Docker durdurulmuş; başlatılmayacak. --native ile Docker'sız kur ya da --start-docker ver."
+  fi
   if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
     ok "Zaten kurulu: $(docker compose version --short)"
   elif command -v docker >/dev/null 2>&1; then
@@ -297,6 +347,18 @@ install_docker() {
   fi
   systemctl enable --now docker >/dev/null 2>&1 || true
   docker info >/dev/null 2>&1 || die "Docker servisi çalışmıyor (systemctl status docker)"
+}
+
+install_uv() {
+  step "3/9 Python aracı (uv) — Docker'sız kurulum"
+  if command -v uv >/dev/null 2>&1; then
+    ok "uv mevcut: $(uv --version)"
+    return
+  fi
+  curl -LsSf --max-time 120 https://astral.sh/uv/install.sh \
+    | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 UV_NO_MODIFY_PATH=1 sh >/dev/null
+  command -v uv >/dev/null 2>&1 || die "uv kurulamadı"
+  ok "uv kuruldu: $(uv --version)"
 }
 
 # -- 4. tailscale ---------------------------------------------------------------------------
@@ -398,8 +460,10 @@ deploy_key_flow() {
   ok "Deploy key çalışıyor"
 }
 
+OLD_HEAD=""
 fetch_repo() {
   step "6/9 Kod (${REPO_URL:-$REPO_SLUG} @ $BRANCH)"
+  if [[ -d "$INSTALL_DIR/.git" ]]; then OLD_HEAD="$(git -C "$INSTALL_DIR" rev-parse HEAD)"; fi
   local https="https://github.com/$REPO_SLUG.git" ssh="git@github.com:$REPO_SLUG.git"
   if [[ -n "$REPO_URL" ]]; then
     if [[ -d "$INSTALL_DIR/.git" ]]; then
@@ -454,7 +518,7 @@ write_config() {
   if [[ -f "$CONFIG_FILE" ]]; then
     ok "$CONFIG_FILE korunuyor (değişiklikler senin)"
     if ((LITE)) || [[ -n "$MIN_FREE_GB" ]]; then
-      warn "--lite / --min-free-gb yalnız yeni config'e uygulanır. Mevcut dosyayı değiştirmek için: sudo nano $CONFIG_FILE (min_free_disk_gb, depth_symbols…), sonra: sudo quanta-compose up -d --force-recreate recorder lake-daily"
+      warn "--lite / --min-free-gb yalnız yeni config'e uygulanır. Mevcut dosyayı değiştirmek için: sudo nano $CONFIG_FILE (min_free_disk_gb, depth_symbols…), sonra: $(restart_hint)"
     fi
   else
     local template=recorder.example.yaml
@@ -465,11 +529,30 @@ write_config() {
     if [[ -n "$MIN_FREE_GB" ]]; then
       sed -i "s/^min_free_disk_gb:.*/min_free_disk_gb: $MIN_FREE_GB/" "$CONFIG_FILE"
     fi
+    if ((NATIVE)); then
+      # no container: host paths, and the metrics endpoint on loopback only
+      sed -i "s|^data_dir:.*|data_dir: $DATA_DIR|" "$CONFIG_FILE"
+      sed -i '/^metrics:/,/^[^ ]/ s/^  host: .*/  host: 127.0.0.1/' "$CONFIG_FILE"
+    fi
     ok "$CONFIG_FILE oluşturuldu ($template; Binance + Bybit + Deribit açık; disk koruması: $(sed -n 's/^min_free_disk_gb: *\([0-9.]*\).*/\1/p' "$CONFIG_FILE") GB)"
   fi
-  local new
-  new="$(printf 'QUANTA_CONFIG=%s\nQUANTA_DATA=%s\nQUANTA_SECRETS=%s\n' "$CONFIG_FILE" "$DATA_DIR" "$SECRETS_DIR")"
-  printf '# written by deploy/bootstrap.sh — used by quanta-compose\n%s\n' "$new" >"$ENV_FILE"
+  local new mode=docker
+  ((NATIVE)) && mode=native
+  new="$(printf 'QUANTA_MODE=%s\nQUANTA_CONFIG=%s\nQUANTA_DATA=%s\nQUANTA_SECRETS=%s\n' "$mode" "$CONFIG_FILE" "$DATA_DIR" "$SECRETS_DIR")"
+  printf '# written by deploy/bootstrap.sh — install mode and paths (quanta-compose reads it)\n%s\n' "$new" >"$ENV_FILE"
+  if ((NATIVE)); then
+    local user
+    user="$(getent passwd "$CONTAINER_UID" | cut -d: -f1)"
+    cat >/usr/local/bin/quanta <<WRAP
+#!/bin/sh
+# Run a quanta CLI command as the service user, e.g.:  sudo quanta data volume -d $DATA_DIR
+cd / && exec runuser -u $user -- $INSTALL_DIR/.venv/bin/quanta "\$@"
+WRAP
+    chmod 0755 /usr/local/bin/quanta
+    rm -f /usr/local/bin/quanta-compose
+    ok "$ENV_FILE, komut: quanta"
+    return
+  fi
   cat >/usr/local/bin/quanta-compose <<EOF
 #!/bin/sh
 # docker compose for the quanta stack (written by deploy/bootstrap.sh)
@@ -486,14 +569,28 @@ EOF
 }
 
 # -- 8. build, access check, start ----------------------------------------------------------
+restart_hint() {
+  if ((NATIVE)); then
+    printf 'sudo systemctl restart quanta-recorder quanta-lake'
+  else
+    printf 'sudo quanta-compose up -d --force-recreate recorder lake-daily'
+  fi
+}
+
 ACCESS_RESTRICTED=0
 run_access_check() {
   local out rc=0
   out="$(mktemp)"
   say "  Borsalara bağlanılıyor (her biri ~15 sn)…"
-  /usr/local/bin/quanta-compose run --rm --no-deps -T recorder recorder check-access \
-    --config /etc/quanta/recorder.yaml --out /var/lib/quanta/data/access.json \
-    --samples 10 --ws-seconds 10 >"$out" 2>"$out.err" || rc=$?
+  if ((NATIVE)); then
+    (cd / && runuser -u "$(getent passwd "$CONTAINER_UID" | cut -d: -f1)" -- \
+      "$INSTALL_DIR/.venv/bin/quanta" recorder check-access --config "$CONFIG_FILE" \
+      --out "$DATA_DIR/access.json" --samples 10 --ws-seconds 10) >"$out" 2>"$out.err" || rc=$?
+  else
+    /usr/local/bin/quanta-compose run --rm --no-deps -T recorder recorder check-access \
+      --config /etc/quanta/recorder.yaml --out /var/lib/quanta/data/access.json \
+      --samples 10 --ws-seconds 10 >"$out" 2>"$out.err" || rc=$?
+  fi
   if [[ ! -s "$out" ]]; then
     cat "$out.err" >&2
     rm -f "$out" "$out.err"
@@ -519,7 +616,90 @@ run_access_check() {
   ok "Sonuç durum sayfasında görünür ($DATA_DIR/access.json)"
 }
 
+unit_text() {
+  local unit="$1" user="$2"
+  local common="User=$user
+WorkingDirectory=$DATA_DIR
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes"
+  printf '# written by deploy/bootstrap.sh --native\n[Unit]\n'
+  case "$unit" in
+    quanta-recorder)
+      printf 'Description=quanta market data recorder\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\n%s\n' "$common"
+      printf 'ExecStart=%s/.venv/bin/quanta recorder run --config %s\n' "$INSTALL_DIR" "$CONFIG_FILE"
+      printf 'Environment=AWS_SHARED_CREDENTIALS_FILE=%s/aws_credentials\n' "$SECRETS_DIR"
+      printf 'ReadWritePaths=%s\nTimeoutStopSec=60\n' "$DATA_DIR"
+      ;;
+    quanta-ui)
+      printf 'Description=quanta status page (127.0.0.1:8080)\nAfter=quanta-recorder.service\n\n[Service]\n%s\n' "$common"
+      printf 'ExecStart=%s/.venv/bin/quanta ui --data-dir %s --host 127.0.0.1 --port 8080 --metrics-url http://127.0.0.1:9101/metrics\n' "$INSTALL_DIR" "$DATA_DIR"
+      ;;
+    quanta-lake)
+      printf 'Description=quanta daily lake job (00:20 UTC)\nAfter=quanta-recorder.service\n\n[Service]\n%s\n' "$common"
+      printf 'ExecStart=%s/.venv/bin/quanta lake schedule --data-dir %s --at 00:20 --config %s\n' "$INSTALL_DIR" "$DATA_DIR" "$CONFIG_FILE"
+      printf 'ReadWritePaths=%s\nNice=10\nIOSchedulingClass=idle\n' "$DATA_DIR"
+      ;;
+  esac
+  printf '\n[Install]\nWantedBy=multi-user.target\n'
+}
+
+UNITS_CHANGED=0
+write_units() {
+  local user unit tmp
+  user="$(getent passwd "$CONTAINER_UID" | cut -d: -f1)"
+  for unit in "${UNITS[@]}"; do
+    tmp="$(mktemp)"
+    unit_text "$unit" "$user" >"$tmp"
+    if ! cmp -s "$tmp" "/etc/systemd/system/$unit.service"; then
+      install -m 0644 "$tmp" "/etc/systemd/system/$unit.service"
+      UNITS_CHANGED=1
+    fi
+    rm -f "$tmp"
+  done
+  if ((UNITS_CHANGED)); then systemctl daemon-reload; fi
+  ok "systemd servisleri: ${UNITS[*]}"
+}
+
+start_native() {
+  step "8/9 Python ortamı, erişim kontrolü, servisler (Docker'sız)"
+  say "  Bağımlılıklar kuruluyor (kilit dosyasındaki sürümler; ilk seferde 1–2 dk)…"
+  install -d -m 0755 "$UV_CACHE"
+  (cd "$INSTALL_DIR" && UV_CACHE_DIR="$UV_CACHE" UV_PYTHON_INSTALL_DIR="$UV_PYTHON_DIR" \
+    UV_LINK_MODE=copy uv sync -q --frozen --no-dev --no-editable --compile-bytecode --extra s3)
+  "$INSTALL_DIR/.venv/bin/quanta" --help >/dev/null || die "Python ortamı çalışmıyor"
+  ok "Python ortamı hazır: $INSTALL_DIR/.venv ($("$INSTALL_DIR/.venv/bin/python" --version))"
+  write_units
+  run_access_check
+  if ((ACCESS_RESTRICTED)) && ! ask "Yine de servisler başlatılsın mı?" y; then
+    die "Durduruldu. Yapılandırmayı düzeltip betiği tekrar çalıştır."
+  fi
+  systemctl enable "${UNITS[@]}" >/dev/null 2>&1
+  if ((UNITS_CHANGED)) || [[ "$OLD_HEAD" != "$(git -C "$INSTALL_DIR" rev-parse HEAD)" ]]; then
+    systemctl restart "${UNITS[@]}"   # new code or units: a brief gap, recorded in-band
+  else
+    systemctl start "${UNITS[@]}"
+  fi
+  local _ up=0 u
+  for _ in $(seq 1 60); do
+    if curl -fsS --max-time 3 "$UI_LOCAL/healthz" >/dev/null 2>&1; then up=1; break; fi
+    sleep 2
+  done
+  ((up)) || die "Durum sayfası 2 dk içinde açılmadı: journalctl -u quanta-ui -n 50"
+  for u in "${UNITS[@]}"; do
+    systemctl is-active --quiet "$u" || die "'$u' çalışmıyor. Bak: journalctl -u $u -n 50"
+  done
+  ok "Çalışıyor: ${UNITS[*]} (systemd; sunucu açılışında otomatik başlar)"
+}
+
 start_stack() {
+  if ((NATIVE)); then
+    start_native
+    return
+  fi
   step "8/9 İmaj, erişim kontrolü, servisler"
   say "  İmaj derleniyor (ilk seferde birkaç dakika)…"
   /usr/local/bin/quanta-compose build --pull -q
@@ -586,17 +766,21 @@ summary() {
   else
     say "  ${B}Durum sayfası:${N} $UI_LOCAL (sunucu üzerinden)"
   fi
-  cat <<EOF
-
-  Faydalı komutlar:
-    sudo quanta-compose ps                      servislerin durumu
-    sudo quanta-compose logs -f recorder        kayıt günlüğü
-    sudo quanta data volume -d /var/lib/quanta/data     günlük veri hacmi
-    sudo bash $INSTALL_DIR/deploy/bootstrap.sh              güncelle (tekrar çalıştır)
-    sudo bash $INSTALL_DIR/deploy/bootstrap.sh --check-access   erişim kontrolünü yenile
-  Yapılandırma: $CONFIG_FILE  → değiştirdikten sonra: sudo quanta-compose up -d --force-recreate recorder
-  Veri: $DATA_DIR    Günlük: $LOG_FILE
-EOF
+  say ""
+  say "  Faydalı komutlar:"
+  if ((NATIVE)); then
+    say "    systemctl status ${UNITS[*]}      servislerin durumu"
+    say "    journalctl -u quanta-recorder -f                   kayıt günlüğü"
+    say "    sudo quanta data volume -d $DATA_DIR      günlük veri hacmi"
+  else
+    say "    sudo quanta-compose ps                      servislerin durumu"
+    say "    sudo quanta-compose logs -f recorder        kayıt günlüğü"
+    say "    sudo quanta data volume -d /var/lib/quanta/data     günlük veri hacmi"
+  fi
+  say "    sudo bash $INSTALL_DIR/deploy/bootstrap.sh              güncelle (tekrar çalıştır)"
+  say "    sudo bash $INSTALL_DIR/deploy/bootstrap.sh --check-access   erişim kontrolünü yenile"
+  say "  Yapılandırma: $CONFIG_FILE  → değiştirdikten sonra: $(restart_hint)"
+  say "  Veri: $DATA_DIR    Günlük: $LOG_FILE"
   ((WARNINGS)) && say "  ${Y}$WARNINGS uyarı var; yukarıya bak.${N}"
   return 0
 }
@@ -612,7 +796,11 @@ case "$MODE" in
     ;;
   access)
     [[ $EUID -eq 0 ]] || die "root gerekli: sudo bash $0 --check-access"
-    [[ -x /usr/local/bin/quanta-compose ]] || die "Önce kurulum: sudo bash $0"
+    if ((NATIVE)); then
+      [[ -x "$INSTALL_DIR/.venv/bin/quanta" ]] || die "Önce kurulum: sudo bash $0 --native"
+    else
+      [[ -x /usr/local/bin/quanta-compose ]] || die "Önce kurulum: sudo bash $0"
+    fi
     step "Borsa erişim kontrolü"
     run_access_check
     exit 0
