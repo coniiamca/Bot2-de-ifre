@@ -248,7 +248,8 @@ jobs:
           sleep 1
           checks() { mkdir -p "$api/repos/$repo/commits/$1"; printf '%s' "$2" > "$api/repos/$repo/commits/$1/check-runs"; }
           upd() { sudo QUANTA_GITHUB_API=http://127.0.0.1:8799 bash /opt/quanta/deploy/auto-update.sh; }
-          result() { python3 -c 'import json; print(json.load(open("/var/lib/quanta/data/update.json"))["result"])'; }
+          # the data directory is 0750 quanta:quanta by design; the status page reads it as quanta
+          result() { sudo python3 -c 'import json; print(json.load(open("/var/lib/quanta/data/update.json"))["result"])'; }
           deployed() { git -C /opt/quanta rev-parse HEAD; }
           green='{"check_runs":[{"status":"completed","conclusion":"success"}]}'
           git config user.name ci; git config user.email ci@example.invalid
