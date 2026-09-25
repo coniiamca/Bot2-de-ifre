@@ -26,7 +26,7 @@ VERDICT = {
 
 
 def pct(x: float | None, digits: int = 1) -> str:
-    return "—" if x is None else f"%{x * 100:.{digits}f}".replace(".", ",")
+    return "—" if x is None or x != x else f"%{x * 100:.{digits}f}".replace(".", ",")
 
 
 def num(x: float, digits: int = 2) -> str:

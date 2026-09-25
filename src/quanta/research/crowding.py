@@ -105,7 +105,10 @@ def events(m: Market, p: CrowdingParams) -> Events:
         )
         oi = m.features["oi"][:, j]
         oi_prev = np.where(idx >= 24, oi[np.maximum(idx - 24, 0)], np.nan)
-        doi = np.log(oi[idx] / oi_prev)
+        ok_oi = (oi[idx] > 0) & (oi_prev > 0)  # a zero open interest is a data error
+        doi = np.where(
+            ok_oi, np.log(np.where(ok_oi, oi[idx], 1.0) / np.where(ok_oi, oi_prev, 1.0)), np.nan
+        )
         ratio = m.features["top_ratio"][idx, j]
         comps = [pit_percentile(c, win, min_obs) for c in (prem8, doi, ratio)]
         score = np.mean(np.vstack(comps), axis=0)  # NaN unless all three exist
