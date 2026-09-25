@@ -45,6 +45,7 @@ Araştırma odaklı, üretim seviyesinde **vadeli kripto (perpetual futures) tra
 - Az işlemli fikir H5 (çeyrek saat açılış dengesizliği, Kim & Hansen 2026): maliyet öncesi küçük etki var, maliyet iki katı → ELENDİ
 - Hızlı işlem ([özet](docs/research/03-hizli-islem.md)): 1 dakikalık mumlarda dört hipotez (I1–I4, 5/10/20 coin) ELENDİ — maliyet öncesi yön bilgisi ≈ 0, maliyet işlem başı %0,08–0,15
 - Model M1 ([özet](docs/research/04-model-m1.md)): mumlardan öğrenen model + USDC kontratlarında sıfır komisyonlu limit emir. Şimdiye kadarki en güçlü sonuç (net yıllık Sharpe 2,2, t 4,65, 15 kapının 13'ü) ama şans düzeltmesi (DSR) ve likidasyon kapısı geçilemedi → ELENDİ; etki yıllar içinde zayıflıyor (2025+ Sharpe ≈ 0,8)
+- Video tarzı test V1 ([sonuç](docs/research/sonuclar/V1.md)): 5.000 $, her işlem 5.000 $, günde 17–23 işlem, yalnız son 6 ay (2026-03 … 08, gerçek USDC verisi). İki ayar da zararda: günde ortalama −4 $ ve −41 $; en büyük düşüş −4.931 $ ve −7.903 $ → KÂR KANITLANAMADI
 
 **Demo emir altyapısı (Faz 4, dilim 1)** kodu tamam: Binance **demo** hesabında emir açma-kapama, borsada zarar kes, kill switch, günlük zarar sınırı, bayat veri / bağlantı kopması / beklenmeyen fiyat / mükerrer emir korumaları, acil kapatma, test çevrimleri ve tatbikatlar. Anahtar ekleme: [runbook → Demo işlem](docs/runbooks/recorder.md#demo-işlem-binance-demo-hesabı-gerçek-para-yok) (`sudo quanta-demo-anahtar`).
 

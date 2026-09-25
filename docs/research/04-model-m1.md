@@ -169,3 +169,34 @@ tek sonuç.
 
 Yeni kanıt yalnız **ileriye dönük** veriden gelebilir: donmuş model, bugünden sonraki canlı
 piyasada, parasız, gölge modda izlenir. Bu, ayrı bir ön-kayıtla ve kullanıcının kararıyla yapılır.
+
+## V1: video tarzı ayar, yalnız son 6 ay
+
+Kullanıcının hedefi: 5.000 $ ile günde 20–40 işlem, 200–400 $ kâr; yalnız bugünkü piyasa önemli.
+
+**Test:**
+- M1'in modeli daha az seçici eşiklerle ve video tarzı sabit boyutla çalıştırıldı: her işlem
+  5.000 $, aynı anda en fazla 6 pozisyon.
+- Dönem: en güncel ve hiç bakılmamış 6 ay (2026-03 … 08; M1'in açılmamış kilitli dönemi).
+- İşlemler gerçek USDC mumlarında simüle edildi.
+- Ön-kayıt: `research/prereg/V1.yaml`. Sonuç: [`sonuclar/V1.md`](sonuclar/V1.md).
+
+| | 60 dk tutma | 15 dk tutma |
+|---|---|---|
+| Günde işlem | 17,1 | 22,8 |
+| Günlük ortalama | −4 $ | −41 $ |
+| 6 ayın toplamı | −795 $ | −7.629 $ |
+| En iyi / en kötü gün | +1.164 $ / −1.108 $ | +1.184 $ / −1.356 $ |
+| En büyük düşüş | −4.931 $ | −7.903 $ |
+| −150 $'dan kötü gün | 41 | 28 |
+| Kazanan işlem | %49 | %48 |
+
+**Sonuç: iki ayar için de KÂR KANITLANAMADI.** 15 dakikalık ayar istatistiksel olarak açıkça
+zararda (t −2,8).
+
+**Ne oluyor:**
+- Video tarzı boyutla bazı günler +1.000 $'ın üstünde kazanç var; videodaki gibi gecelerin
+  benzerleri. Ama aynı büyüklükte kayıp günleri de var ve ortalama sıfırın altında.
+- Eşik gevşetilince (günde 3 yerine 17–23 işlem), modelin ayırt edici gücü işlem başına dağılıyor.
+  Kazanma oranı %49'a düşüyor; komisyon ve kayma (6 ayda 1.950–3.450 $) farkı kapatıyor.
+- Test dönemi kullanıldı. Bundan sonraki her kanıt canlı piyasadan gelmek zorunda.
