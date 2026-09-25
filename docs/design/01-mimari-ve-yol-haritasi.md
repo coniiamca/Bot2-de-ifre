@@ -12,7 +12,8 @@
 | Kurulum + izleme | **Kod tamam** | Web durum sayfası (`quanta ui`, Tailscale ile yalnız tailnet'e açık, ADR-010); tek komutla sunucu kurulumu (`deploy/bootstrap.sh`, CI'da gerçek VM'de uçtan uca test); 3 venue erişim kontrolü (451/403); `lake schedule` (compose `lake-daily` servisi); Tardis ücretsiz ay başı verisi içe aktarıcısı (`quanta data tardis`: md5 + tam gzip doğrulaması, akışla Parquet, kota farkındalığı; gerçek L2 günüyle doğrulandı); $250 veri planı ([`docs/research/01-veri-satin-alma-plani.md`](../research/01-veri-satin-alma-plani.md)). |
 | Faz 1 — ilk dilim | **Kod tamam** | Bybit linear (tam likidasyon: `allLiquidation`) ve Deribit (trade `liquidation` bayrağı, `change_id` zinciri, heartbeat) capture'ları; deterministik Parquet lake (3 venue, ADR-009); data.binance.vision backfill (checksum doğrulamalı ayna + Parquet); günlük kalite raporu; `lake daily` + systemd timer. |
 | Faz 1 — kalan | Bekliyor | OKX, Coinbase spot, Hyperliquid, Binance spot adapter'ları; yedek recorder; OKX/Bybit L2 arşivleri; hedefli veri alımı değerlendirmesi. |
-| Faz 2–10 | Bekliyor | §17 |
+| Faz 2–3 — ilk dilim | **Kod tamam** | Araştırma çekirdeği (`quanta.research`, `research` extra'sı): point-in-time saatlik panel, Tier-0 bar backtest (komisyon, kayma, gerçek funding), CPCV / DSR / PBO / Newey–West / durağan bootstrap, sentetik piyasa öz-testleri, hayatta kalma yanlılığı olmayan aylık evren (tüm USDT perp'ler, kaldırılanlar dahil), ön-kayıt + deneme defteri + tek seferlik kilitli dönem. İlk hipotezler: H6 (trend) ve H2 (kaldıraç kalabalığı) — sonuçlar `docs/research/sonuclar/`. |
+| Faz 2–10 — kalan | Bekliyor | §17 |
 
 # PART II — TASARIM
 
@@ -497,6 +498,11 @@ Paralel izler: **A** veri · **B** motor/execution · **C** araştırma · **D**
 - **Neden**: canlı veri davranışı + execution tesisatı birlikte, sermaye riski olmadan.
 - **Bağımlılık**: Faz 4–5. **Test**: parity %100; kalibrasyon izleme.
 - **Başarı** (kapı): ≥ 4 hafta veya ≥ 50 sinyal; sinyal/EV dağılımı backtest'in %90 tahmin aralığında; Brier backtest'ten anlamlı kötü değil; parity %100; kritik olay 0.
+- **Kullanıcı kararı (2026-09-25): gerçek zamanlı gölge mod 1 gün.** Saatlik/günlük stratejilerde 1 gün birkaç sinyal demektir: bu süre yalnız tesisatı doğrular (emirler, hatalar, parity). Yukarıdaki istatistiksel kapı şu telafi eden kontrollerle sağlanır:
+  1. **Kayıtlı canlı veride replay-gölge:** Faz 0'dan beri kaydedilen günler, canlıdakiyle aynı strateji koduyla oynatılır (sunucuda; beklemeden haftalar).
+  2. **Ölçülmüş maliyetler:** spread/kayma/dolum, kayıtlı bookTicker + aggTrade verisinden ölçülür ve backtest bu değerlerle yeniden koşulur.
+  3. **Sıkı araştırma kapıları:** §17.2, ön-kayıt, deneme defteri, tek seferlik kilitli dönem.
+  4. **Faz 7 büyüklük kuralı:** küçük tutarla başlanır; tutar yalnız canlı sonuçlar backtest dağılımıyla uyuştukça büyür.
 - **Prod-ready**: tüm dashboard ve alarmlar yeşil; operatör prosedürleri tatbik edilmiş.
 
 ### Faz 7 — Mikro sermayeli canlı → kademeli ölçek [B]

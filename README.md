@@ -9,6 +9,7 @@ Araştırma odaklı, üretim seviyesinde **vadeli kripto (perpetual futures) tra
 - [Mimari ve yol haritası](docs/design/01-mimari-ve-yol-haritasi.md): gereksinimler, mimari, veri/ML/nedensellik/backtest/execution/risk/test/gözlem/güvenlik stratejileri, fazlar, Definition of Done
 - [ADR'ler](docs/adr/README.md): mimari kararlar ve gerekçeleri
 - [Veri edinim planı ($250)](docs/research/01-veri-satin-alma-plani.md): ücretsiz kaynaklar, ölçülen boyutlar, hedefli alım
+- [İlk hipotezler](docs/research/02-ilk-hipotezler.md) ve [sonuçları](docs/research/sonuclar/): H6 (trend), H2 (kaldıraç kalabalığı)
 - [Recorder runbook](docs/runbooks/recorder.md): sunucuya tek komutla kurulum, durum sayfası, günlük doğrulama, sorun prosedürleri
 
 ## Durum
@@ -34,6 +35,12 @@ Araştırma odaklı, üretim seviyesinde **vadeli kripto (perpetual futures) tra
 - Compose varsayılanı `recorder + ui + lake-daily`. Prometheus/Grafana/Alertmanager isteğe bağlı `monitoring` profilinde.
 - **Disk koruması:** boş alan `min_free_disk_gb` altına inince kayıt durur, yer açılınca kendiliğinden sürer; paylaşılan sunucuda diğer işler diski kaybetmez. Yazılamayan veri için bellek sınırı var. Küçük sunucu için `bootstrap.sh --lite --min-free-gb 20`.
 - **Tardis ücretsiz ay başı verisi** (`quanta data tardis`): 2020'den beri her ayın 1. günü için tam L2 + trade + likidasyon (4 borsa). md5 + gzip doğrulaması, akışla Parquet, kota farkındalığı. **$250 veri planı:** [docs/research/01-veri-satin-alma-plani.md](docs/research/01-veri-satin-alma-plani.md).
+
+**Araştırma çekirdeği (Faz 2–3, ilk dilim)** kodu tamam (`uv sync --extra research`; sunucuya kurulmaz):
+- Point-in-time saatlik panel ve Tier-0 backtest: komisyon, kayma, gerçek funding, veri boşluğunda zorunlu çıkış, likidasyon bayrağı
+- CPCV, Deflated Sharpe, PBO, Newey–West t, durağan bootstrap. Sentetik piyasada öz-test: gömülü etki bulunur, gürültü elenir
+- Hayatta kalma yanlılığı olmayan aylık evren: arşivdeki tüm USDT perp'ler, kaldırılanlar dahil
+- Ön-kayıt (commit edilmiş YAML), deneme defteri, tek seferlik kilitli son 6 ay, Türkçe rapor (`quanta research …`)
 
 Sonraki fazlar: [yol haritası §17](docs/design/01-mimari-ve-yol-haritasi.md).
 
@@ -70,6 +77,8 @@ src/quanta/
   archive/         data.binance.vision backfill, Tardis ay başı içe aktarıcısı
   tools/           verify-aggtrades, book-audit, access (3 venue), volume
   ui/              durum sayfası: metrics okuyucu, sağlık kuralları, tek HTML sayfa
+  research/        panel (point-in-time), backtest, istatistik kapıları, evren, ön-kayıt, defter, rapor
+research/          ön-kayıtlar (prereg/), deneme defteri (ledger/), evren ve veri manifestleri
 deploy/            bootstrap.sh (sunucuya kurulum)
 infra/             Dockerfile, compose, Prometheus kuralları + testleri, Alertmanager, Grafana
 docs/              araştırma, tasarım, ADR, runbook
