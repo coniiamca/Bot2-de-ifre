@@ -1,0 +1,71 @@
+# Ön-kayıt: sonuçlar görülmeden önce sabitlenir. Değiştirmek yeni bir sürüm demektir
+# (version artar) ve her deneme deneme defterine (research/ledger) sayılır.
+id: H5
+version: 1
+title: Çeyrek saat açılış dengesizliği (Kim & Hansen 2026; 1 dakikalık yaklaşık replikasyon)
+strategy: burst_imbalance
+mechanism: >-
+  Algoritmik işlemler (TWAP/VWAP dilimleri, zamanlanmış yeniden dengelemeler) saatin çeyrek
+  başlarında (:00, :15, :30, :45) yoğunlaşır. Kim & Hansen ("The Quarter-Hour Effect",
+  arXiv:2607.09426) bu açılışların ilk 10 saniyesindeki agresif alış-satış dengesizliğinin,
+  sonraki 4–12 saatin getirisini 6 kontratın 4'ünde anlamlı biçimde öngördüğünü bulur: büyük
+  bir emir dilimlere bölünerek saatlerce yürür ve ilk dilim yönünü ele verir. Strateji, son L
+  saatin çeyrek-saat açılış dengesizliği kendi son 30 gününe göre olağandışıyken o yönde,
+  oynaklığa göre ölçeklenmiş pozisyon tutar ve 4 ya da 12 saatte bir yeniden dengeler.
+falsification: >-
+  Maliyetler (komisyon, kayma, funding) düşüldükten sonra örneklem dışı performans pozitif
+  değilse ya da kapılardan biri geçilemezse hipotez bu kurallarla elenir. Makale dönemi
+  (2021-01 … 2024-10) ile makale sonrası (2024-11 … 2026-02) ayrı raporlanır; makale sonrası
+  dönemde etki yoksa yayımlanmış etki ya kaybolmuş ya da 1 dakikalık çözünürlükte görünmüyordur.
+universe_file: research/universe/kh6.csv
+universe_label: Kim & Hansen'in 6 coini — BTC, ETH, XRP, SOL, DOGE, ADA (makalenin sabit listesi)
+data_manifests:
+  - research/data/manifest_kh6_1m.csv.gz
+  - research/data/manifest_kh6_1h.csv.gz
+data_start: "2020-12-01"
+warmup_days: 31             # günlük seri 2021-01-01'de başlar (makalenin başlangıcı)
+dev_end: "2026-03-01"       # geliştirme dönemi sonu (hariç); kilitli dönem buradan başlar
+lockbox_end: "2026-09-01"   # kilitli dönem (6 ay) — yalnız bütün kapıları geçen aday için, bir kez
+grid:                       # 2 × 2 × 2 = 8 deneme, hepsi sayılır
+  lookback_h: [1, 4]        # son L saatin çeyrek-saat açılışları (4 ya da 16 açılış)
+  rebalance_h: [4, 12]      # makalenin ufku: 4–12 saat
+  signal: [sign, scaled]    # z-skorun işareti / z/2 (±1'de kırpılır)
+fixed:
+  vol_halflife_h: 168       # EWMA oynaklık yarı ömrü
+  min_history_h: 336        # en az 14 gün kesintisiz fiyat geçmişi
+  target_vol_annual: 0.20   # coin başına eşit risk, portföy hedefi yıllık %20
+  cap_asset: 0.5            # coin başına en fazla sermayenin %50'si
+  cap_gross: 1.5            # toplam brüt kaldıraç tavanı (tasarım §13.4)
+  band: 0.02                # hedef sermayenin %2'sinden az değişirse işlem yok
+costs:
+  fee_bps: 5.0              # Binance VIP0 taker, BNB indirimi yok
+  slip_top2_bps: 1.0        # BTC/ETH
+  slip_rest_bps: 3.0        # XRP, SOL, DOGE, ADA
+validation:
+  hold_days: 1              # tutma ≤ 12 saat
+  lookback_days: 30         # z-skor 30 günlük geçmişe bakar: embargo 31 gün (muhafazakâr)
+  cpcv_groups: 6
+  cpcv_k: 2
+  pbo_blocks: 16
+stress_windows:
+  - ["2021-05-01", "2021-06-01", "Mayıs 2021 çöküşü"]
+  - ["2022-05-01", "2022-06-01", "Mayıs 2022 (LUNA)"]
+  - ["2022-11-01", "2022-12-01", "Kasım 2022 (FTX)"]
+  - ["2024-08-01", "2024-08-15", "Ağustos 2024 (yen carry)"]
+  - ["2025-10-01", "2025-11-01", "Ekim 2025 likidasyon zinciri"]
+subperiods:
+  - ["2021-01-01", "2024-11-01", "Makale dönemi (2021-01 … 2024-10)"]
+  - ["2024-11-01", "2026-03-01", "Makale sonrası — gerçek örneklem dışı (2024-11 … 2026-02)"]
+notes: >-
+  Kullanıcının seçimi: hızlı işlem (I1–I4) elendikten sonra "az işlemli fikir". Makalenin
+  ölçümü aggTrades ile ilk 10 saniyedir; o veri (6 sembol × 46 ay ≈ 100 GB) bu oturuma
+  sığmadığı için 1 dakikalık mumların alıcı hacmiyle yaklaşık ölçülür: çeyrek saatin ilk
+  dakikası, OI = (2·alıcı − hacim) / hacim. Etki 1 dakikada seyrelebilir; ELENDİ çıkarsa sonuç
+  "1 dakikalık çözünürlükte bulunamadı" diye yazılır ve 10 saniyelik tam test, sunucudaki kendi
+  aggTrade kaydımızla sonraya kalır. Makale maliyet hesabı içermez; biz VIP0 maliyetleriyle
+  test ederiz. Coin listesi makalenin önceden yayımlanmış sabit listesidir (bugünden seçim
+  değil). Kapılar H6 ile aynıdır: CPCV medyan yol > 0 ve ≥ %80 pozitif; DSR ≥ 0,95; PBO ≤ 0,25;
+  Newey–West t ≥ 3,4; plato; maliyet ×1,5'te pozitif; coinlerin ≥ 2/3'ünde ve yılların çoğunda
+  pozitif; al-tut kıyasına göre alfa > 0 ve t ≥ 2; likidasyon bayrağı yok. Bir kez koşulur;
+  kilitli dönem yalnız bütün kapılar geçilirse ve bir kez açılır. Programdaki önceki denemeler
+  (225) raporda gösterilir.
