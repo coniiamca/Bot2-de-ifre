@@ -50,7 +50,7 @@ class HmacSigner:
 @dataclass(frozen=True)
 class Ed25519Signer:
     api_key: str = field(repr=False)
-    private_key: Ed25519PrivateKey = field(repr=False)
+    private_key: Ed25519PrivateKey = field(repr=False)  # gitleaks:allow (a type, not a key)
     kind: str = "ed25519"
 
     def sign(self, payload: str) -> str:
