@@ -1,0 +1,36 @@
+# Ön-kayıt: sonuçlar görülmeden önce sabitlenir. Tek yapılandırma (parametre araması yok).
+id: H2
+version: 1
+title: Kaldıraç kalabalığı → sert ters hareket riski
+mechanism: >-
+  Vadelilerde katılımcıların çoğu aynı yöne kaldıraçla yüklendiğinde (vadeli fiyatı endeksin
+  üstünde, açık pozisyon artıyor, büyük traderlar long'a eğilimli) küçük bir ters hareket
+  zorunlu kapatmaları (likidasyon) tetikler ve bunlar fiyatı daha da iter. Bu yüzden
+  kalabalık yüksekken sonraki gün sert düşüş olasılığı artmalıdır (BIS: carry çöküşleri
+  öngörür; Ekim 2025 likidasyon zinciri).
+falsification: >-
+  Benzer piyasa koşulları (son 7 günün getirisi ve oynaklık üçte-birlikleri) içinde
+  karşılaştırıldığında kalabalık anlarda sert düşüş olasılığı artmıyorsa hipotez elenir:
+  %95 güven aralığının üst sınırı 3 yüzde puanın altındaysa ELENDİ. Aralık 0'ı ve 3 puanı
+  birlikte içeriyorsa veri yetersizdir: SONUÇSUZ.
+symbols: [BTCUSDT, ETHUSDT]   # açık pozisyon verisi (metrics) yalnız bu ikisi için indirildi
+data_start: "2020-09-01"      # metrics arşivi burada başlar
+warmup_days: 0
+dev_end: "2026-03-01"
+lockbox_end: "2026-09-01"
+grid:                          # tek yapılandırma
+  threshold: [0.9]             # kalabalık: skorun o ana kadarki yüzdeliği ≥ 0,9
+  horizon_h: [24]
+fixed:
+  k_sigma: 2.0                 # sert düşüş: sonraki 24 saat < −2σ
+  window_days: 90              # yüzdelik penceresi (günde 3 ölçüm → 270)
+  min_samples: 60
+  vol_halflife_h: 168
+  placebo_shift_days: 30
+  min_effect: 0.03             # ticarete değecek en küçük olasılık artışı: 3 yüzde puan
+  n_boot: 2000
+  seed: 0
+notes: >-
+  GEÇTİ için: fark > 0 ve %95 aralığın alt sınırı > 0, her iki coinde fark > 0, yılların
+  çoğunda fark > 0 ve 30 gün kaydırılmış placebo'da anlamlı fark yok. Geçerse ticaret kuralı
+  (ör. kalabalıkta long açmamak / risk azaltmak) ayrı bir ön-kayıtla test edilir.

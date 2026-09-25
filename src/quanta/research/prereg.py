@@ -42,7 +42,8 @@ class Prereg(Strict):
     title: str
     mechanism: str
     falsification: str
-    universe_file: str
+    universe_file: str = ""  # point-in-time universe CSV …
+    symbols: list[str] = Field(default_factory=list)  # … or a fixed symbol list
     data_start: str  # YYYY-MM-DD, first grid hour
     dev_end: str  # exclusive; the lockbox starts here
     lockbox_end: str  # exclusive

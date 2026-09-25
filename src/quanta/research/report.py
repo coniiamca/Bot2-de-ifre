@@ -126,6 +126,74 @@ def trend_markdown(doc: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def crowding_markdown(doc: dict[str, Any]) -> str:
+    mn, p = doc["main"], doc["params"]
+    lo, hi = mn["ci"]
+    lines = [
+        f"# {doc['hypothesis']} — {doc['title']}",
+        "",
+        f"**Karar: {VERDICT[doc['verdict']]}**",
+        "",
+        f"Dönem {doc['period'].replace('..', ' – ')} (kilitli son 6 ay hariç) · "
+        f"{', '.join(doc['symbols'])} · günde 3 ölçüm (00/08/16 UTC) · kod `{doc['commit'][:7]}`"
+        + (" · **keşif koşusu (kapılara sayılmaz)**" if doc["exploratory"] else ""),
+        "",
+        "## Sade özet",
+        "",
+        f"- Soru: kaldıraç kalabalığı yüksekken (skor ≥ {num(p['threshold'])}) sonraki "
+        f"{p['horizon_h']} saatte sert düşüş (> {num(p['k_sigma'], 0)}σ) olasılığı artıyor mu?",
+        f"- Kalabalık anlarda sert düşüş oranı {pct(mn['crowded_rate'])}, diğer anlarda "
+        f"{pct(mn['base_rate'])} ({mn['n_crowded']} kalabalık / {mn['n_samples']} ölçüm).",
+        f"- Benzer piyasa koşulları (son 7 günün getirisi ve oynaklık) içinde karşılaştırılınca "
+        f"fark {pct(mn['diff'], 2)}; %95 güven aralığı {pct(lo, 2)} … {pct(hi, 2)}.",
+        f"- Karar kuralı: aralık tamamen 0'ın üstündeyse ve her coinde, yılların çoğunda aynı "
+        f"yöndeyse GEÇTİ; aralık {pct(p['min_effect'], 0)} ve üstü etkileri dışlıyorsa ELENDİ; "
+        "ikisi de değilse SONUÇSUZ.",
+        "",
+        "## Ayrıntı",
+        "",
+        "| Kesit | Ölçüm | Kalabalık | Fark | %95 aralık |",
+        "|---|---|---|---|---|",
+    ]
+
+    def row(name: str, r: dict[str, Any]) -> str:
+        a, b = r["ci"]
+        return (
+            f"| {name} | {r['n_samples']} | {r['n_crowded']} | {pct(r['diff'], 2)} | "
+            f"{pct(a, 2)} … {pct(b, 2)} |"
+        )
+
+    lines.append(row("Tümü", mn))
+    for s, r in doc["per_asset"].items():
+        lines.append(row(s, r))
+    for y, r in doc["per_year"].items():
+        lines.append(row(y, r))
+    lines.append(row(f"Placebo ({p['placebo_shift_days']} gün kaydırılmış)", doc["placebo"]))
+    lines.append(row("Önceki 24 saat (ön-trend)", doc["pre_trend"]))
+    lb = doc.get("lockbox")
+    lines += ["", "## Kilitli dönem (son 6 ay)", ""]
+    lines.append(
+        f"Bir kez açıldı: fark {pct(lb['diff'], 2)} → {'geçti' if lb['passed'] else 'geçemedi'}"
+        if lb
+        else "Açılmadı (yalnız geliştirme testini geçen bir hipotez için bir kez açılır)."
+    )
+    lines += [
+        "",
+        "## Yöntem",
+        "",
+        "- Kalabalık skoru: son 90 günün (yalnız o ana kadar bilinen) değerlerine göre sıra "
+        "yüzdeliklerinin ortalaması — premium endeksi (son 8 saat), açık pozisyonun 24 saatlik "
+        "değişimi, büyük traderların long/short pozisyon oranı. Funding, premium'dan türediği "
+        "için ayrıca sayılmaz.",
+        "- σ: saatlik oynaklığın EWMA'sı (yarı ömür 168 saat) × √24. Belirsizlik: zaman "
+        "blokları halinde yeniden örnekleme (iki coin birlikte).",
+        "- Bu bir öngörü testidir; geçerse ticaret kuralı ayrı ve yeni bir ön-kayıtla test edilir.",
+        f"- Ön-kayıt sha256 `{doc['prereg_sha'][:12]}`, veri manifesti `{doc['data_sha']}`.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def write_report(
     repo: Path, doc: dict[str, Any], markdown: str, out_dir: Path | None = None
 ) -> Path:

@@ -569,8 +569,9 @@ def research_run(
     ] = False,
 ) -> None:
     """Run a pre-registered hypothesis and write docs/research/sonuclar/<H>.md."""
+    from quanta.research.crowding import run_crowding
     from quanta.research.prereg import load_prereg, repo_root
-    from quanta.research.report import trend_markdown, write_report
+    from quanta.research.report import crowding_markdown, trend_markdown, write_report
     from quanta.research.runner import run_trend
 
     configure_logging("INFO", json=True)
@@ -579,10 +580,11 @@ def research_run(
     repo = repo_root(path.resolve())
     if prereg.id != hypothesis:
         raise typer.BadParameter(f"{path} is for {prereg.id}")
-    doc = run_trend(prereg, sha, root, repo, final=final, exploratory=exploratory)
-    out = write_report(
-        repo, doc, trend_markdown(doc), None if not doc["exploratory"] else root / "reports"
+    runner, render = (
+        (run_crowding, crowding_markdown) if prereg.symbols else (run_trend, trend_markdown)
     )
+    doc = runner(prereg, sha, root, repo, final=final, exploratory=exploratory)
+    out = write_report(repo, doc, render(doc), None if not doc["exploratory"] else root / "reports")
     typer.echo(json.dumps({"verdict": doc["verdict"], "report": str(out)}))
 
 
