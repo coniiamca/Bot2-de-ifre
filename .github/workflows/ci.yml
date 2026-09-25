@@ -200,13 +200,18 @@ jobs:
           systemctl is-active quanta-recorder quanta-ui quanta-lake
           test "$(systemctl is-active docker || true)" != active
           curl -fsS http://127.0.0.1:8080/healthz
-          curl -fsS http://127.0.0.1:8080/api/status > status.json
           python3 - <<'PY'
-          import json
-          d = json.load(open("status.json"))
+          import json, time, urllib.request
+          deadline = time.time() + 60
+          while True:  # the page scrapes the recorder every 10 s; wait for the first scrape
+              d = json.load(urllib.request.urlopen("http://127.0.0.1:8080/api/status"))
+              if d["system"].get("disk_floor_gb") is not None or time.time() > deadline:
+                  break
+              time.sleep(2)
           print("verdict:", d["verdict"]["level"], [i["code"] for i in d["verdict"]["issues"]])
           assert set(d["access"]["venues"]) == {"binance_usdm", "bybit_linear", "deribit"}
           assert d["system"]["disk_floor_gb"] == 3.0, d["system"]
+          assert d["system"]["disk_guard_active"] is False, d["system"]
           PY
           m=""
           for _ in $(seq 1 30); do
