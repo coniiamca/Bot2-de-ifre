@@ -41,6 +41,7 @@ Araştırma odaklı, üretim seviyesinde **vadeli kripto (perpetual futures) tra
 - CPCV, Deflated Sharpe, PBO, Newey–West t, durağan bootstrap. Sentetik piyasada öz-test: gömülü etki bulunur, gürültü elenir
 - Hayatta kalma yanlılığı olmayan aylık evren: arşivdeki tüm USDT perp'ler, kaldırılanlar dahil
 - Ön-kayıt (commit edilmiş YAML), deneme defteri, tek seferlik kilitli son 6 ay, Türkçe rapor (`quanta research …`)
+- İlk sonuçlar ([özet](docs/research/02-ilk-hipotezler.md)): trend takibi hem ilk-10'da (H6) hem ilk-5'te (H6B) ELENDİ; kaldıraç kalabalığı (H2) SONUÇSUZ
 
 Sonraki fazlar: [yol haritası §17](docs/design/01-mimari-ve-yol-haritasi.md).
 

@@ -91,8 +91,9 @@ def trend_markdown(doc: dict[str, Any]) -> str:
     contrib = doc["asset_contribution"]
     if contrib:
         items = list(contrib.items())
-        worst = ", ".join(f"{s} {pct(v)}" for s, v in items[:5])
-        top = ", ".join(f"{s} {pct(v)}" for s, v in items[-5:][::-1])
+        k = min(5, max(1, len(items) // 2))  # the two lists never share a coin
+        worst = ", ".join(f"{s} {pct(v)}" for s, v in items[:k])
+        top = ", ".join(f"{s} {pct(v)}" for s, v in items[-k:][::-1])
         lines += [
             "",
             "## Coin katkıları (brüt)",
