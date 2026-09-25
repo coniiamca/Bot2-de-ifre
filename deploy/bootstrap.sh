@@ -306,12 +306,15 @@ setup_tailscale() {
     ok "Tailnet'e bağlı: $(ts_dns_name)"
     return
   fi
-  if ((ASSUME_YES)) || ! have_tty; then
-    warn "Tailscale girişi yapılmadı. Sonra: sudo tailscale up  ve betiği tekrar çalıştır"
-    return
-  fi
   say "  Aşağıdaki bağlantıyı tarayıcıda açıp Tailscale hesabınla giriş yap (bu sunucu tailnet'ine eklenecek):"
-  tailscale up </dev/tty || true
+  if ((ASSUME_YES)) || ! have_tty; then
+    # Unattended (e.g. run by an agent in the background): the login link is printed to the
+    # output and to $LOG_FILE; give the person 15 minutes to open it, then carry on.
+    say "  (15 dk içinde açılmazsa kurulum Tailscale olmadan devam eder)"
+    tailscale up --timeout=15m || true
+  else
+    tailscale up </dev/tty || true
+  fi
   if [[ "$(ts_state)" == Running ]]; then
     ok "Tailnet'e bağlı: $(ts_dns_name)"
   else
@@ -534,9 +537,11 @@ serve_ui() {
   else
     # something else is already served on this node: leave 443 to it
     if [[ -n "$flat" && "$flat" != "{}" && "$flat" != null ]]; then port=8443; fi
-    # not silenced: if HTTPS is off for the tailnet, tailscale prints the link to enable it
-    if ! tailscale serve --bg --https="$port" "$UI_LOCAL"; then
-      warn "tailscale serve başarısız. Tailnet'te HTTPS sertifikalarını aç (login.tailscale.com/admin/dns → HTTPS Certificates) ve betiği tekrar çalıştır."
+    # Not silenced: if HTTPS is off for the tailnet, tailscale prints a link to enable it and
+    # waits for that. Bounded so an unattended run can never hang here.
+    say "  Tailnet'te HTTPS kapalıysa aşağıda bir etkinleştirme bağlantısı çıkar; aç (10 dk süre var)."
+    if ! timeout --foreground 600 tailscale serve --bg --https="$port" "$UI_LOCAL"; then
+      warn "tailscale serve tamamlanmadı. Tailnet'te HTTPS sertifikalarını aç (login.tailscale.com/admin/dns → HTTPS Certificates) ve betiği tekrar çalıştır."
       return
     fi
     ok "tailscale serve: https:$port → $UI_LOCAL (yalnız tailnet; funnel kapalı)"
