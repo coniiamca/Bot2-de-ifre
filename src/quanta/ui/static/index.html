@@ -280,7 +280,8 @@ function render(d) {
   for (const x of d.venues) venues.append(venueCard(x));
   const s = d.system || {};
   $("system").replaceChildren(
-    tile("Disk boş", fmt(s.disk_free_gb, " GB")),
+    tile("Disk boş", fmt(s.disk_free_gb, " GB"),
+      s.disk_guard_active ? "kayıt durdu: disk koruması" : (s.disk_floor_gb != null ? "kayıt " + fmt(s.disk_floor_gb, " GB") + "'ta durur" : "")),
     tile("Yükleme kuyruğu", fmt(s.pending_uploads), "buluta gönderilmeyi bekleyen dosya"),
     tile("Saat farkı", fmt(s.clock_offset_ms, " ms"), "sunucu − borsa"),
     tile("REST ağırlığı", fmt(s.rest_weight), "Binance, dakikada 2400 sınırından"));

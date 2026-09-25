@@ -250,3 +250,55 @@ async def test_unrepresentable_price_triggers_book_error_and_resync(
     stop.set()
     await asyncio.wait_for(task, 10)
     assert any(x["type"] == "book_error" for x in meta_records(cfg.data_dir))
+
+
+async def test_disk_guard_pauses_and_resumes_writing(tmp_path: Path, fake: FakeBinance) -> None:
+    cfg = make_config(tmp_path, fake).model_copy(
+        update={"min_free_disk_gb": 5.0, "disk_resume_margin_gb": 2.0, "disk_check_s": 0.1}
+    )
+    free = [100e9]
+    svc = RecorderService(cfg, LiveClock())
+    svc.disk_free = lambda _p: free[0]
+    reg = svc.metrics.registry
+    stop = asyncio.Event()
+    task = asyncio.create_task(svc.run(stop))
+
+    def depth() -> int:
+        w = svc.writers.get(("binance_usdm", "public_depth"))
+        return 0 if w is None else w.records_appended
+
+    try:
+        await wait_for(lambda: depth() > 20)
+        assert reg.get_sample_value("quanta_recorder_disk_floor_bytes") == 5e9
+
+        free[0] = 1e9  # the volume is filling up (e.g. another service on the host)
+        await wait_for(lambda: svc.guard.active)
+        await asyncio.sleep(0.3)
+        n = depth()
+        await asyncio.sleep(0.5)
+        assert depth() == n  # nothing more is written while the guard is on
+        assert reg.get_sample_value("quanta_recorder_disk_guard_active") == 1
+        dropped = reg.get_sample_value(
+            "quanta_recorder_disk_guard_dropped_records_total",
+            {"venue": "binance_usdm", "channel": "public_depth"},
+        )
+        assert dropped is not None and dropped > 0
+
+        free[0] = 6.5e9  # above the floor but below floor + margin: stays paused
+        await asyncio.sleep(0.4)
+        assert svc.guard.active and depth() == n
+
+        free[0] = 100e9
+        await wait_for(lambda: not svc.guard.active)
+        await wait_for(lambda: depth() > n + 10)  # the book stayed in sync: writing resumes
+        assert reg.get_sample_value("quanta_recorder_disk_guard_active") == 0
+    finally:
+        stop.set()
+        await asyncio.wait_for(task, 15)
+
+    metas = meta_records(cfg.data_dir)
+    on = [m for m in metas if m["type"] == "disk_guard_on"]
+    off = [m for m in metas if m["type"] == "disk_guard_off"]
+    assert len(on) == 1 and len(off) == 1
+    assert on[0]["floor_bytes"] == 5_000_000_000
+    assert off[0]["dropped_records"] > 0 and off[0]["paused_s"] > 0.5

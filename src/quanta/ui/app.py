@@ -144,8 +144,11 @@ class UiState:
             disk = snap.get("quanta_recorder_disk_free_bytes")
             pending = snap.get("quanta_recorder_pending_upload_files")
             offsets = snap.series("quanta_recorder_clock_offset_seconds")
+            floor = snap.get("quanta_recorder_disk_floor_bytes")
             system = {
                 "disk_free_gb": None if disk is None else round(disk / 1e9, 1),
+                "disk_floor_gb": None if floor is None else round(floor / 1e9, 1),
+                "disk_guard_active": snap.get("quanta_recorder_disk_guard_active") == 1,
                 "pending_uploads": None if pending is None else int(pending),
                 "clock_offset_ms": (
                     round(max(offsets.values(), key=abs) * 1000, 1) if offsets else None

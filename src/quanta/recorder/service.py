@@ -7,6 +7,7 @@ import contextlib
 import shutil
 import socket
 from collections.abc import Callable
+from pathlib import Path
 
 import aiohttp
 
@@ -21,6 +22,7 @@ from quanta.recorder.binance_usdm import BinanceUsdmCapture
 from quanta.recorder.bybit_linear import BybitLinearCapture
 from quanta.recorder.config import RecorderConfig
 from quanta.recorder.deribit import DeribitCapture
+from quanta.recorder.diskguard import DiskGuard
 from quanta.recorder.metrics import RecorderMetrics
 from quanta.recorder.segment import SegmentInfo, SegmentWriter, recover_all
 from quanta.recorder.uploader import Uploader, build_target
@@ -43,6 +45,14 @@ class RecorderService:
         self.writers: dict[tuple[str, str], SegmentWriter] = {}
         self.captures: dict[str, VenueCapture] = {}
         self.uploader: Uploader | None = None
+        gb = 1e9
+        self.guard = DiskGuard(
+            cfg.min_free_disk_gb * gb, (cfg.min_free_disk_gb + cfg.disk_resume_margin_gb) * gb
+        )
+        self.venue_writers: dict[str, Writers] = {}
+        self._reported_drops: dict[tuple[str, str], int] = {}
+        # replaceable in tests
+        self.disk_free: Callable[[Path], float] = lambda p: float(shutil.disk_usage(p).free)
 
     @property
     def capture(self) -> VenueCapture | None:
@@ -79,10 +89,11 @@ class RecorderService:
                 fsync=seg.fsync,
                 on_finalized=self._on_finalized,
                 host=self.host,
+                max_queue_bytes=seg.max_queue_mb * 1024 * 1024,
             )
             self.writers[(venue, ch)] = w
             chans[ch] = w
-        return Writers(venue, chans, self.metrics, channels)
+        return Writers(venue, chans, self.metrics, channels, guard=self.guard)
 
     async def run(self, stop: asyncio.Event) -> None:
         cfg = self.cfg
@@ -124,6 +135,7 @@ class RecorderService:
                 )
             )
         venue_writers = {v: self._venue_writers(v, chans) for v, chans, _ in factories}
+        self.venue_writers = venue_writers
         for vw in venue_writers.values():
             vw.meta(
                 self.clock.now_ns(),
@@ -134,6 +146,8 @@ class RecorderService:
                 recovered_segments=[r.file for r in recovered if r.venue == vw.venue],
             )
 
+        self.metrics.disk_floor.set(self.guard.floor_bytes)
+        self.check_disk()  # before any capture starts: never begin writing onto a full disk
         flush_stop = asyncio.Event()
         seg = cfg.segments
         tasks = [
@@ -184,14 +198,58 @@ class RecorderService:
             await self.uploader.run_once()
         log.info("recorder_stopped")
 
+    def check_disk(self) -> None:
+        """One disk-guard step: measure free space, switch the guard, publish writer health."""
+        now = self.clock.now_ns()
+        free = self.disk_free(self.cfg.data_dir)
+        self.metrics.disk_free.set(free)
+        change = self.guard.update(free, now)
+        gb = 1e9
+        if change == "on":
+            self.metrics.disk_guard_active.set(1)
+            log.critical(
+                "disk_guard_on",
+                free_gb=round(free / gb, 2),
+                floor_gb=self.cfg.min_free_disk_gb,
+                note="market data is not written until space is freed",
+            )
+            for vw in self.venue_writers.values():
+                vw.guard_dropped = 0
+                vw.meta(
+                    now,
+                    "disk_guard_on",
+                    free_bytes=int(free),
+                    floor_bytes=int(self.guard.floor_bytes),
+                )
+        elif change == "off":
+            self.metrics.disk_guard_active.set(0)
+            paused_s = (now - (self.guard.since_ns or now)) / 1e9
+            log.warning("disk_guard_off", free_gb=round(free / gb, 2), paused_s=round(paused_s, 1))
+            for vw in self.venue_writers.values():
+                vw.meta(
+                    now,
+                    "disk_guard_off",
+                    free_bytes=int(free),
+                    paused_s=round(paused_s, 3),
+                    dropped_records=vw.guard_dropped,
+                )
+                vw.guard_dropped = 0
+        for (venue, name), w in self.writers.items():
+            self.metrics.segment_write_errors.labels(venue, name).set(w.write_errors)
+            self.metrics.segment_dropped.labels(venue, name).set(w.dropped_records)
+            reported = self._reported_drops.get((venue, name), 0)
+            if w.dropped_records > reported and venue in self.venue_writers:
+                self._reported_drops[(venue, name)] = w.dropped_records
+                self.venue_writers[venue].meta(
+                    now,
+                    "write_backlog_dropped",
+                    channel=name,
+                    dropped_records=w.dropped_records - reported,
+                )
+
     async def _disk_monitor(self, stop: asyncio.Event) -> None:
-        min_free = self.cfg.min_free_disk_gb * 1e9
         while not stop.is_set():
-            free = shutil.disk_usage(self.cfg.data_dir).free
-            self.metrics.disk_free.set(free)
-            if free < min_free:
-                log.critical("disk_space_low", free_gb=round(free / 1e9, 2))
-            for (venue, name), w in self.writers.items():
-                self.metrics.segment_write_errors.labels(venue, name).set(w.write_errors)
             with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(stop.wait(), timeout=30)
+                await asyncio.wait_for(stop.wait(), timeout=self.cfg.disk_check_s)
+            if not stop.is_set():
+                self.check_disk()

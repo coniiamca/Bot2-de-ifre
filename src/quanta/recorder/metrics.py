@@ -119,6 +119,24 @@ class RecorderMetrics:
         )
         self.uploads = Counter(f"{p}uploads_total", "Uploaded segments", ["result"], registry=r)
         self.disk_free = Gauge(f"{p}disk_free_bytes", "Free bytes on the data volume", registry=r)
+        self.disk_floor = Gauge(
+            f"{p}disk_floor_bytes", "Disk guard floor: writing stops below this", registry=r
+        )
+        self.disk_guard_active = Gauge(
+            f"{p}disk_guard_active", "1 while the disk guard stops market data writes", registry=r
+        )
+        self.disk_guard_dropped = Counter(
+            f"{p}disk_guard_dropped_records_total",
+            "Records not written because the disk guard was active",
+            ["venue", "channel"],
+            registry=r,
+        )
+        self.segment_dropped = Gauge(
+            f"{p}segment_dropped_records",
+            "Unwritten records dropped because the write backlog exceeded max_queue_mb",
+            ["venue", "channel"],
+            registry=r,
+        )
         self.meta_events = Counter(
             f"{p}meta_events_total", "Meta records written", ["type"], registry=r
         )

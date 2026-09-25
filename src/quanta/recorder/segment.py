@@ -71,6 +71,7 @@ class _Batch:
     lines: list[bytes]
     first_ts: int
     last_ts: int
+    nbytes: int
 
 
 def segment_dir(root: Path, venue: str, channel: str, period_start_ns: int) -> Path:
@@ -97,6 +98,7 @@ class SegmentWriter:
         fsync: bool = True,
         on_finalized: Callable[[SegmentInfo], None] | None = None,
         host: str | None = None,
+        max_queue_bytes: int = 256 * 1024 * 1024,
     ) -> None:
         self.root = root
         self.venue = venue
@@ -117,6 +119,8 @@ class SegmentWriter:
         self._pending_first = 0
         self._pending_last = 0
         self._queue: deque[_Batch] = deque()
+        self._queued_bytes = 0
+        self._max_queue = max_queue_bytes
         # file state (writer-thread side)
         self._fh: io.BufferedWriter | None = None
         self._path: Path | None = None
@@ -126,6 +130,7 @@ class SegmentWriter:
         self.records_appended = 0
         self.bytes_appended = 0
         self.write_errors = 0
+        self.dropped_records = 0  # unwritten data dropped because the backlog hit the cap
         self.closed = False
 
     # -- event-loop side ---------------------------------------------------------------
@@ -149,11 +154,35 @@ class SegmentWriter:
     def _enqueue_pending(self) -> None:
         if self._pending and self._pending_period is not None:
             self._queue.append(
-                _Batch(self._pending_period, self._pending, self._pending_first, self._pending_last)
+                _Batch(
+                    self._pending_period,
+                    self._pending,
+                    self._pending_first,
+                    self._pending_last,
+                    self._pending_bytes,
+                )
             )
+            self._queued_bytes += self._pending_bytes
+            self._trim_queue()
         self._pending = []
         self._pending_bytes = 0
         self._pending_period = None
+
+    def _trim_queue(self) -> None:
+        """Bound memory while writes fail: drop the oldest unwritten frames beyond the cap."""
+        dropped = 0
+        while self._queued_bytes > self._max_queue and len(self._queue) > 1:
+            batch = self._queue.popleft()
+            self._queued_bytes -= batch.nbytes
+            dropped += len(batch.lines)
+        if dropped:
+            self.dropped_records += dropped
+            log.error(
+                "segment_backlog_dropped",
+                channel=self.channel,
+                dropped_records=dropped,
+                max_queue_mb=self._max_queue // (1024 * 1024),
+            )
 
     async def flush(self) -> None:
         async with self._lock:
@@ -161,11 +190,15 @@ class SegmentWriter:
             loop = asyncio.get_running_loop()
             while self._queue:
                 batch = self._queue.popleft()
+                self._queued_bytes -= batch.nbytes
                 try:
                     await loop.run_in_executor(self._executor, self._write_batch, batch)
                 except Exception:
-                    # Keep the data: put the batch back and surface the error (disk full, …).
+                    # Keep the data (up to max_queue_bytes): put the batch back and surface
+                    # the error (disk full, …).
                     self._queue.appendleft(batch)
+                    self._queued_bytes += batch.nbytes
+                    self._trim_queue()
                     self.write_errors += 1
                     log.exception("segment_write_failed", channel=self.channel)
                     raise

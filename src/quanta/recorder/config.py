@@ -16,6 +16,9 @@ class SegmentConfig(StrictModel):
     frame_max_bytes: int = Field(4 * 1024 * 1024, ge=64 * 1024)
     zstd_level: int = Field(3, ge=1, le=19)
     fsync: bool = True
+    # Memory cap for data that could not be written yet (disk full, I/O errors): above it
+    # the oldest unwritten frames are dropped and counted instead of growing without bound.
+    max_queue_mb: int = Field(256, ge=16)
 
 
 class WsConfig(StrictModel):
@@ -143,7 +146,12 @@ class LoggingConfig(StrictModel):
 class RecorderConfig(StrictModel):
     data_dir: Path
     host_id: str | None = None
-    min_free_disk_gb: float = 5.0
+    # Disk guard: below this much free space on the data volume the recorder stops writing
+    # market data (never fills the disk; see recorder/diskguard.py) and resumes above
+    # min_free_disk_gb + disk_resume_margin_gb. On a shared server, leave room for the rest.
+    min_free_disk_gb: float = Field(5.0, ge=0)
+    disk_resume_margin_gb: float = Field(2.0, ge=0)
+    disk_check_s: float = Field(10.0, gt=0)
     binance_usdm: BinanceUsdmCaptureConfig = BinanceUsdmCaptureConfig()
     bybit_linear: BybitLinearCaptureConfig = BybitLinearCaptureConfig()
     deribit: DeribitCaptureConfig = DeribitCaptureConfig()

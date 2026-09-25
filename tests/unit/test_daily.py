@@ -29,3 +29,13 @@ def test_catch_up_only_when_raw_exists_and_report_missing(tmp_path: Path) -> Non
 
 def test_run_daily_without_data_is_empty(tmp_path: Path) -> None:
     assert run_daily(tmp_path, date(2026, 9, 23)) == ([], {})
+
+
+def test_run_daily_skips_venues_below_the_disk_floor(tmp_path: Path) -> None:
+    (tmp_path / "raw" / "deribit").mkdir(parents=True)
+    problems, report = run_daily(
+        tmp_path, date(2026, 9, 23), min_free_bytes=7e9, disk_free=lambda _p: 3e9
+    )
+    assert report == {} and len(problems) == 1
+    assert problems[0].startswith("deribit: skipped, 3.0 GB free < 7.0 GB")
+    assert not (tmp_path / "lake").exists()

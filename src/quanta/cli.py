@@ -362,10 +362,31 @@ def lake_quality(
     raise typer.Exit(1 if any(v["flag"] == "bad" for v in report.values()) else 0)
 
 
+def _lake_min_free_bytes(config: Path | None) -> float:
+    """Free space the lake job must leave: the recorder's disk-guard floor + resume margin."""
+    if config is None:
+        return 0.0
+    from quanta.recorder.config import RecorderConfig
+
+    try:
+        cfg = load_yaml_config(config, RecorderConfig)
+    except ConfigError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    return (cfg.min_free_disk_gb + cfg.disk_resume_margin_gb) * 1e9
+
+
+RecorderConfigOption = Annotated[
+    Path | None,
+    typer.Option("--config", "-c", help="recorder config: respect its disk-guard floor"),
+]
+
+
 @lake_app.command("daily")
 def lake_daily(
     data_dir: Annotated[Path, typer.Option("--data-dir", "-d")],
     day: Annotated[str | None, typer.Option("--date", help="UTC day; default yesterday")] = None,
+    config: RecorderConfigOption = None,
 ) -> None:
     """Daily job: normalize every venue for the (finished) day, then the quality report."""
     from quanta.lake.daily import run_daily
@@ -373,7 +394,7 @@ def lake_daily(
 
     configure_logging("INFO", json=True)
     d = date.fromisoformat(day) if day else previous_utc_day()
-    problems, report = run_daily(data_dir, d)
+    problems, report = run_daily(data_dir, d, _lake_min_free_bytes(config))
     typer.echo(
         json.dumps(
             {
@@ -391,19 +412,21 @@ def lake_daily(
 def lake_schedule(
     data_dir: Annotated[Path, typer.Option("--data-dir", "-d")],
     at: Annotated[str, typer.Option(help="UTC time HH:MM")] = "00:20",
+    config: RecorderConfigOption = None,
 ) -> None:
     """Run the daily job every day at the given UTC time (compose service `lake-daily`)."""
     from quanta.lake.daily import schedule
 
     configure_logging("INFO", json=True)
     hour, minute = (int(x) for x in at.split(":"))
+    min_free = _lake_min_free_bytes(config)
 
     async def main() -> None:
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, stop.set)
-        await schedule(data_dir, stop, hour, minute)
+        await schedule(data_dir, stop, hour, minute, min_free)
 
     _run(main())
 

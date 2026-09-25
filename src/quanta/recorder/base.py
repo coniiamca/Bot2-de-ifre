@@ -20,6 +20,7 @@ import msgspec
 from quanta.core.clock import NS_PER_MS, NS_PER_S, Clock
 from quanta.core.log import get_logger
 from quanta.net.ws import FrameHandler, LifecycleEvent, ManagedWebSocket, OpenHandler, WsSettings
+from quanta.recorder.diskguard import DiskGuard
 from quanta.recorder.metrics import RecorderMetrics
 from quanta.recorder.records import meta_record, rest_record, ws_invalid_record, ws_record
 from quanta.recorder.segment import SegmentWriter
@@ -36,6 +37,7 @@ class Writers:
         writers: dict[str, SegmentWriter],
         metrics: RecorderMetrics,
         channels: tuple[str, ...],
+        guard: DiskGuard | None = None,
     ) -> None:
         missing = set(channels) - set(writers)
         if missing:
@@ -43,8 +45,14 @@ class Writers:
         self.venue = venue
         self._w = writers
         self._metrics = metrics
+        self._guard = guard
+        self.guard_dropped = 0  # records dropped during the current disk-guard activation
 
     def write(self, channel: str, ts_ns: int, line: bytes) -> None:
+        if self._guard is not None and self._guard.active and channel != "meta":
+            self.guard_dropped += 1
+            self._metrics.disk_guard_dropped.labels(self.venue, channel).inc()
+            return
         self._w[channel].append(ts_ns, line)
         self._metrics.bytes.labels(self.venue, channel).inc(len(line) + 1)
 

@@ -68,18 +68,32 @@ groups:
 
   - name: recorder.resources
     rules:
+      # Thresholds are relative to the disk-guard floor (min_free_disk_gb), where recording
+      # stops; the status page uses the same margins (ui/health.py HealthConfig).
       - alert: DiskSpaceLow
-        expr: quanta_recorder_disk_free_bytes < 20e9
+        expr: quanta_recorder_disk_free_bytes < quanta_recorder_disk_floor_bytes + 10e9
         for: 5m
         labels: {severity: warning}
         annotations:
-          summary: "Data volume free space {{ $value | humanize1024 }}B"
+          summary: "Data volume free space {{ $value | humanize1024 }}B, close to the disk-guard floor"
           runbook: "docs/runbooks/recorder.md#disk"
       - alert: DiskSpaceCritical
-        expr: quanta_recorder_disk_free_bytes < 5e9
+        expr: quanta_recorder_disk_free_bytes < quanta_recorder_disk_floor_bytes + 2e9
         labels: {severity: critical}
         annotations:
-          summary: "Data volume nearly full ({{ $value | humanize1024 }}B)"
+          summary: "Data volume nearly at the disk-guard floor ({{ $value | humanize1024 }}B free)"
+          runbook: "docs/runbooks/recorder.md#disk"
+      - alert: RecorderDiskGuardActive
+        expr: quanta_recorder_disk_guard_active == 1
+        labels: {severity: critical}
+        annotations:
+          summary: "Recording paused: free space is below the disk-guard floor"
+          runbook: "docs/runbooks/recorder.md#disk"
+      - alert: SegmentBacklogDropped
+        expr: quanta_recorder_segment_dropped_records > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $value }} unwritten {{ $labels.channel }} records dropped (write backlog cap)"
           runbook: "docs/runbooks/recorder.md#disk"
       - alert: UploadBacklog
         expr: quanta_recorder_pending_upload_files > 20

@@ -8,6 +8,11 @@
 - Dosya: saatlik segment; kayıtlar bellekte biriktirilir ve ~1 sn'de bir **bağımsız zstd frame** olarak yazılır (fsync). Açık dosya `.partial` adını taşır. Kapanışta atomik rename yapılır ve sha256, kayıt/frame sayısı ve ilk/son zamanı içeren manifest yazılır.
 - Çökme sonrası: son tam frame'e kadar kesilir (`recover_partial`). En fazla ~1 sn'lik bellek içi veri ve yarım frame kaybolur.
 - Bütünlük sorunları (gap, resync, bağlantı olayları, 451, book error) **bant içi** `meta` kayıtlarıdır. Downstream hiçbir zaman verinin eksiksiz olup olmadığını tahmin etmek zorunda kalmaz.
+- **Disk koruması (2026-09-25 eki):**
+  - Boş alan `min_free_disk_gb` altına inince piyasa verisi yazılmaz; meta kayıtları yazılmaya devam eder.
+  - Duraklama `disk_guard_on` / `disk_guard_off` kayıtlarıyla sınırlanır; kapanış kaydı atılan kayıt sayısını ve süreyi taşır.
+  - Yazılamayan veri en fazla `segments.max_queue_mb` kadar bellekte tutulur. Aşılan kısım atılır ve `write_backlog_dropped` ile işaretlenir.
+  - Gerekçe: paylaşılan bir sunucuda kaydedici diski veya belleği tüketerek başka servisleri durdurmamalı. Kayıp, gizli kalmaktansa işaretli bir boşluk olmalı.
 
 ## Gerekçe
 Değişmez raw, normalizasyon hatalarının sonradan düzeltilmesini sağlar. Bağımsız frame'ler çökme güvenliği verir. JSONL insan tarafından okunabilir ve dile bağımsızdır. zstd'nin sıkıştırma oranı ve hızı yüksektir.

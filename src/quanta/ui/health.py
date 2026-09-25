@@ -42,8 +42,10 @@ class HealthConfig:
     stream_silent_s: float = 120
     book_unsynced_s: float = 120
     gaps_per_hour: float = 10
-    disk_warn_bytes: float = 20e9
+    disk_warn_bytes: float = 20e9  # used when the recorder publishes no guard floor
     disk_crit_bytes: float = 5e9
+    disk_warn_above_floor_bytes: float = 10e9
+    disk_crit_above_floor_bytes: float = 2e9
     pending_uploads: float = 20
     clock_warn_s: float = 0.25
     clock_crit_s: float = 1.0
@@ -251,14 +253,43 @@ def _system_issues(hist: History, snap: Snapshot, cfg: HealthConfig) -> list[Iss
                 )
             )
     disk = snap.get("quanta_recorder_disk_free_bytes")
-    if disk is not None and disk < cfg.disk_warn_bytes:
-        crit = disk < cfg.disk_crit_bytes
+    floor = snap.get("quanta_recorder_disk_floor_bytes")
+    guard = snap.get("quanta_recorder_disk_guard_active") == 1
+    if guard:
         out.append(
             Issue(
-                "critical" if crit else "warning",
+                "critical",
+                "disk_guard",
+                "Kayıt durdu: disk koruması",
+                f"Boş alan {(disk or 0) / 1e9:.1f} GB, koruma tabanı {(floor or 0) / 1e9:.0f} GB. "
+                "Piyasa verisi yazılmıyor (sunucudaki diğer işler etkilenmesin diye). "
+                "Yer açılınca kayıt kendiliğinden devam eder.",
                 "disk",
-                f"Disk dolmak üzere: {disk / 1e9:.1f} GB boş",
+            )
+        )
+    # With a disk-guard floor, warn relative to it; otherwise the absolute defaults.
+    warn = floor + cfg.disk_warn_above_floor_bytes if floor else cfg.disk_warn_bytes
+    crit = floor + cfg.disk_crit_above_floor_bytes if floor else cfg.disk_crit_bytes
+    if not guard and disk is not None and disk < warn:
+        out.append(
+            Issue(
+                "critical" if disk < crit else "warning",
+                "disk",
+                f"Disk dolmak üzere: {disk / 1e9:.1f} GB boş"
+                + (f" (kayıt {floor / 1e9:.0f} GB'ta durur)" if floor else ""),
                 "Yükleme/saklama ayarlarını veya kaydedilen sembol sayısını gözden geçirin.",
+                "disk",
+            )
+        )
+    dropped = sum(snap.series("quanta_recorder_segment_dropped_records").values())
+    if dropped > 0:
+        out.append(
+            Issue(
+                "warning",
+                "backlog_dropped",
+                f"Yazılamayan {dropped:.0f} kayıt atıldı",
+                "Diske uzun süre yazılamadı ve bellek sınırı aşıldı; bu veri kayıptır "
+                "(meta kayıtlarında işaretli). Disk durumunu kontrol edin.",
                 "disk",
             )
         )

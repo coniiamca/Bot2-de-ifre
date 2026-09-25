@@ -25,6 +25,9 @@ Hedef: mevcut bir Linux sunucusunda (Frankfurt) recorder + durum sayfası + gün
    ```bash
    sudo bash bootstrap.sh
    # büyük ayrı bir veri diski varsa:  sudo bash bootstrap.sh --data-dir /mnt/veri/quanta
+   # küçük veya başka işler de çalışan (paylaşılan) sunucu:
+   #   sudo bash bootstrap.sh --lite --min-free-gb 20
+   #   --lite: L2 yalnız BTC+ETH, 10 sembol; --min-free-gb: boş alan bu değere inince kayıt durur
    ```
    Betik iki yerde senden bir şey ister:
    - **Tailscale girişi:** ekrana bir bağlantı yazar. Tarayıcıda aç ve sunucuyu tailnet'ine ekle.
@@ -230,7 +233,26 @@ Süreç scrape edilemiyor. `sudo quanta-compose ps`, `sudo quanta-compose logs -
 `ParseErrors`: bir payload artık şemamıza uymuyor, yani Binance API değişikliği. Raw veri **kaybolmaz** (`ws_invalid` olarak saklanır). Binance change log'unu kontrol et (https://developers.binance.com/docs/derivatives/change-log), `quanta/venues/binance_usdm/messages.py`'yi güncelle, test ekle.
 
 ### Disk
-`DiskSpaceLow/Critical`, `SegmentWriteErrors`. Uploader çalışıyor mu (`pending_upload_files`)? Retention (`local_retention_days`) yalnız yüklenmiş dosyaları siler. Acil durumda derinlik sembol sayısını azalt (en büyük hacim). Yazma hatası sürerken veri bellekte tutulur ve tekrar denenir; disk açılınca kaldığı yerden devam eder.
+`DiskSpaceLow/Critical`, `RecorderDiskGuardActive`, `SegmentWriteErrors`, `SegmentBacklogDropped`; durum sayfasında "Disk dolmak üzere", "Kayıt durdu: disk koruması".
+
+**Disk koruması:**
+- Veri diskindeki boş alan `min_free_disk_gb` değerinin altına inerse kayıt piyasa verisi yazmayı **durdurur**. Sunucudaki diğer işler diski kaybetmesin diye diski asla sonuna kadar doldurmaz.
+- WebSocket bağlantıları açık kalır. Boş alan `min_free_disk_gb + disk_resume_margin_gb` üstüne çıkınca kayıt kendiliğinden sürer.
+- Aradaki boşluk `disk_guard_on` / `disk_guard_off` meta kayıtlarıyla işaretlenir; kapanış kaydında atılan kayıt sayısı ve süre bulunur.
+- Günlük lake işi de aynı tabana uyar: yer yoksa o günü atlar, problem olarak raporlar ve sonradan `quanta lake daily --date …` ile tekrar çalıştırılır.
+
+**Tabanı değiştirmek:**
+1. `/etc/quanta/recorder.yaml` içinde `min_free_disk_gb: N` satırını düzenle.
+2. `sudo quanta-compose up -d --force-recreate recorder lake-daily` çalıştır.
+
+Paylaşılan sunucuda taban, diğer işlerin büyümesine yetecek kadar yüksek tutulur (öneri ≥ 20 GB).
+
+**Yer açmak / kalıcı çözüm:**
+- Uploader'ı aç: S3 uyumlu depolama + `local_retention_days`. Retention yalnız yüklenmiş dosyaları siler.
+- Ek disk bağla ve `--data-dir` ile göster.
+- Kaydedilen L2 sembol sayısını azalt (en büyük hacim o).
+
+**Yazma hatası (disk dolu, I/O):** veri bellekte tutulur ve tekrar denenir, ama en fazla `segments.max_queue_mb` kadar (varsayılan 256 MB). Aşılırsa en eski yazılmamış veri atılır ve `write_backlog_dropped` meta kaydıyla işaretlenir.
 
 ### Uploads
 `UploadBacklog/UploadErrors`: kimlik bilgileri (`secrets/aws_credentials`), bucket izinleri, ağ. Yüklenmemiş dosyalar asla silinmez. Checksum uyuşmazlığı (manifest ≠ dosya) yükleme hatası olarak kalır; dosyayı inceleme dışında elle silme.

@@ -147,6 +147,23 @@ jobs:
         run: |
           sudo bash deploy/bootstrap.sh --check-access
           sudo quanta data volume -d /var/lib/quanta/data
+      - name: Fresh config with --lite --min-free-gb reaches the recorder
+        run: |
+          sudo rm /etc/quanta/recorder.yaml
+          sudo QUANTA_REPO_URL="file://$GITHUB_WORKSPACE" QUANTA_BRANCH="$QUANTA_BRANCH" \
+            bash deploy/bootstrap.sh --yes --no-tailscale --lite --min-free-gb 3
+          sudo grep -qx 'min_free_disk_gb: 3' /etc/quanta/recorder.yaml
+          sudo grep -q '^  depth_symbols: \[BTCUSDT, ETHUSDT\]' /etc/quanta/recorder.yaml
+          sudo quanta-compose up -d --force-recreate recorder lake-daily
+          m=""
+          for _ in $(seq 1 30); do
+            m=$(sudo quanta-compose exec -T ui python -c "import urllib.request; print(urllib.request.urlopen('http://recorder:9101/metrics', timeout=3).read().decode())" 2>/dev/null || true)
+            grep -q '^quanta_recorder_disk_floor_bytes 3e+09' <<<"$m" && break
+            sleep 2
+          done
+          grep '^quanta_recorder_disk_' <<<"$m"
+          grep -q '^quanta_recorder_disk_floor_bytes 3e+09' <<<"$m"
+          grep -q '^quanta_recorder_disk_guard_active 0.0' <<<"$m"
       - name: Diagnostics
         if: failure()
         run: |

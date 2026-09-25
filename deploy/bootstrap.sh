@@ -50,6 +50,8 @@ ASSUME_YES=0
 WITH_TAILSCALE=1
 WITH_FIREWALL=0
 FORCE_DEPLOY_KEY=0
+LITE=0
+MIN_FREE_GB=""
 
 # -- output helpers -------------------------------------------------------------------------
 if [[ -t 1 ]]; then
@@ -97,6 +99,10 @@ Kullanım: sudo bash bootstrap.sh [seçenekler]
   --branch NAME       Kurulacak git branch'i (varsayılan: $BRANCH)
   --repo OWNER/NAME   GitHub deposu (varsayılan: $REPO_SLUG)
   --deploy-key        Depo private: HTTPS'i deneme, doğrudan salt-okunur deploy key kullan
+  --lite              Küçük/paylaşılan sunucu: daha az sembol kaydeder (config/recorder.lite.yaml;
+                      L2 yalnız BTC+ETH, 20 GB disk koruması). Yalnız yeni config'e uygulanır
+  --min-free-gb N     Disk koruması: boş alan N GB'ın altına inince kayıt durur (sunucudaki
+                      diğer işler için yer bırakır). Yalnız yeni config'e uygulanır
   --firewall          ufw'yi aç: yalnız SSH (+ tailnet) içeri; sunucudaki diğer servisler
                       etkilenebileceği için isteğe bağlı
   --no-tailscale      Tailscale kurulum/serve adımlarını atla
@@ -113,6 +119,8 @@ while (($#)); do
     --branch) BRANCH="${2:?--branch bir isim ister}"; shift ;;
     --repo) REPO_SLUG="${2:?--repo OWNER/NAME ister}"; shift ;;
     --deploy-key) FORCE_DEPLOY_KEY=1 ;;
+    --lite) LITE=1 ;;
+    --min-free-gb) MIN_FREE_GB="${2:?--min-free-gb bir sayı ister}"; shift ;;
     --firewall) WITH_FIREWALL=1 ;;
     --no-tailscale) WITH_TAILSCALE=0 ;;
     --yes|-y) ASSUME_YES=1 ;;
@@ -128,6 +136,8 @@ if [[ -z "$DATA_DIR" && -r "$ENV_FILE" ]]; then
 fi
 DATA_DIR="${DATA_DIR:-/var/lib/quanta/data}"
 [[ "$DATA_DIR" == /* ]] || die "--data-dir mutlak bir yol olmalı: $DATA_DIR"
+[[ -z "$MIN_FREE_GB" || "$MIN_FREE_GB" =~ ^[0-9]+([.][0-9]+)?$ ]] \
+  || die "--min-free-gb bir sayı olmalı (GB): $MIN_FREE_GB"
 
 # -- 1. preflight ---------------------------------------------------------------------------
 OS_ID="" OS_VERSION="" OS_CODENAME="" OS_NAME=""
@@ -175,7 +185,17 @@ preflight() {
   if ((disk_gb >= MIN_DISK_GB)); then
     ok "Boş disk ($where): $disk_gb GB"
   else
-    warn "Boş disk ($where): $disk_gb GB (en az $MIN_DISK_GB GB önerilir; L2 kaydı günde birkaç GB üretir — büyük bir disk varsa --data-dir ile göster)"
+    warn "Boş disk ($where): $disk_gb GB (en az $MIN_DISK_GB GB önerilir; L2 kaydı günde birkaç GB üretir). Büyük bir disk varsa --data-dir ile göster; paylaşılan/küçük sunucuda --lite --min-free-gb 20 kullan"
+  fi
+  local floor="${MIN_FREE_GB:-}"
+  if [[ -z "$floor" && ! -f "$CONFIG_FILE" ]]; then floor=$((LITE ? 20 : 5)); fi
+  if [[ -n "$floor" ]]; then
+    local budget=$((disk_gb - ${floor%.*}))
+    if ((budget <= 2)); then
+      bad "Disk koruması tabanı ${floor} GB, boş alan ${disk_gb} GB: kayıt hemen durur. Yer aç ya da --min-free-gb değerini düşür"
+    else
+      ok "Disk koruması: boş alan ${floor} GB'a inince kayıt durur → kayda ayrılan alan ≈ ${budget} GB"
+    fi
   fi
 
   if [[ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null || true)" == yes ]]; then
@@ -433,11 +453,19 @@ write_config() {
   step "7/9 Yapılandırma"
   if [[ -f "$CONFIG_FILE" ]]; then
     ok "$CONFIG_FILE korunuyor (değişiklikler senin)"
+    if ((LITE)) || [[ -n "$MIN_FREE_GB" ]]; then
+      warn "--lite / --min-free-gb yalnız yeni config'e uygulanır. Mevcut dosyayı değiştirmek için: sudo nano $CONFIG_FILE (min_free_disk_gb, depth_symbols…), sonra: sudo quanta-compose up -d --force-recreate recorder lake-daily"
+    fi
   else
-    install -m 0644 "$INSTALL_DIR/config/recorder.example.yaml" "$CONFIG_FILE"
+    local template=recorder.example.yaml
+    ((LITE)) && template=recorder.lite.yaml
+    install -m 0644 "$INSTALL_DIR/config/$template" "$CONFIG_FILE"
     # segment metadata names the recording host; inside a container the hostname is random
     sed -i "/^data_dir:/a host_id: $(hostname -s)" "$CONFIG_FILE"
-    ok "$CONFIG_FILE örnekten oluşturuldu (Binance + Bybit + Deribit açık)"
+    if [[ -n "$MIN_FREE_GB" ]]; then
+      sed -i "s/^min_free_disk_gb:.*/min_free_disk_gb: $MIN_FREE_GB/" "$CONFIG_FILE"
+    fi
+    ok "$CONFIG_FILE oluşturuldu ($template; Binance + Bybit + Deribit açık; disk koruması: $(sed -n 's/^min_free_disk_gb: *\([0-9.]*\).*/\1/p' "$CONFIG_FILE") GB)"
   fi
   local new
   new="$(printf 'QUANTA_CONFIG=%s\nQUANTA_DATA=%s\nQUANTA_SECRETS=%s\n' "$CONFIG_FILE" "$DATA_DIR" "$SECRETS_DIR")"

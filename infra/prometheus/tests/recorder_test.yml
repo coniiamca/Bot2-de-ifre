@@ -28,3 +28,41 @@ tests:
       - eval_time: 30s
         alertname: ClockOffsetCritical
         exp_alerts: []
+
+  # disk: floor 8 GB; free space falls 30 → 15 → 9 → 7 GB, the guard switches on at 7 GB
+  - interval: 1m
+    input_series:
+      - series: 'quanta_recorder_disk_floor_bytes'
+        values: '8e9x10'
+      - series: 'quanta_recorder_disk_free_bytes'
+        values: '30e9 15e9 15e9 15e9 15e9 15e9 15e9 9e9 7e9 7e9 7e9'
+      - series: 'quanta_recorder_disk_guard_active'
+        values: '0 0 0 0 0 0 0 0 1 1 1'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: DiskSpaceLow
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: DiskSpaceLow
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: "Data volume free space 13.97GiB, close to the disk-guard floor"
+              runbook: "docs/runbooks/recorder.md#disk"
+      - eval_time: 6m
+        alertname: DiskSpaceCritical
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: DiskSpaceCritical
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: "Data volume nearly at the disk-guard floor (8.382GiB free)"
+              runbook: "docs/runbooks/recorder.md#disk"
+      - eval_time: 8m
+        alertname: RecorderDiskGuardActive
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: "Recording paused: free space is below the disk-guard floor"
+              runbook: "docs/runbooks/recorder.md#disk"

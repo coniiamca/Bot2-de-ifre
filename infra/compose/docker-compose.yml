@@ -57,9 +57,11 @@ services:
 
   lake-daily:
     <<: *quanta
-    command: ["lake", "schedule", "--data-dir", "/var/lib/quanta/data", "--at", "00:20"]
+    command: ["lake", "schedule", "--data-dir", "/var/lib/quanta/data", "--at", "00:20",
+              "--config", "/etc/quanta/recorder.yaml"]
     volumes:
       - ${QUANTA_DATA:-quanta-data}:/var/lib/quanta/data
+      - ${QUANTA_CONFIG:-../../config/recorder.local.yaml}:/etc/quanta/recorder.yaml:ro
     healthcheck:
       disable: true                 # the image's check probes the recorder's metrics port
 
