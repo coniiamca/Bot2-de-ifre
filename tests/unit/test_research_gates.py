@@ -82,3 +82,21 @@ def test_prior_trials_raise_the_luck_bar_and_never_change_selection() -> None:
     assert both.pbo == alone.pbo and both.cpcv_path_sr_annual == alone.cpcv_path_sr_annual
     with pytest.raises(ValueError, match="same days"):
         family_stats(r, names, 1, 1, prior=prior[:-1])
+
+
+def test_counted_prior_trials_only_lower_the_dsr() -> None:
+    rng = np.random.default_rng(6)
+    t = 1500
+    edge = 0.0012 + 0.01 * rng.normal(size=(t, 1))
+    r = edge + 0.004 * rng.normal(size=(t, 4))
+    names = [f"c{i}" for i in range(4)]
+    alone = family_stats(r, names, hold_days=1, lookback_days=1)
+    assert family_stats(r, names, 1, 1, prior_count=0).dsr == alone.dsr
+    counted = family_stats(r, names, hold_days=1, lookback_days=1, prior_count=233)
+    assert counted.n_prior == 233 and counted.n_eff == alone.n_eff + 233
+    assert counted.dsr <= alone.dsr
+    assert counted.best == alone.best and counted.pbo == alone.pbo
+    # identical trials: the grid's own Sharpe spread is 0, the 1/T noise floor still applies
+    same = np.repeat(r[:, :1], 4, axis=1)
+    floor = family_stats(same, names, 1, 1, prior_count=100)
+    assert floor.dsr < family_stats(same, names, 1, 1).dsr

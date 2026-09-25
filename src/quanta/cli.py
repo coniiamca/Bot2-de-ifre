@@ -569,17 +569,64 @@ def research_fetch(
     minute: Annotated[
         bool, typer.Option(help="1-minute klines only (intraday research), 1 month of warm-up")
     ] = False,
+    m1: Annotated[
+        bool,
+        typer.Option(
+            help="Model M1 extras: metrics and 5-minute premium index for every symbol, "
+            "plus 1-minute klines and funding of their USDC-margined counterparts"
+        ),
+    ] = False,
+    top: Annotated[int, typer.Option(help="Only universe rows with rank <= top (0 = all)")] = 0,
 ) -> None:
     """Download hourly klines, premium index, funding (+ BTC/ETH metrics) for the universe;
-    with --minute, 1-minute klines instead."""
-    from quanta.research.fetch import MINUTE, fetch_dataset
+    with --minute, 1-minute klines instead; with --m1, the extra data of model M1."""
+    from quanta.research.fetch import (
+        M1_EXTRA,
+        MINUTE,
+        USDC,
+        fetch_dataset,
+        usdc_counterparts,
+        usdc_universe,
+    )
     from quanta.research.universe import read_universe
 
     configure_logging("INFO", json=True)
+    rows = [r for r in read_universe(universe) if not top or r[1] <= top]
+    if m1:
+        from quanta.research.universe import Used
+
+        symbols = sorted({s for _, _, s in rows})
+        got: list[Used] = _run(  # type: ignore[assignment]
+            fetch_dataset(
+                root,
+                rows,
+                manifest or Path("research/data/manifest_m1.csv.gz"),
+                datasets=M1_EXTRA,
+                pad_before=1,
+                pad_after=0,
+                metrics_symbols=tuple(symbols),
+                metrics_pad=(1, 0),
+            )
+        )
+        pairs: dict[str, str] = _run(usdc_counterparts(symbols))  # type: ignore[assignment]
+        got += _run(  # type: ignore[arg-type]
+            fetch_dataset(
+                root,
+                usdc_universe(pairs),
+                Path("research/data/manifest_usdc_1m.csv.gz"),
+                datasets=USDC,
+                pad_before=0,
+                pad_after=0,
+                metrics_symbols=(),
+            )
+        )
+        bad = [u for u in got if u.result.path is None]
+        typer.echo(json.dumps({"files": len(got), "failed": len(bad), "usdc": len(pairs)}))
+        raise typer.Exit(1 if bad else 0)
     if minute:
         job = fetch_dataset(
             root,
-            read_universe(universe),
+            rows,
             manifest or Path("research/data/manifest_1m.csv.gz"),
             datasets=MINUTE,
             pad_before=1,
@@ -587,9 +634,7 @@ def research_fetch(
             metrics_symbols=(),
         )
     else:
-        job = fetch_dataset(
-            root, read_universe(universe), manifest or Path("research/data/manifest.csv.gz")
-        )
+        job = fetch_dataset(root, rows, manifest or Path("research/data/manifest.csv.gz"))
     used = _run(job)
     bad = [u for u in used if u.result.path is None]  # type: ignore[attr-defined]
     typer.echo(json.dumps({"files": len(used), "failed": len(bad)}))  # type: ignore[arg-type]
@@ -617,15 +662,24 @@ def research_run(
     exploratory: Annotated[
         bool, typer.Option(help="allow an uncommitted pre-registration (never counts)")
     ] = False,
+    shuffle_labels: Annotated[
+        bool,
+        typer.Option(
+            help="model hypotheses: timing run on permuted labels (nothing learned, never "
+            "counts, report under the research root)"
+        ),
+    ] = False,
 ) -> None:
     """Run a pre-registered hypothesis and write docs/research/sonuclar/<H>.md."""
     from quanta.research.crowding import run_crowding
     from quanta.research.intraday_runner import run_intraday
     from quanta.research.intraday_strategies import STRATEGIES
+    from quanta.research.ml_runner import run_ml
     from quanta.research.prereg import load_prereg, repo_root
     from quanta.research.report import (
         crowding_markdown,
         intraday_markdown,
+        ml_markdown,
         trend_markdown,
         write_report,
     )
@@ -639,13 +693,20 @@ def research_run(
         raise typer.BadParameter(f"{path} is for {prereg.id}")
     runner: Callable[..., dict[str, Any]]
     render: Callable[[dict[str, Any]], str]
-    if prereg.strategy in STRATEGIES:
+    if prereg.strategy == "ml":
+        runner, render = run_ml, ml_markdown
+    elif prereg.strategy in STRATEGIES:
         runner, render = run_intraday, intraday_markdown
     elif prereg.symbols:
         runner, render = run_crowding, crowding_markdown
     else:
         runner, render = run_trend, trend_markdown
-    doc = runner(prereg, sha, root, repo, final=final, exploratory=exploratory)
+    kw: dict[str, Any] = {"final": final, "exploratory": exploratory}
+    if shuffle_labels:
+        if prereg.strategy != "ml":
+            raise typer.BadParameter("--shuffle-labels is for model hypotheses only")
+        kw["shuffle_seed"] = 0
+    doc = runner(prereg, sha, root, repo, **kw)
     out = write_report(repo, doc, render(doc), None if not doc["exploratory"] else root / "reports")
     typer.echo(json.dumps({"verdict": doc["verdict"], "report": str(out)}))
 

@@ -20,15 +20,30 @@ from aiohttp import web
 np = pytest.importorskip("numpy")
 
 from quanta.research.data import load_market  # noqa: E402
-from quanta.research.fetch import MINUTE, fetch_dataset  # noqa: E402
+from quanta.research.fetch import (  # noqa: E402
+    M1_EXTRA,
+    MINUTE,
+    USDC,
+    fetch_dataset,
+    symbol_windows,
+    usdc_counterparts,
+    usdc_universe,
+)
 from quanta.research.intraday_runner import run_intraday  # noqa: E402
 from quanta.research.ledger import Ledger  # noqa: E402
 from quanta.research.minute import load_bars  # noqa: E402
+from quanta.research.ml_runner import run_ml  # noqa: E402
 from quanta.research.prereg import Prereg, PreregError, load_prereg  # noqa: E402
-from quanta.research.report import intraday_markdown, trend_markdown, write_report  # noqa: E402
+from quanta.research.report import (  # noqa: E402
+    intraday_markdown,
+    ml_markdown,
+    trend_markdown,
+    write_report,
+)
 from quanta.research.runner import run_trend  # noqa: E402
 from quanta.research.universe import (  # noqa: E402
     build_universe,
+    month_range,
     read_universe,
     subset_universe,
 )
@@ -438,3 +453,132 @@ def test_prereg_must_be_committed_and_unchanged(tmp_path: Path) -> None:
         load_prereg(path)
     assert load_prereg(path, require_committed=False)[0].version == 2
     assert date.fromisoformat(p.dev_end) < date.fromisoformat(p.lockbox_end)
+
+
+METRICS_HEADER = (
+    "create_time,symbol,sum_open_interest,sum_open_interest_value,"
+    "count_toptrader_long_short_ratio,sum_toptrader_long_short_ratio,count_long_short_ratio,"
+    "sum_taker_long_short_vol_ratio"
+)
+
+
+def add_model_extras(fa: FakeS3Archive, symbols: dict[str, list[str]]) -> None:
+    """5-minute premium index klines and daily 5-minute metrics for model M1."""
+    rng = np.random.default_rng(11)
+    for sym, months in symbols.items():
+        oi = 1000.0
+        for m in months:
+            prem = []
+            for d in _month_days(m):
+                rows = []
+                for k in range(288):
+                    t = d + timedelta(minutes=5 * k)
+                    p = rng.normal(0, 2e-4)
+                    prem.append(f"{_ms(t)},{p},{p},{p},{p},0,{_ms(t) + 299_999},0,60,0,0,0")
+                    oi *= float(np.exp(rng.normal(0, 0.002)))
+                    ratio = float(np.exp(rng.normal(0, 0.05)))
+                    rows.append(
+                        f"{t:%Y-%m-%d %H:%M:%S},{sym},{oi:.3f},{oi * 100:.3f},{ratio:.5f},"
+                        f"{ratio:.5f},{ratio:.5f},{ratio:.5f}"
+                    )
+                fa.add(
+                    f"{PREFIX}/daily/metrics/{sym}/{sym}-metrics-{d:%Y-%m-%d}.zip",
+                    _zip("x.csv", rows, METRICS_HEADER),
+                )
+            fa.add(
+                f"{PREFIX}/monthly/premiumIndexKlines/{sym}/5m/{sym}-5m-{m}.zip",
+                _zip("x.csv", prem, KL_HEADER),
+            )
+
+
+async def test_model_run_end_to_end(tmp_path: Path, archive: FakeS3Archive) -> None:
+    pytest.importorskip("lightgbm")
+    root, repo = tmp_path / "data", tmp_path / "repo"
+    kw: dict[str, Any] = {"listing_url": archive.url + "/listing", "base_url": archive.url}
+    ucsv = repo / "research/universe/u.csv"
+    await build_universe(root, "2020-03", "2020-04", ucsv, tmp_path / "m1.csv.gz", top_n=2, **kw)
+    universe = read_universe(ucsv)
+    windows = symbol_windows(universe, 1, 0)
+    months = {s: month_range(lo, hi) for s, (lo, hi) in windows.items()}
+    add_minutes(archive, months | {"AAAUSDC": ["2020-02", "2020-03", "2020-04"]})
+    for m in ("2020-02", "2020-03", "2020-04"):
+        funding = [f"{_ms(d) + 8 * 3_600_000 * k + 15},8,0.0001" for d in _month_days(m)
+                   for k in range(3)]  # fmt: skip
+        archive.add(
+            f"{PREFIX}/monthly/fundingRate/AAAUSDC/AAAUSDC-fundingRate-{m}.zip",
+            _zip("x.csv", funding, "calc_time,funding_interval_hours,last_funding_rate"),
+        )
+    add_model_extras(archive, months)
+    symbols = sorted(windows)
+    await fetch_dataset(root, universe, tmp_path / "h.csv.gz", metrics_symbols=(), **kw)
+    await fetch_dataset(
+        root, universe, tmp_path / "m.csv.gz", datasets=MINUTE, pad_before=1, pad_after=0,
+        metrics_symbols=(), **kw,
+    )  # fmt: skip
+    used = await fetch_dataset(
+        root, universe, tmp_path / "x.csv.gz", datasets=M1_EXTRA, pad_before=1, pad_after=0,
+        metrics_symbols=tuple(symbols), metrics_pad=(1, 0), metrics_start=date(2020, 1, 1),
+        **kw,
+    )  # fmt: skip
+    got = {u.listed.key.rsplit("/", 1)[-1] for u in used}
+    # metrics only for each symbol's own months (+1 before), never the whole range
+    assert "CCCUSDT-metrics-2020-02-10.zip" in got and "CCCUSDT-metrics-2020-04-10.zip" not in got
+    pairs = await usdc_counterparts(symbols, listing_url=kw["listing_url"])
+    assert pairs == {"AAAUSDT": "AAAUSDC"}
+    await fetch_dataset(
+        root, usdc_universe(pairs, "2020-02", "2020-04"), tmp_path / "u.csv.gz", datasets=USDC,
+        pad_before=0, pad_after=0, metrics_symbols=(), **kw,
+    )  # fmt: skip
+    pr = Prereg(
+        id="HM",
+        version=1,
+        title="model test",
+        mechanism="m",
+        falsification="f",
+        strategy="ml",
+        universe_file="research/universe/u.csv",
+        data_start="2020-02-01",
+        dev_end="2020-05-01",
+        lockbox_end="2020-06-01",
+        grid={"horizon": [15, 60], "q": [0.01], "model": ["ridge", "lgbm"]},
+        fixed={
+            "top": 2,
+            "ml_start": "2020-04",
+            "usdc_first_month": "2020-02",
+            "usdc_from": "2020-04",
+            "usdc_min_qv_day": 0,
+            "usdc_check_start": "2020-04-01",
+            "recent_start": "2020-04-10",
+            "prior_trial_count": 10,
+            "model": {
+                "train_days": 20,
+                "calib_days": 5,
+                "rounds": 10,
+                "min_train_rows": 1000,
+                "lgbm": {"min_data_in_leaf": 100, "num_threads": 2},
+            },
+        },
+        costs={"fee_bps": 4.0, "maker_bps": 0.0, "slip_top2_bps": 1.5, "slip_rest_bps": 4.5},
+        validation={"hold_days": 1, "lookback_days": 1},
+        stress_windows=[("2020-04-10", "2020-04-20", "test")],
+    )
+    doc = run_ml(pr, "sha", root, repo, workers=1)
+    assert doc["verdict"] in ("GECTI", "ELENDI", "SONUCSUZ") and len(doc["family"]["trials"]) == 4
+    assert doc["family"]["n_prior"] == 10
+    assert {g["name"] for g in doc["gates"]} >= {"dsr", "usdc_kontrol", "son_donem", "gecikme"}
+    assert doc["usdc_check"]["signals"] > 0 and doc["best"]["trades"]["trades"] > 0
+    # from 2020-04 only coins with an eligible USDC contract trade: AAA only
+    assert doc["symbols"] == 1
+    assert Ledger(repo).count("HM") == 4
+    again = run_ml(pr, "sha", root, repo, workers=2)  # processes: same answer
+    strip = {"program_trials"}
+    assert {k: v for k, v in again.items() if k not in strip} == {
+        k: v for k, v in doc.items() if k not in strip
+    }
+    md = ml_markdown(doc)
+    assert "Gerçek USDC" in md and "Karar:" in md
+    timing = run_ml(pr, "sha", root, repo, workers=1, shuffle_seed=0)
+    assert timing["exploratory"] and timing["timing_run"] and Ledger(repo).count("HM") == 4
+    if doc["verdict"] != "GECTI":
+        with pytest.raises(RuntimeError, match="lockbox stays closed"):
+            run_ml(pr, "sha", root, repo, workers=1, final=True)

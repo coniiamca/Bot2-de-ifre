@@ -15,6 +15,13 @@ deliberately pessimistic fill rules:
 * If stop and target are both reached in the same bar, the stop counts.
 * **Time stop** at the open ``hold`` bars after entry (market). A data gap or the end of data
   forces an exit at the last close with ``forced_mult`` × slippage.
+* ``post_only`` signals (model M1, zero maker fee): the limit order rests from bar
+  ``i + 1 + latency`` at ``min(limit, open)`` for a buy (``max`` for a sell; a post-only order
+  never crosses the book) and fills only when a later trade goes through it, at exactly that
+  price and only in a bar with volume.
+* ``exit_valid`` > 0: the time exit is a post-only limit at the last close (not better than
+  the exit bar's open), resting for ``exit_valid`` bars under the same fill rule; the stop
+  still counts during that window and wins ties; unfilled → market at the next open.
 * **Funding** at every funding time between entry and exit (longs pay positive rates).
 * A liquidation flag is raised when the adverse excursion reaches 30 % (isolated, ≤ 3×).
 
@@ -81,6 +88,8 @@ class Signals:
     tp: Floats  # take-profit price; NaN = none
     hold: Ints  # maximum holding time in bars
     valid: int = 5  # limit validity in bars
+    post_only: bool = False  # resting limit that never crosses the book (see module doc)
+    exit_valid: int = 0  # > 0: time exit by a post-only limit resting this many bars
 
     @staticmethod
     def build(
@@ -91,6 +100,8 @@ class Signals:
         tp: Floats,
         hold: Ints | int,
         valid: int = 5,
+        post_only: bool = False,
+        exit_valid: int = 0,
     ) -> Signals:
         order = np.argsort(i, kind="stable")
         h = np.broadcast_to(np.asarray(hold, dtype=np.int64), i.shape)
@@ -102,6 +113,8 @@ class Signals:
             np.asarray(tp, dtype=np.float64)[order],
             np.array(h[order], dtype=np.int64),
             valid,
+            post_only,
+            exit_valid,
         )
 
     def __len__(self) -> int:
@@ -212,7 +225,7 @@ def run_trades(
     n = len(bars)
     if n == 0 or len(sig) == 0:
         return Trades.from_rows([])
-    minute, o, h, lo, c = bars.minute, bars.o, bars.h, bars.low, bars.c
+    minute, o, h, lo, c, vol = bars.minute, bars.o, bars.h, bars.low, bars.c, bars.v
     ft, frate = bars.funding_t, bars.funding_rate
     through = costs.through_bps / 1e4
     rows: list[tuple[Any, ...]] = []
@@ -237,19 +250,26 @@ def run_trades(
         else:
             w_end = min(j0 + sig.valid, n)
             contiguous = minute[j0:w_end] == minute[j0] + np.arange(w_end - j0)
+            if sig.post_only:  # rests from bar j0 without crossing the book
+                lim = min(lim, o[j0]) if s > 0 else max(lim, o[j0])
             if s > 0:
                 hit = (lo[j0:w_end] < lim * (1.0 - through)) & contiguous
             else:
                 hit = (h[j0:w_end] > lim * (1.0 + through)) & contiguous
+            if sig.post_only:
+                hit &= vol[j0:w_end] > 0
             f = _first(np.logical_and.accumulate(contiguous) & hit)
             if f < 0:
                 continue  # never traded through: not filled
             e = j0 + f
-            entry = min(lim, o[e]) if s > 0 else max(lim, o[e])
+            # a resting order fills at its price; an ordinary limit at the open when gapped
+            gapped = min(lim, o[e]) if s > 0 else max(lim, o[e])
+            entry = lim if sig.post_only else gapped
             fee_in, slip_in, t_in = costs.maker, 0.0, int(bars.t[e]) + HALF_MIN_NS
         stop, target = sig.sl[k], sig.tp[k]
         hold = int(sig.hold[k])
-        end = min(e + hold, n - 1)  # bar of the time exit (or the last bar)
+        m_exit = sig.exit_valid
+        end = min(e + hold + m_exit, n - 1)  # bar of the (last) time exit, or the last bar
         run = minute[e : end + 1] == minute[e] + np.arange(end + 1 - e)
         g = _first(~run)
         last = e + g - 1 if g >= 0 else end  # last bar we can observe in a row
@@ -260,7 +280,7 @@ def run_trades(
         else:
             sl_hit = h[window] >= stop if not math.isnan(stop) else np.zeros(last + 1 - e, bool)
             tp_hit = lo[window] < target * (1.0 - through) if not math.isnan(target) else None
-        timed = g < 0 and e + hold <= n - 1  # the time-exit bar exists and follows in a row
+        timed = last >= e + hold  # the time-exit bar exists and follows in a row
         scan = hold if timed else last + 1 - e  # bars before the time exit
         fs = _first(sl_hit[:scan])
         ftp = -1
@@ -268,6 +288,20 @@ def run_trades(
             tp_hit = tp_hit[:scan].copy()
             tp_hit[0] = False  # never in the entry bar
             ftp = _first(tp_hit)
+        fx = fsx = -1  # maker time exit: first fill / first stop in its window
+        x0 = e + hold
+        if timed and m_exit > 0 and not (fs >= 0 or ftp >= 0):
+            ex = min(x0 + m_exit, last + 1)
+            ref = c[x0 - 1]
+            px_exit = max(ref, o[x0]) if s > 0 else min(ref, o[x0])  # never crosses the book
+            if s > 0:
+                mk = h[x0:ex] > px_exit * (1.0 + through)
+            else:
+                mk = lo[x0:ex] < px_exit * (1.0 - through)
+            fx = _first(mk & (vol[x0:ex] > 0))
+            fsx = _first(sl_hit[x0 - e : ex - e])
+            if fsx >= 0 and (fx < 0 or fsx <= fx):
+                fs, fx = hold + fsx, -1  # the stop fires while the exit order rests
         if fs >= 0 and (ftp < 0 or fs <= ftp):
             x = e + fs
             # the bar's open counts (gap through the stop) unless we were filled inside it
@@ -280,8 +314,12 @@ def run_trades(
             x = e + ftp
             exit_px = max(target, o[x]) if s > 0 else min(target, o[x])
             fee_out, slip_out, t_out, why = costs.maker, 0.0, int(bars.t[x]) + HALF_MIN_NS, TP
-        elif timed:
-            x = e + hold
+        elif fx >= 0:
+            x = x0 + fx
+            exit_px = px_exit
+            fee_out, slip_out, t_out, why = costs.maker, 0.0, int(bars.t[x]) + HALF_MIN_NS, TIME
+        elif timed and last >= x0 + m_exit:
+            x = x0 + m_exit
             exit_px = o[x] * (1.0 - s * slip)
             fee_out, slip_out, t_out, why = costs.taker, slip, int(bars.t[x]), TIME
         else:

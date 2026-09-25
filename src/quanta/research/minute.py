@@ -11,7 +11,7 @@ minutes) are kept as gaps: ``t`` is strictly increasing but not necessarily cont
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -39,6 +39,7 @@ class Bars:
     rank: NDArray[np.int16]  # universe rank of the bar's month; 0 = not in the universe
     funding_t: Ints  # funding times (ns, minute), sorted
     funding_rate: Floats
+    n: Floats = field(default_factory=lambda: np.zeros(0))  # trade count (empty: unknown)
 
     def __len__(self) -> int:
         return int(self.t.size)
@@ -79,21 +80,29 @@ def load_bars(
     start: str,
     end: str,
     window: tuple[str, str] | None = None,
+    rank_of: str | None = None,
 ) -> Bars | None:
     """Bars of ``symbol`` in [start, end) (YYYY-MM-DD), or None when there are none. With
     ``window`` (YYYY-MM, inclusive) only those monthly files are read — the ones the minute
-    fetch downloaded for this universe — so other data in the lake cannot change a result."""
+    fetch downloaded for this universe — so other data in the lake cannot change a result.
+    ``rank_of``: take the universe rank of another symbol (a USDC-margined contract is ranked
+    like its USDT counterpart)."""
     lo, hi = _ts(start), _ts(end)
     cols = ["open_time", "open", "high", "low", "close", "volume", "quote_volume"]
     cols.append("taker_buy_volume")
-    tables = []
+    files = []
     for f in _files(root, "klines_1m", symbol):
         month = f.parent.name.split("=", 1)[1]
         if month + "-31" < start[:7] + "-00" or month + "-01" >= end:
             continue
         if window is not None and not window[0] <= month <= window[1]:
             continue
-        tables.append(pq.read_table(f, columns=cols))
+        files.append(f)
+    # the trade count, when every file has it (hand-made test files may not)
+    with_count = bool(files) and all("count" in pq.read_schema(f).names for f in files)
+    if with_count:
+        cols.append("count")
+    tables = [pq.read_table(f, columns=cols) for f in files]
     if not tables:
         return None
     k = pa.concat_tables(tables)
@@ -111,11 +120,12 @@ def load_bars(
     t = t[first]
     if t.size == 0:
         return None
-    ranks = {(m, s): r for m, r, s in universe if s == symbol}
+    ranked = rank_of or symbol
+    ranks = {m: r for m, r, s in universe if s == ranked}
     months = month_of(t)
     rank = np.zeros(t.size, dtype=np.int16)
     for m in np.unique(months):
-        rank[months == m] = ranks.get((str(m), symbol), 0)
+        rank[months == m] = ranks.get(str(m), 0)
     ft, fr = _funding(root, symbol, lo, hi)
     return Bars(
         symbol,
@@ -130,6 +140,49 @@ def load_bars(
         rank,
         ft,
         fr,
+        col("count") if with_count else np.zeros(0),
+    )
+
+
+def fill_gaps(bars: Bars, max_gap: int = 60) -> Bars:
+    """Insert flat, trade-less bars (volume 0, price = the previous close) into gaps of at
+    most ``max_gap`` minutes, so that a thin contract's missing minutes do not look like a
+    data outage to the engine. Trade-less bars never fill a resting limit order (the engine
+    requires volume in post-only mode); longer gaps stay gaps."""
+    m = bars.minute
+    if m.size < 2:
+        return bars
+    step = np.diff(m)
+    fill = (step > 1) & (step <= max_gap + 1)
+    if not fill.any():
+        return bars
+    extra = np.concatenate(
+        [m[i] + np.arange(1, step[i]) for i in np.flatnonzero(fill)]
+    )  # missing minutes
+    src = np.searchsorted(m, extra, side="right") - 1  # the bar before each missing minute
+    order = np.argsort(np.concatenate([m, extra]), kind="stable")
+
+    def merged(real: Floats, filler: Floats) -> Floats:
+        out: Floats = np.concatenate([real, filler])[order]
+        return out
+
+    close = bars.c[src]
+    zero = np.zeros(extra.size)
+    rank = np.concatenate([bars.rank, bars.rank[src]])[order]
+    return Bars(
+        bars.symbol,
+        np.concatenate([bars.t, extra * MIN_NS])[order],
+        merged(bars.o, close),
+        merged(bars.h, close),
+        merged(bars.low, close),
+        merged(bars.c, close),
+        merged(bars.v, zero),
+        merged(bars.qv, zero),
+        merged(bars.tb, zero),
+        rank.astype(np.int16),
+        bars.funding_t,
+        bars.funding_rate,
+        merged(bars.n, zero) if bars.n.size else bars.n,
     )
 
 

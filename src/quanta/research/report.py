@@ -19,6 +19,32 @@ GATE_NAMES = {
     "likidasyon": "Likidasyon riski",
     "gecikme": "1 dakika gecikme",
     "islem_sayisi": "Yeterli işlem sayısı",
+    "son_donem": "Son dönemde de kârlı",
+    "sizinti_bekcisi": "Veri sızıntısı bekçisi",
+    "usdc_kontrol": "Gerçek USDC kontratlarında kontrol",
+}
+FEATURE_NAMES = {
+    "ret": "son getiri",
+    "rv": "kısa vadeli oynaklık",
+    "range": "son 1 saatin aralığı",
+    "imb": "agresif alıcı-satıcı dengesizliği",
+    "qimb": "çeyrek saat açılış dengesizliği",
+    "volr": "hacim (normale göre)",
+    "cntr": "işlem sayısı (normale göre)",
+    "loc": "zirveye/dibe uzaklık",
+    "funding": "funding",
+    "prem": "vadeli–endeks farkı (premium)",
+    "oi": "açık pozisyon değişimi",
+    "top": "büyük hesapların long/short oranı",
+    "acc": "hesapların long/short oranı",
+    "taker": "taker long/short oranı",
+    "hour": "gün içi saat",
+    "dow": "haftanın günü",
+    "quarter": "çeyrek saat içindeki yer",
+    "btc": "BTC'nin hareketi",
+    "mkt": "piyasanın hareketi",
+    "res": "coinin piyasadan ayrışması",
+    "cs": "coinler arası sıra",
 }
 REASON_NAMES = {"tp": "kâr al", "sl": "zarar kes", "time": "süre doldu", "gap": "veri boşluğu"}
 VERDICT = {
@@ -352,6 +378,162 @@ def intraday_markdown(doc: dict[str, Any]) -> str:
         f"{doc['program_trials']}. DSR bu sayıyla şans payını düşer.",
         '- Dakikalık mum testi: "elendi" kesindir; "geçti" yalnız adaylıktır. Sonraki adım '
         "kayıtlı canlı emir defterinde gerçek spread ve dolum ölçümüdür.",
+        f"- Ön-kayıt sha256 `{doc['prereg_sha'][:12]}`, veri manifesti `{doc['data_sha']}`.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _feature(name: str) -> str:
+    head = name.split("_", 1)[0]
+    return f"{FEATURE_NAMES.get(head, head)} (`{name}`)"
+
+
+def ml_markdown(doc: dict[str, Any]) -> str:
+    b, bench, fam, st = doc["best"], doc["benchmark"], doc["family"], doc["best"]["trades"]
+    u = doc["usdc_check"]
+    passed = sum(g["passed"] for g in doc["gates"])
+    p = b["params"]
+    lines = [
+        f"# {doc['hypothesis']} — {doc['title']}",
+        "",
+        f"**Karar: {VERDICT[doc['verdict']]}**",
+        "",
+        f"Kapılar: {passed}/{len(doc['gates'])} geçti · örneklem dışı dönem "
+        f"{doc['period'].replace('..', ' – ')} (kilitli son 6 ay hariç) · 1 dakikalık mumlar, "
+        f"5 dakikada bir karar · {len(fam['trials'])} ön-kayıtlı deneme · kod "
+        f"`{doc['commit'][:7]}`"
+        + (" · **keşif koşusu (kapılara sayılmaz)**" if doc["exploratory"] else "")
+        + (" · **süre ölçümü: etiketler karıştırıldı**" if doc.get("timing_run") else ""),
+        "",
+        "## Sade özet",
+        "",
+        f"- Model her ay yalnız geçmiş verilerle yeniden eğitildi; her tahmin örneklem dışı. "
+        f"En iyi ayar **{b['name']}**: {p['horizon']} dakika tutma, tahminlerin en uç "
+        f"%{float(p['q']) * 100:g}'i, model {p['model']}.",
+        f"- Yıllık net getiri {pct(b['cagr'])}, en büyük düşüş {pct(b['max_drawdown'])}, "
+        f"yıllık Sharpe {num(b['sr_annual'])}; son dönemde (2025+) Sharpe {num(b['recent_sr'])}.",
+    ]
+    if st.get("trades"):
+        lines += [
+            f"- {st['trades']} işlem (günde ortalama {num(st['per_day'], 1)}); kazanan işlem oranı "
+            f"{pct(st['win_rate'])}; ortalama tutma {num(st['avg_minutes'], 0)} dakika; "
+            f"işlemlerin {pct(st['long_share'], 0)}'i long.",
+            f"- İşlem başına (pozisyona oranla): maliyet öncesi ortalama "
+            f"{pct(st['avg_before_cost'], 3)}, komisyon + kayma {pct(st['avg_cost'], 3)}, net "
+            f"{pct(st['avg_net'], 3)}.",
+        ]
+    be = b.get("break_even_maker_bps")
+    if be is not None:
+        lines.append(
+            f"- Kâr, limit emir (maker) ücreti işlem başına %{be / 100:.4f}'e çıkarsa sıfırlanır "
+            "(bugün USDC kontratlarında %0)."
+        )
+    lines += [
+        f"- Gerçek USDC kontratlarında kontrol (2024+): Sharpe {num(u['usdc_sr'])}, getiri "
+        f"{pct(u['usdc_return'])}; aynı işlemler USDT fiyatlarıyla Sharpe {num(u['proxy_sr'])}; "
+        f"dolum oranı oranı {num(u['fill_ratio'])} → " + ("geçti." if u["passed"] else "geçemedi."),
+        f"- Aynı coinleri sadece alıp tutmak (kıyas): yıllık {pct(bench['cagr'])}, "
+        f"en büyük düşüş {pct(bench['max_drawdown'])}, Sharpe {num(bench['sr_annual'])}.",
+        "- Sonuçlar komisyon, kayma ve funding düşüldükten sonradır; geçmiş performans geleceği "
+        "garanti etmez.",
+        "",
+        "## Kapılar",
+        "",
+        "| Kapı | Sonuç | Değer | Kural |",
+        "|---|---|---|---|",
+    ]
+    for g in doc["gates"]:
+        mark = "✓" if g["passed"] else "✗"
+        lines.append(
+            f"| {GATE_NAMES.get(g['name'], g['name'])} | {mark} | {g['value']} | {g['rule']} |"
+        )
+    lines += ["", "## Modeller", "", "| Model | En iyi ayar | Sharpe |", "|---|---|---|"]
+    for kind, r in doc["models"].items():
+        lines.append(f"| {kind} | {r['best']} | {num(r['sr_annual'])} |")
+    if doc.get("features"):
+        lines += [
+            "",
+            "## Model neye bakıyor (en iyi ayarın modeli, önem payı)",
+            "",
+            "| Özellik | Pay |",
+            "|---|---|",
+        ]
+        for k, v in doc["features"].items():
+            lines.append(f"| {_feature(k)} | {pct(v)} |")
+    if st.get("reasons"):
+        lines += ["", "## İşlemler nasıl kapandı", "", "| Sebep | İşlem |", "|---|---|"]
+        for k, n in st["reasons"].items():
+            lines.append(f"| {REASON_NAMES.get(k, k)} | {n} |")
+    lines += ["", "## Yıllara göre net getiri", "", "| Yıl | Strateji | Al-tut |", "|---|---|---|"]
+    for y, r in b["yearly"].items():
+        lines.append(f"| {y} | {pct(r)} | {pct(bench['yearly'].get(y))} |")
+    lines += ["", "## Duyarlılık (en iyi ayar, yıllık Sharpe)", "", "| Senaryo | Sharpe |"]
+    lines += ["|---|---|", f"| Temel (USDC, limit emir) | {num(b['sr_annual'])} |"]
+    for k, v in doc["sensitivity_sr_annual"].items():
+        lines.append(f"| {k} | {num(v)} |")
+    lines += [
+        "",
+        "## Gerçek USDC kontratlarında kontrol",
+        "",
+        "| | USDT fiyatlarıyla (vekil) | Gerçek USDC |",
+        "|---|---|---|",
+        f"| Yıllık Sharpe | {num(u['proxy_sr'])} | {num(u['usdc_sr'])} |",
+        f"| Toplam getiri | {pct(u['proxy_return'])} | {pct(u['usdc_return'])} |",
+        f"| Dolan emir | {u['proxy_fills']} | {u['usdc_fills']} |",
+        f"| Kabul edilen işlem | {u['proxy_trades']} | {u['usdc_trades']} |",
+        "",
+        f"{u['signals']} sinyal; günlük getirilerin korelasyonu {num(u['daily_corr'])}.",
+    ]
+    if doc["stress"]:
+        lines += ["", "## Stres dönemleri", "", "| Dönem | Strateji | Al-tut |", "|---|---|---|"]
+        for k, v in doc["stress"].items():
+            lines.append(f"| {k} | {pct(v['strateji'])} | {pct(v['al-tut'])} |")
+    lines += ["", "## Tüm denemeler (yıllık net Sharpe)", "", "| Deneme | Sharpe |", "|---|---|"]
+    for name, sr in zip(fam["trials"], fam["sr_annual"], strict=True):
+        lines.append(f"| {name}{' ← en iyi' if name == b['name'] else ''} | {num(sr)} |")
+    contrib = doc["asset_contribution"]
+    if contrib:
+        items = list(contrib.items())
+        k = min(5, max(1, len(items) // 2))
+        lines += [
+            "",
+            "## Coin katkıları (net, sermayeye oranla)",
+            "",
+            "- En çok katkı: " + ", ".join(f"{s} {pct(v)}" for s, v in items[-k:][::-1]),
+            "- En zayıf: " + ", ".join(f"{s} {pct(v)}" for s, v in items[:k]),
+        ]
+    lb = doc.get("lockbox")
+    lines += ["", "## Kilitli dönem (2026-03 … 08, yalnız USDC kontratları)", ""]
+    if lb:
+        lines.append(
+            f"Bir kez açıldı: {lb['days']} gün, {lb['trades']} işlem, getiri {pct(lb['return'])}, "
+            f"Sharpe {num(lb['sr_annual'])} (eşik: > 0 ve CPCV yollarının 5. yüzdeliği "
+            f"{num(lb['cpcv_p5'])}) → " + ("geçti" if lb["passed"] else "geçemedi")
+        )
+    else:
+        lines.append("Açılmadı (yalnız geliştirme kapılarını geçen bir aday için bir kez açılır).")
+    lines += [
+        "",
+        "## Yöntem",
+        "",
+        "- Özellikler yalnız karar anında bilinen verilerden: 1 dakikalık mumlar (getiri, "
+        "oynaklık, hacim, agresif alıcı payı), funding, vadeli–endeks farkı, açık pozisyon ve "
+        "long/short oranları (6 dk gecikmeyle), BTC ve piyasanın hareketi, coinler arası sıra.",
+        "- Hedef: bir sonraki mumun açılışından h dakika sonrasına getiri, oynaklığa bölünmüş.",
+        "- Her ay: son 12 ay eğitim (yakın geçmiş daha ağır), 1 gün ara, 30 gün kalibrasyon "
+        "(eşikler buradan), 1 gün ara, test ayı. Ayarlar önceden sabit, sonuçlara göre ayar yok.",
+        "- İşlem: kapanış fiyatına yalnız-maker limit emir (5 dk geçerli; fiyat ötesine geçmeden "
+        "ve hacim olmadan dolmaz); h dakika sonra kapanışa yalnız-maker limit (5 dk), dolmazsa "
+        "piyasa emri; zarar kes 3·σ·√h (stop-market, 2 kat kayma).",
+        "- Ücret: USDC kontratları, maker %0, taker %0,04 (Binance, 2025-12-10'dan beri "
+        "'aksi duyurulana kadar'); kayma USDT kademelerinin 1,5 katı.",
+        "- İşlem başı risk sermayenin %0,5'i; coin başına ≤ 1×, toplam ≤ 1,5×; en fazla 3 "
+        "pozisyon. Coinler: her ay önceki ayın hacmine göre ilk 10; 2024-02'den itibaren yalnız "
+        "USDC kontratı en az bir tam aydır listelenmiş ve yeterince işlem gören coinler.",
+        f"- Deneme sayısı: bu aile {len(fam['trials'])}, programdaki önceki denemelerle birlikte "
+        f"{len(fam['trials']) + fam.get('n_prior', 0)} (etkin {num(fam['n_eff'], 1)}); "
+        f"kayıtlı toplam {doc['program_trials']}. DSR bu sayıyla şans payını düşer.",
         f"- Ön-kayıt sha256 `{doc['prereg_sha'][:12]}`, veri manifesti `{doc['data_sha']}`.",
         "",
     ]

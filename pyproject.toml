@@ -22,7 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 s3 = ["boto3>=1.35"]
 # research/backtest (quanta.research): not installed on the recording server
-research = ["numpy>=2"]
+research = ["numpy>=2", "lightgbm>=4.3"]
 
 [project.scripts]
 quanta = "quanta.cli:app"
@@ -69,7 +69,7 @@ packages = ["quanta"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["zstandard.*", "boto3.*", "botocore.*", "uvloop.*", "pyarrow.*"]
+module = ["zstandard.*", "boto3.*", "botocore.*", "uvloop.*", "pyarrow.*", "lightgbm.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -24,6 +24,8 @@ from quanta.research.costs import CostModel
 from quanta.research.data import load_market
 from quanta.research.fetch import symbol_windows
 from quanta.research.gates import (
+    Alpha,
+    FamilyStats,
     Gate,
     alpha_vs,
     annual_sr,
@@ -264,75 +266,24 @@ def run_intraday(
         sub = trades.get((best_ci, best_pool, "base"), Trades.concat([]))
         tr, w = combine(sub.take(np.flatnonzero(sub.side == side)), pf)
         sens[label] = annual_sr(daily_pnl(tr, w, first_day, end_day))
-    # benchmark: equal-risk buy-and-hold of the same coin pool (hourly, as in H6)
-    pool_universe = [u for u in universe if u[1] <= best_pool]
-    m = load_market(
-        root,
-        pool_universe,
-        prereg.data_start,
-        prereg.dev_end,
-        metrics=False,
-        windows=symbol_windows(universe),  # hourly data fetched for the whole universe
+    bench = benchmark_daily(
+        root, universe, best_pool, prereg.data_start, prereg.dev_end, first_day, end_day
     )
-    bdays, bench_d, _ = _run_trial(
-        m, TrendParams(168, 24, "sign", long_only=True), CostModel(), first_day
-    )
-    bench = np.zeros(n_days)
-    sel = (bdays >= first_day) & (bdays < end_day)
-    bench[bdays[sel] - first_day] = bench_d[sel]
     alpha = alpha_vs(best_daily, bench, v.hold_days)
-    contrib: dict[str, float] = {}
-    if len(best_tr):
-        pnl = best_w * best_tr.net
-        weight = np.bincount(best_tr.symbol, weights=best_w, minlength=len(symbols))
-        by_sym = np.bincount(best_tr.symbol, weights=pnl, minlength=len(symbols))
-        share = weight / max(weight.sum(), 1e-12)
-        contrib = {s: float(by_sym[i]) for i, s in enumerate(symbols) if share[i] >= 0.01}
+    contrib = contributions(best_tr, best_w, symbols)
     yearly = _yearly(first_day, best_daily)
     stats = _stats(best_tr, best_w, n_days)
-    gates: list[Gate] = [
-        *fs.gates,
-        plateau(fs.sr_annual, fs.best, _neighbours(full, prereg.grid, fs.best)),
-        _gate(
-            "maliyet_x1_5", sens["maliyet ×1,5"] > 0, sens["maliyet ×1,5"], "maliyet ×1,5'te SR > 0"
-        ),
-        _gate(
-            "gecikme",
-            sens["1 dakika gecikme"] > 0,
-            sens["1 dakika gecikme"],
-            "emir 1 dk geç gitse de SR > 0",
-        ),
-        Gate(
-            "varlik_degismezlik",
-            share_positive(list(contrib.values())) >= 2 / 3,
-            f"%{share_positive(list(contrib.values())) * 100:.0f} pozitif ({len(contrib)} coin)",
-            "coinlerin ≥ 2/3'ünde pozitif katkı",
-        ),
-        Gate(
-            "yil_degismezlik",
-            share_positive(list(yearly.values())) > 0.5,
-            f"%{share_positive(list(yearly.values())) * 100:.0f} pozitif ({len(yearly)} yıl)",
-            "yılların çoğunda pozitif",
-        ),
-        Gate(
-            "alfa",
-            alpha.alpha_annual > 0 and alpha.t_nw >= 2.0,
-            f"yıllık %{alpha.alpha_annual * 100:.1f}, t {alpha.t_nw:.2f}, beta {alpha.beta:.2f}",
-            "al-tut kıyasına göre alfa > 0 ve t ≥ 2",
-        ),
-        Gate(
-            "likidasyon",
-            stats.get("liquidation_flags", 0) == 0,
-            str(stats.get("liquidation_flags", 0)),
-            "hiçbir işlemde %30 ters hareket yok",
-        ),
-        Gate(
-            "islem_sayisi",
-            stats["trades"] >= MIN_TRADES,
-            str(stats["trades"]),
-            f"en az {MIN_TRADES} işlem (daha azı: sonuçsuz)",
-        ),
-    ]
+    gates = tier0_gates(
+        fs,
+        full,
+        prereg.grid,
+        sens["maliyet ×1,5"],
+        sens["1 dakika gecikme"],
+        contrib,
+        yearly,
+        alpha,
+        stats,
+    )
     passed = all(g.passed for g in gates)
     enough = stats["trades"] >= MIN_TRADES
     verdict = "GECTI" if passed else ("ELENDI" if enough else "SONUCSUZ")
@@ -450,6 +401,96 @@ def run_intraday(
         }
         doc["verdict"] = "GECTI" if doc["lockbox"]["passed"] else "ELENDI"
     return doc
+
+
+def benchmark_daily(
+    root: Path,
+    universe: list[tuple[str, int, str]],
+    pool: int,
+    data_start: str,
+    dev_end: str,
+    first_day: int,
+    end_day: int,
+) -> Floats:
+    """Daily returns of an equal-risk buy-and-hold of the same coin pool (hourly, as in H6)."""
+    pool_universe = [u for u in universe if u[1] <= pool]
+    m = load_market(
+        root,
+        pool_universe,
+        data_start,
+        dev_end,
+        metrics=False,
+        windows=symbol_windows(universe),  # hourly data fetched for the whole universe
+    )
+    bdays, bench_d, _ = _run_trial(
+        m, TrendParams(168, 24, "sign", long_only=True), CostModel(), first_day
+    )
+    bench = np.zeros(end_day - first_day)
+    sel = (bdays >= first_day) & (bdays < end_day)
+    bench[bdays[sel] - first_day] = bench_d[sel]
+    return bench
+
+
+def contributions(tr: Trades, w: Floats, symbols: list[str]) -> dict[str, float]:
+    """Net contribution of each coin that carried at least 1 % of the traded weight."""
+    if not len(tr):
+        return {}
+    pnl = w * tr.net
+    weight = np.bincount(tr.symbol, weights=w, minlength=len(symbols))
+    by_sym = np.bincount(tr.symbol, weights=pnl, minlength=len(symbols))
+    share = weight / max(weight.sum(), 1e-12)
+    return {s: float(by_sym[i]) for i, s in enumerate(symbols) if share[i] >= 0.01}
+
+
+def tier0_gates(
+    fs: FamilyStats,
+    full: list[dict[str, Any]],
+    grid: dict[str, list[Any]],
+    cost_sr: float,
+    latency_sr: float,
+    contrib: dict[str, float],
+    yearly: dict[str, float],
+    alpha: Alpha,
+    stats: dict[str, Any],
+    cost_rule: str = "maliyet ×1,5'te SR > 0",
+) -> list[Gate]:
+    """The Tier-0 gates of an intraday family (design §17.2)."""
+    return [
+        *fs.gates,
+        plateau(fs.sr_annual, fs.best, _neighbours(full, grid, fs.best)),
+        _gate("maliyet_x1_5", cost_sr > 0, cost_sr, cost_rule),
+        _gate("gecikme", latency_sr > 0, latency_sr, "emir 1 dk geç gitse de SR > 0"),
+        Gate(
+            "varlik_degismezlik",
+            share_positive(list(contrib.values())) >= 2 / 3,
+            f"%{share_positive(list(contrib.values())) * 100:.0f} pozitif ({len(contrib)} coin)",
+            "coinlerin ≥ 2/3'ünde pozitif katkı",
+        ),
+        Gate(
+            "yil_degismezlik",
+            share_positive(list(yearly.values())) > 0.5,
+            f"%{share_positive(list(yearly.values())) * 100:.0f} pozitif ({len(yearly)} yıl)",
+            "yılların çoğunda pozitif",
+        ),
+        Gate(
+            "alfa",
+            alpha.alpha_annual > 0 and alpha.t_nw >= 2.0,
+            f"yıllık %{alpha.alpha_annual * 100:.1f}, t {alpha.t_nw:.2f}, beta {alpha.beta:.2f}",
+            "al-tut kıyasına göre alfa > 0 ve t ≥ 2",
+        ),
+        Gate(
+            "likidasyon",
+            stats.get("liquidation_flags", 0) == 0,
+            str(stats.get("liquidation_flags", 0)),
+            "hiçbir işlemde %30 ters hareket yok",
+        ),
+        Gate(
+            "islem_sayisi",
+            stats["trades"] >= MIN_TRADES,
+            str(stats["trades"]),
+            f"en az {MIN_TRADES} işlem (daha azı: sonuçsuz)",
+        ),
+    ]
 
 
 def _gate(name: str, ok: bool, sr: float, rule: str) -> Gate:

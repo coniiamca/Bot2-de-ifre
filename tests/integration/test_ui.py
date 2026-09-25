@@ -57,7 +57,14 @@ async def test_ui_reports_ok_then_problem(tmp_path: Path) -> None:
         metrics_url=f"http://127.0.0.1:{port}/metrics",
         data_dir=cfg.data_dir,
         scrape_interval_s=0.2,
-        health=HealthConfig(stream_down_s=1.0, book_unsynced_s=1.0, stream_silent_s=2.0),
+        # the host's free disk is not under test here (dev machines may have < 20 GB)
+        health=HealthConfig(
+            stream_down_s=1.0,
+            book_unsynced_s=1.0,
+            stream_silent_s=2.0,
+            disk_warn_bytes=0,
+            disk_crit_bytes=0,
+        ),
     )
     client = TestClient(TestServer(build_app(ui_cfg)))
     await client.start_server()

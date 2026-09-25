@@ -118,14 +118,26 @@ def make_minute_bars(
     sigma: float = 0.0008,
     symbol: str = "SYNUSDT",
     rank: int = 1,
+    flow_beta: float = 0.0,
 ) -> Bars:
     """1-minute bars of a random walk with volume
     spikes. ``shock_rate`` times a day on average a 5-minute move of ``shock_sigmas`` σ·√5
     happens on heavy volume; ``revert`` of it drifts back over the next 30 minutes (0 = the
-    move is permanent, i.e. no snap-back effect)."""
+    move is permanent, i.e. no snap-back effect). ``flow_beta``: the aggressive-buyer
+    imbalance of the previous 15 minutes (standardised) adds ``flow_beta`` · σ to every
+    minute's return — a planted, persistent flow effect for the model M1 pipeline test."""
     rng = np.random.default_rng(seed)
     n = n_days * 1440
     r = rng.standard_normal(n) * sigma
+    share = None  # aggressive buyers' share of each minute's volume
+    if flow_beta:  # its own stream: flow_beta = 0 keeps the historical series unchanged
+        share = np.random.default_rng([seed, 1]).uniform(0.4, 0.6, n)
+        imb = 2.0 * share - 1.0  # U(−0.2, 0.2), sd 0.1155
+        kernel = np.ones(15) / 15.0
+        mean15 = np.convolve(imb, kernel)[:n]  # minutes t−14 … t
+        z = np.zeros(n)
+        z[1:] = mean15[:-1] / (0.1155 / np.sqrt(15.0))  # known before minute t
+        r += flow_beta * sigma * z
     qv = rng.lognormal(0.0, 0.3, n) * 1e5
     starts = np.flatnonzero(rng.random(n) < shock_rate / 1440)
     starts = starts[(starts > 1440) & (starts < n - 60)]
@@ -140,7 +152,7 @@ def make_minute_bars(
     h = np.maximum(o, c) * np.exp(wick[0])
     low = np.minimum(o, c) * np.exp(-wick[1])
     v = qv / c
-    tb = v * rng.uniform(0.4, 0.6, n)
+    tb = v * (share if share is not None else rng.uniform(0.4, 0.6, n))
     t = START_NS + np.arange(n, dtype=np.int64) * MIN_NS
     ft = START_NS + np.arange(0, n_days * 3, dtype=np.int64) * 8 * 3600 * 10**9
     fr = rng.normal(0.0001, 0.0002, ft.size)

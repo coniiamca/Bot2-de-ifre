@@ -195,3 +195,66 @@ def test_portfolio_limits_and_daily_booking() -> None:
     assert list(gross[1]) == [1.0]  # 1 + 1 > 1.5 gross cap
     pnl = daily_pnl(acc, w, 0, 2)
     assert pnl == pytest.approx([0.015, 0.01])
+
+
+def maker_sig(i: int, side: int = 1, **kw: Any) -> Signals:
+    nan = float("nan")
+    return Signals.build(
+        np.array([i]),
+        np.array([side]),
+        np.array([kw.get("limit", nan)]),
+        np.array([kw.get("sl", nan)]),
+        np.array([kw.get("tp", nan)]),
+        kw.get("hold", 3),
+        kw.get("valid", 5),
+        post_only=True,
+        exit_valid=kw.get("exit_valid", 0),
+    )
+
+
+def test_post_only_entry_never_crosses_and_fills_at_its_price() -> None:
+    # bar 1 opens below the buy limit: an ordinary limit fills at that open (98); a post-only
+    # order rests at 98 instead and needs a later trade through 98
+    o = [100.0, 98.0, 98.0, 98.0, 98.0, 98.0, 98.0, 98.0]
+    lo = [100.0, 98.0, 97.5, 98.0, 98.0, 98.0, 98.0, 98.0]
+    ordinary = one(bars(o, lo=lo), sig(0, limit=99.0))
+    assert ordinary.entry_px[0] == 98.0 and ordinary.entry_t[0] == T0 + MIN_NS + MIN_NS // 2
+    b = bars(o, lo=lo)
+    tr = one(b, maker_sig(0, limit=99.0))
+    assert tr.entry_px[0] == 98.0 and tr.entry_t[0] == b.t[2] + MIN_NS // 2  # bar 2 trades through
+    assert tr.fee[0] == pytest.approx(MAKER + TAKER)
+    # a touch is not a fill, and a bar without volume never fills
+    assert len(run_trades(bars(o, lo=[100.0] + [98.0] * 7), maker_sig(0, limit=99.0), C)) == 0
+    quiet = bars(o, lo=lo)
+    quiet.v[2] = 0.0
+    assert len(run_trades(quiet, maker_sig(0, limit=99.0), C)) == 0
+
+
+def test_maker_time_exit_rests_then_falls_back_to_market() -> None:
+    # long filled at 99.5 in bar 1; time exit after 3 bars: post-only sell at close[3]
+    o = [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+    lo = [100.0, 99.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+    h = [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.5, 100.0, 100.0, 100.0]
+    b = bars(o, h=h, lo=lo)
+    tr = one(b, maker_sig(0, limit=99.5, hold=3, exit_valid=3))
+    assert tr.reason[0] == TIME and tr.exit_px[0] == 100.0  # resting at 100, bar 6 trades above
+    assert tr.exit_t[0] == b.t[6] + MIN_NS // 2
+    assert tr.fee[0] == pytest.approx(2 * MAKER) and tr.slip[0] == 0.0
+    # never traded through within the window → market at the open after it
+    flat = bars(o, lo=lo)
+    tr = one(flat, maker_sig(0, limit=99.5, hold=3, exit_valid=3))
+    assert tr.exit_t[0] == flat.t[7] and tr.exit_px[0] == pytest.approx(100 * (1 - SLIP))
+    assert tr.fee[0] == pytest.approx(MAKER + TAKER)
+    # the stop still counts while the exit order rests, and wins a tie in the same bar
+    lo2 = [100.0, 99.0, 100.0, 100.0, 100.0, 100.0, 97.0, 100.0, 100.0, 100.0]
+    stopped = one(bars(o, h=h, lo=lo2), maker_sig(0, limit=99.5, sl=98.0, hold=3, exit_valid=3))
+    assert stopped.reason[0] == SL and stopped.exit_t[0] == b.t[6] + MIN_NS // 2
+    # a gap during the exit window forces the usual exit at the last close
+    gap = bars(o[:6], lo=lo[:6], minutes=[0, 1, 2, 3, 4, 5])
+    assert one(gap, maker_sig(0, limit=99.5, hold=3, exit_valid=3)).reason[0] == GAP
+
+
+def test_default_signals_keep_the_old_rules() -> None:
+    b = bars([100.0] * 8, lo=[100.0, 98.0] + [100.0] * 6)
+    old = one(b, sig(0, limit=99.0))
+    assert old.entry_px[0] == 99.0 and old.reason[0] == TIME and old.exit_t[0] == b.t[4]
