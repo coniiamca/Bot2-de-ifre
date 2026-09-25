@@ -1,0 +1,123 @@
+# Ön-kayıt: sonuçlar görülmeden önce sabitlenir. Değiştirmek yeni bir sürüm demektir
+# (version artar) ve her deneme deneme defterine (research/ledger) sayılır.
+id: M1
+version: 1
+title: Mumlardan öğrenen model + sıfır komisyonlu limit emir (USDC kontratları)
+strategy: ml
+mechanism: >-
+  Tek başına basit kurallar (I1–I4) maliyet öncesi yön bilgisi taşımadı; trend (H6) ve çeyrek
+  saat dengesizliği (H5) küçük bir brüt kenar gösterdi ama maliyet onu yedi. Bu hipotez iki
+  kaldıracı birlikte dener. (1) Birçok zayıf bilgi kaynağı tek modelde birleşirse toplam yön
+  bilgisi tek tek kurallardan büyük olabilir: çok vadeli getiriler, oynaklık, hacim ve işlem
+  sayısı, agresif alıcı-satıcı dengesizliği, zirveye/dibe uzaklık, funding, vadeli–endeks farkı,
+  açık pozisyon ve long/short oranları (kaldıraçlı kalabalığın izi), BTC ve piyasanın hareketi,
+  coinler arası sıra. (2) Binance USDC kontratlarında limit emir (maker) ücreti sıfır
+  (2025-12-10'dan beri, "aksi duyurulana kadar"); giriş ve çıkış yalnız-maker limit emirle
+  yapılırsa işlem başı komisyon %0,08–0,10'dan ~0'a iner. Kalan maliyet, emrin aleyhe dolması
+  ve hiç dolmamasıdır; motor ikisini de karamsar modeller.
+falsification: >-
+  Model her ay yalnız geçmişle yeniden eğitilir; bütün tahminler örneklem dışıdır. Maliyetler
+  (komisyon, kayma, funding) düşüldükten sonra performans pozitif değilse, kapılardan biri
+  geçilemezse ya da seçilen ayar gerçek USDC kontratlarında yeniden oynatıldığında tutmazsa
+  hipotez elenir. İki modelin (LightGBM, ridge) hiçbiri, tahminlerin en uç %0,25 / %1'inde
+  işlem başı maliyet öncesi getiriyi dolmama ve aleyhe dolma kaybının üstüne çıkaramıyorsa,
+  bu bilgi kaynaklarıyla dakika–saat ölçeğinde kâr edilebilir bir kenar yoktur.
+universe_file: research/universe/um_top20.csv   # her ay önceki ayın hacmine göre; ilk 10 kullanılır
+data_start: "2020-01-01"
+dev_end: "2026-03-01"       # geliştirme dönemi sonu (hariç); kilitli dönem buradan başlar
+lockbox_end: "2026-09-01"   # kilitli dönem (6 ay, "2026 piyasası") — yalnız bütün kapıları geçen aday için, bir kez, yalnız USDC kontratlarında
+data_manifests:
+  - research/data/manifest_1m.csv.gz
+  - research/data/manifest_top20_1h.csv.gz
+  - research/data/manifest_m1.csv.gz
+  - research/data/manifest_usdc_1m.csv.gz
+costs:
+  fee_bps: 4.0              # taker: USDC kontratları, normal kullanıcı (zarar kes, piyasa emri)
+  maker_bps: 0.0            # maker: USDC kontratları, 2025-12-10'dan beri %0
+  slip_top2_bps: 1.5        # kayma, yön başına: USDT kademelerinin 1,5 katı (USDC likiditesi daha düşük)
+  slip_rest_bps: 4.5        # sıra 3–5
+  slip_6_10_bps: 7.5        # sıra 6–10
+  slip_11_20_bps: 12.0      # kullanılmaz (ilk 10)
+  stop_slip_mult: 2.0       # zarar kes ve zorunlu çıkışta kayma çarpanı
+validation:
+  hold_days: 1              # işlemler bir günden kısa: purge 1 gün
+  lookback_days: 1          # embargo 2 gün
+  cpcv_groups: 6
+  cpcv_k: 2
+  pbo_blocks: 16
+stress_windows:
+  - ["2021-05-01", "2021-06-01", "Mayıs 2021 çöküşü"]
+  - ["2022-05-01", "2022-06-01", "Mayıs 2022 (LUNA)"]
+  - ["2022-11-01", "2022-12-01", "Kasım 2022 (FTX)"]
+  - ["2024-08-01", "2024-08-15", "Ağustos 2024 (yen carry)"]
+  - ["2025-10-01", "2025-11-01", "Ekim 2025 likidasyon zinciri"]
+grid:                       # 3 × 2 × 2 = 12 deneme, hepsi sayılır
+  horizon: [15, 60, 240]    # tutma süresi (dakika): tahmin hedefi de bu
+  q: [0.0025, 0.01]         # seçicilik: kalibrasyon dilimindeki tahminlerin en uç %0,25 / %1'i (üst → long, alt → short)
+  model: [lgbm, ridge]      # doğrusal olmayan (LightGBM) ve doğrusal (ridge) model
+fixed:
+  top: 10                   # her ay hacimce ilk 10 coin
+  ml_start: "2021-01"       # ilk test ayı (2020 ilk eğitim yılı)
+  entry_valid: 5            # giriş limit emri 5 dk geçerli (yalnız maker, kapanış fiyatından)
+  exit_valid: 5             # süre dolunca çıkış limit emri 5 dk, dolmazsa piyasa emri
+  stop_k: 3.0               # zarar kes: 3 · σ(1 dk) · √h uzaklıkta stop-market
+  usdc_first_month: "2024-01"
+  usdc_from: "2024-02"      # bu aydan itibaren yalnız USDC kontratı uygun coinler işlem görür
+  usdc_min_qv_day: 5000000  # USDC kontratının önceki ayki günlük ortalama hacmi ≥ 5 milyon $
+  usdc_gap_fill: 60
+  usdc_check_start: "2024-01-01"
+  recent_start: "2025-01-01"
+  prior_trial_count: 233    # programdaki önceki denemeler (H2, H5, H6, H6B, I1–I4): DSR'da bağımsız sayılır
+  risk_per_trade: 0.005     # işlem başı risk: sermayenin %0,5'i (zarar kese göre boyut)
+  cap_symbol: 1.0           # coin başına en fazla 1× sermaye
+  cap_gross: 1.5            # toplam brüt kaldıraç tavanı (tasarım §13.4)
+  max_positions: 3          # aynı anda en fazla 3 pozisyon; coin başına 1
+  model:
+    train_days: 365         # her ay son 12 ayla yeniden eğitim
+    calib_days: 30          # eşikler için ayrılmış kalibrasyon dilimi
+    gap_days: 1             # her sınırda 1 gün ara (en uzun hedef + gecikme + çıkış süresinden uzun)
+    halflife_days: 90       # yakın geçmişin ağırlığı: yarı ömür 90 gün
+    rounds: 300
+    ridge_lambda: 0.001
+    min_train_rows: 20000
+    lgbm:
+      learning_rate: 0.05
+      num_leaves: 31
+      min_data_in_leaf: 2000
+      feature_fraction: 0.8
+      bagging_fraction: 0.8
+      bagging_freq: 1
+      lambda_l2: 10.0
+      max_bin: 63
+      num_threads: 4
+      seed: 0
+notes: >-
+  Kullanıcının hedefi: vadelide belli coinlerde sürekli long/short yapan, 1–60 dakikalık hızlı
+  gir-çıklarla kâr eden bir bot. Kullanıcının paylaştığı videoda bir gecelik 10 işlemin kârı
+  komisyonlara gitti; bu ön-kayıt o dersi ve I1–I4/H5/H6 sonuçlarını izler. Kararlar: (1) Ücret
+  gerçeği Binance duyurusundan (2025-12-09): bütün USDC teminatlı perpetual kontratlarda normal
+  kullanıcı için maker %0, taker %0,04, "aksi duyurulana kadar". Promosyon biterse sonuç
+  "USDC standart ücret" duyarlılığında görünür; canlıda bot kendi komisyon oranını her gün okur
+  ve maker ücreti 0'dan büyükse yeni işlem açmaz. (2) Tahminler USDT kontratlarının verisinden
+  (uzun geçmiş, fiyat keşfi); işlemler USDT mumlarında USDC ücretleriyle simüle edilir (vekil).
+  Bağlayıcı kontrol: seçilen ayarın 2024+ işlemleri gerçek USDC 1 dk mumlarında yeniden
+  oynatılır; net > 0, Sharpe ≥ vekilin yarısı ve dolum oranı ±%30 olmalıdır. USDC veri denetimi
+  (ön-kayıttan önce): 29 kontratın hiçbirinde eksik dakika yok; dakikaların %1,2'si işlemsiz
+  (işlemsiz dakikada limit emir dolmaz). (3) 2024-02'den itibaren yalnız USDC kontratı en az bir
+  tam aydır listelenmiş ve önceki ay günde ≥ 5 milyon $ işlem görmüş coinler işlem görür;
+  bugünkü listeye göre süzme yapılmaz. (4) Şans düzeltmesi: DSR deneme sayısı bu 12 + önceki 233
+  (bağımsız sayılır, en sıkı hali); Sharpe varyansı yalnız M1 ızgarasından, altında 1/T tabanı.
+  Önceki kural aileleri her gün maliyetle zarar ettiği için varyansları şans hakkında bilgi
+  taşımaz; aynen alınsa çıta anlamsız olurdu (yıllık Sharpe ≈ 35). Bu seçim sonuç görülmeden
+  yazıldı. (5) Haber verisi yok: geçmiş için güvenilir zaman damgalı ücretsiz arşiv yok. (6)
+  Kapılar: CPCV medyan yol > 0 ve ≥ %80 pozitif; DSR ≥ 0,95; PBO ≤ 0,25; Newey–West t ≥ 3,4;
+  parametre platosu; ücret ve kayma ×1,5 ile limit emrin 1 bps daha ötesine geçme şartında
+  SR > 0; 1 dakika gecikmeyle SR > 0; coinlerin ≥ 2/3'ünde ve yılların çoğunda pozitif; al-tut
+  kıyasına göre alfa > 0 ve t ≥ 2; likidasyon bayrağı yok; en az 300 işlem (azsa SONUÇSUZ);
+  2025-01 … 2026-02'de SR > 0; veri sızıntısı bekçisi (SR < 10); USDC gerçek-mum kontrolü.
+  Kilitli dönem yalnız bütün kapılar geçilirse, yalnız USDC kontratlarında ve bir kez açılır.
+  Dürüstlük notları: (a) kodun gerçek veride denenmesi yalnız özellik tablosunun kurulmasıyla
+  sınırlı kaldı (satır sayısı, bellek, eksik değer oranları); hiçbir model gerçek etiketlerle
+  eğitilmedi ve hiçbir işlem sonucu görülmedi. (b) Süre ölçümü karıştırılmış etiketlerle yapılır.
+  (c) Her deneme bir kez koşulur; ELENDİ çıkan aile başka bir ızgara, evren ya da modelle
+  yeniden denenmez.
