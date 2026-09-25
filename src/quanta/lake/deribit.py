@@ -9,7 +9,7 @@ import msgspec
 import pyarrow as pa
 
 from quanta.lake.binance_usdm import _rest_path, add_meta
-from quanta.lake.table import TS, TableBuilder, f64, ms, schema
+from quanta.lake.table import TS, SeenKeys, TableBuilder, f64, ms, schema
 from quanta.tools.raw_reader import RawRecord, decode_rest
 
 VENUE = "deribit"
@@ -87,7 +87,7 @@ class DeribitNormalizer:
         self.t = {name: TableBuilder(name, sch) for name, sch in SCHEMAS.items()}
         self.invalid_frames = 0  # undecodable raw frames (stored as ws_invalid)
         self.schema_errors: dict[str, int] = {}  # decodable but unexpected shape → API drift
-        self._book_seen: set[tuple[str, int, str]] = set()
+        self._book_seen = SeenKeys()
         self._instrument_state: dict[str, tuple[Any, ...]] = {}
 
     def feed(self, channel: str, records: Iterable[RawRecord]) -> None:
@@ -121,10 +121,9 @@ class DeribitNormalizer:
         if kind == "book":
             inst = data["instrument_name"]
             key = (inst, int(data["change_id"]), data["type"])
-            if key in self._book_seen:
+            if not self._book_seen.add(key, rec.t):
                 self.t["book_deltas"].duplicates += 1
                 return
-            self._book_seen.add(key)
             common = {
                 **lin,
                 "symbol": inst,

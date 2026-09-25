@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 
 from quanta.ui.history import History, Point
@@ -50,6 +51,9 @@ class HealthConfig:
     clock_warn_s: float = 0.25
     clock_crit_s: float = 1.0
     latency_p99_s: float = 2.0
+    disk_days_warn: float = 7  # warn when the disk-guard floor is this many days away
+    checks_days: int = 7  # a failed daily check stays on the page this long
+    checks_retry_days: int = 3  # matches quanta.lake.checks.RETRY_DAYS
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +91,8 @@ def evaluate(
     quality: list[dict[str, Any]] | None = None,
     access: dict[str, Any] | None = None,
     update: dict[str, Any] | None = None,
+    checks: list[dict[str, Any]] | None = None,
+    projection: dict[str, Any] | None = None,
 ) -> Verdict:
     issues: list[Issue] = []
     snap = hist.latest
@@ -108,6 +114,21 @@ def evaluate(
     issues += _quality_issues(quality or [])
     issues += _access_issues(access)
     issues += _update_issues(update)
+    today = datetime.fromtimestamp(now, UTC).date()
+    issues += _checks_issues(checks or [], today, cfg)
+    guard = snap is not None and snap.get("quanta_recorder_disk_guard_active") == 1
+    if projection and not guard and projection["days_left"] < cfg.disk_days_warn:
+        issues.append(
+            Issue(
+                "warning",
+                "disk_projection",
+                f"Disk koruma tabanına ≈ {projection['days_left']:.0f} gün kaldı",
+                f"Kayıt günde ≈ {projection['gb_per_day']:.1f} GB büyüyor (ham veri + lake). "
+                "Bu hızla kayıt birkaç gün içinde duracak: ek disk, buluta yükleme veya daha az "
+                "sembol gerekiyor.",
+                "disk",
+            )
+        )
     level: Level = "ok"
     if any(i.level == "critical" for i in issues):
         level = "critical"
@@ -337,6 +358,40 @@ def _quality_issues(quality: list[dict[str, Any]]) -> list[Issue]:
         for v, q in sorted(latest.get("venues", {}).items())
         if q.get("flag") == "bad"
     ]
+
+
+def _checks_issues(checks: list[dict[str, Any]], today: date, cfg: HealthConfig) -> list[Issue]:
+    out: list[Issue] = []
+    for c in checks:
+        day = date.fromisoformat(c["date"])
+        if today - day > timedelta(days=cfg.checks_days):
+            continue
+        if c.get("status") == "failed":
+            parts = [
+                f"İşlemler: {c['trades_text']}" if c.get("trades_state") == "failed" else "",
+                f"Order book: {c['book_text']}" if c.get("book_state") == "failed" else "",
+            ]
+            out.append(
+                Issue(
+                    "warning",
+                    "checks_failed",
+                    f"{c['date']} günlük doğrulaması başarısız",
+                    " · ".join(p for p in parts if p) or "Ayrıntılar doğrulama tablosunda.",
+                    "günlük-doğrulama-faz-0-başarı-kriterleri",
+                )
+            )
+        elif c.get("status") == "waiting" and today - day > timedelta(days=cfg.checks_retry_days):
+            out.append(
+                Issue(
+                    "warning",
+                    "checks_stalled",
+                    f"{c['date']} günlük doğrulaması tamamlanamadı",
+                    "Resmî işlem arşivi indirilemedi ve otomatik deneme süresi doldu. "
+                    f"Elle: sudo quanta lake checks -d <veri> -c <config> --date {c['date']}",
+                    "günlük-doğrulama-faz-0-başarı-kriterleri",
+                )
+            )
+    return out
 
 
 def _update_issues(update: dict[str, Any] | None) -> list[Issue]:

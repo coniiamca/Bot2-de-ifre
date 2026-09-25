@@ -397,7 +397,9 @@ setup_tailscale() {
   step "4/9 Tailscale"
   if ((!WITH_TAILSCALE)); then say "  · --no-tailscale: atlandı"; return; fi
   if ! command -v tailscale >/dev/null 2>&1; then
-    curl -fsSL --max-time 120 https://tailscale.com/install.sh | sh >/dev/null
+    # the official installer runs apt itself: same no-restart rule as apt_get above
+    curl -fsSL --max-time 120 https://tailscale.com/install.sh \
+      | DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l sh >/dev/null
     ok "Tailscale kuruldu"
   fi
   systemctl enable --now tailscaled >/dev/null 2>&1 || true
@@ -668,9 +670,11 @@ PrivateTmp=yes"
       printf 'ExecStart=%s/.venv/bin/quanta ui --data-dir %s --host 127.0.0.1 --port 8080 --metrics-url http://127.0.0.1:9101/metrics\n' "$INSTALL_DIR" "$DATA_DIR"
       ;;
     quanta-lake)
-      printf 'Description=quanta daily lake job (00:20 UTC)\nAfter=quanta-recorder.service\n\n[Service]\n%s\n' "$common"
+      printf 'Description=quanta daily lake job (00:20 UTC) and data checks (every 6 h)\nAfter=quanta-recorder.service\n\n[Service]\n%s\n' "$common"
       printf 'ExecStart=%s/.venv/bin/quanta lake schedule --data-dir %s --at 00:20 --config %s\n' "$INSTALL_DIR" "$DATA_DIR" "$CONFIG_FILE"
       printf 'ReadWritePaths=%s\nNice=10\nIOSchedulingClass=idle\n' "$DATA_DIR"
+      # bounded by design (~1-2 GB); the cap only protects the rest of a shared server
+      printf 'MemoryHigh=5G\nMemoryMax=6G\nOOMScoreAdjust=500\n'
       ;;
   esac
   printf '\n[Install]\nWantedBy=multi-user.target\n'

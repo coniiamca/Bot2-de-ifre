@@ -9,7 +9,7 @@ from typing import Any
 import msgspec
 import pyarrow as pa
 
-from quanta.lake.table import TS, TableBuilder, f64, ms, schema
+from quanta.lake.table import TS, SeenKeys, TableBuilder, f64, ms, schema
 from quanta.tools.raw_reader import RawRecord, decode_rest
 from quanta.venues.binance_usdm import messages as msg
 
@@ -146,7 +146,7 @@ class BinanceUsdmNormalizer:
         self.invalid_frames = 0  # undecodable raw frames (stored as ws_invalid)
         self.schema_errors: dict[str, int] = {}  # decodable but unexpected shape → API drift
         self._instrument_state: dict[str, tuple[Any, ...]] = {}
-        self._depth_seen: set[tuple[str, int]] = set()  # (symbol, u): overlap duplicates
+        self._depth_seen = SeenKeys()  # (symbol, u): overlap duplicates
 
     def feed(self, channel: str, records: Iterable[RawRecord]) -> None:
         handler = {
@@ -267,10 +267,9 @@ class BinanceUsdmNormalizer:
             return
         env = msg.decode_envelope(bytes(rec.p))
         d = msg.decode_depth(env.data)
-        if (d.s, d.u) in self._depth_seen:
+        if not self._depth_seen.add((d.s, d.u), rec.t):
             self.t["book_deltas"].duplicates += 1
             return
-        self._depth_seen.add((d.s, d.u))
         common = {
             "venue": VENUE,
             "symbol": d.s,

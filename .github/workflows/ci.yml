@@ -212,6 +212,7 @@ jobs:
           assert set(d["access"]["venues"]) == {"binance_usdm", "bybit_linear", "deribit"}
           assert d["system"]["disk_floor_gb"] == 3.0, d["system"]
           assert d["system"]["disk_guard_active"] is False, d["system"]
+          assert d["checks"] == [] and d["phase0"] == {"full_days": 0, "target_days": 3}, d
           PY
           m=""
           for _ in $(seq 1 30); do
@@ -227,6 +228,11 @@ jobs:
           test ! -e /usr/local/bin/quanta-compose
           systemd-analyze verify /etc/systemd/system/quanta-*.service
           sudo quanta data volume -d /var/lib/quanta/data
+          # daily checks as the service user: nothing finished to verify on a fresh install
+          sudo quanta lake checks -d /var/lib/quanta/data -c /etc/quanta/recorder.yaml > checks.json
+          test "$(tr -d '[:space:]' < checks.json)" = "[]"
+          sudo journalctl -u quanta-lake --no-pager | tee lake.log
+          test -z "$(grep -E 'daily_checks_failed|Traceback' lake.log || true)"
       - name: Re-run remembers native mode and is a safe update
         run: |
           sudo QUANTA_REPO_URL="file://$GITHUB_WORKSPACE" QUANTA_BRANCH="$QUANTA_BRANCH" \

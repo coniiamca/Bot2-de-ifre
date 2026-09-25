@@ -166,3 +166,110 @@ def test_update_state_issues(tmp_path: Path) -> None:
     assert codes({**state, "result": "rollback_failed"})["update_failed"] == "critical"
     for ok in ("up_to_date", "updated", "waiting_ci", "ci_failed", "skipped_failed"):
         assert "update_failed" not in codes({**state, "result": ok})
+
+
+def _write_checks(tmp_path: Path, day: str, doc: dict) -> None:  # type: ignore[type-arg]
+    p = tmp_path / "lake" / "_checks" / f"date={day}.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"date": day, **doc}))
+
+
+def test_checks_summary_progress_and_issues(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    from quanta.ui.sources import load_checks, phase0_progress
+
+    ok_trades = {
+        "BTCUSDT": {"status": "explained", "explained": {"restart": 25}},
+        "ETHUSDT": {"status": "ok"},
+    }
+    ok_book = {"BTCUSDT": {"status": "ok", "compared": 144}}
+    _write_checks(tmp_path, "2026-09-26", {"status": "ok", "trades": ok_trades, "book": ok_book})
+    _write_checks(tmp_path, "2026-09-27", {"status": "ok", "trades": ok_trades, "book": ok_book})
+    _write_checks(
+        tmp_path,
+        "2026-09-28",
+        {
+            "status": "failed",
+            "trades": {"BTCUSDT": {"status": "failed", "unexplained": 12}},
+            "book": ok_book,
+        },
+    )
+    _write_checks(
+        tmp_path,
+        "2026-09-29",
+        {"status": "waiting", "trades": {"BTCUSDT": {"status": "waiting"}}, "book": ok_book},
+    )
+    checks = load_checks(tmp_path)
+    assert [c["date"] for c in checks] == ["2026-09-29", "2026-09-28", "2026-09-27", "2026-09-26"]
+    c29, c28, c27 = checks[0], checks[1], checks[2]
+    assert c29["trades_state"] == "waiting" and "resmî arşiv bekleniyor" in c29["trades_text"]
+    assert c28["trades_state"] == "failed" and c28["unexplained"] == 12
+    assert "12 açıklanamayan eksik" in c28["trades_text"]
+    assert c27["trades_state"] == "ok"
+    assert c27["trades_text"] == (
+        "2 sembolde resmî arşivle aynı (eksikler açıklandı: 25 işlem yeniden başlatma)"
+    )
+    assert c27["book_text"] == "BTCUSDT: 144 anlık görüntüyle birebir aynı"
+
+    def quality(*days: str, span: float = 1.0) -> list[dict]:  # type: ignore[type-arg]
+        return [{"date": d, "venues": {"binance_usdm": {"span": span}}} for d in days]
+
+    # the failed 28th breaks the streak; the waiting 29th is skipped
+    assert phase0_progress(checks, quality("2026-09-26", "2026-09-27"))["full_days"] == 0
+    assert phase0_progress(checks[2:], quality("2026-09-26", "2026-09-27"))["full_days"] == 2
+    # a partial day (recorder started mid-day) is not a full day
+    assert (
+        phase0_progress(checks[2:], quality("2026-09-27") + quality("2026-09-26", span=0.9))[
+            "full_days"
+        ]
+        == 1
+    )
+
+    now = datetime(2026, 9, 29, 12, tzinfo=UTC).timestamp()
+    hist = History()
+    issues = evaluate(hist, now, now, CFG, checks=checks).issues
+    failed = [i for i in issues if i.code == "checks_failed"]
+    assert len(failed) == 1 and failed[0].title.startswith("2026-09-28")
+    assert "12 açıklanamayan eksik" in failed[0].detail and failed[0].runbook.startswith(
+        "günlük-doğrulama"
+    )
+    # a day still waiting after the retry window is reported
+    later = datetime(2026, 10, 3, 12, tzinfo=UTC).timestamp()
+    codes = [i.code for i in evaluate(hist, later, later, CFG, checks=checks).issues]
+    assert "checks_stalled" in codes
+
+
+def test_disk_projection() -> None:
+    from datetime import date
+
+    from quanta.ui.sources import disk_projection
+
+    def row(day: str, mb: float, lake: float = 0.0) -> dict:  # type: ignore[type-arg]
+        return {"date": day, "venues": {"binance_usdm": {"compressed_mb": mb}}, "lake_mb": lake}
+
+    today = date(2026, 9, 28)
+    # the oldest day (partial start) is skipped; lake adds its measured share
+    rows = [row("2026-09-28", 500), row("2026-09-27", 2000, 1000), row("2026-09-26", 2000, 1000),
+            row("2026-09-25", 300, 150)]  # fmt: skip
+    p = disk_projection(rows, today, 0.5, free_bytes=38e9, floor_bytes=20e9)
+    assert p == {"gb_per_day": 3.0, "days_left": 6.0, "estimated": False, "basis_days": 2,
+                 "lake_ratio": 0.5}  # fmt: skip
+    # one finished (partial) day: extrapolate today's raw data
+    p = disk_projection([row("2026-09-26", 1000), row("2026-09-25", 300)], date(2026, 9, 26),
+                        0.25, 38e9, 20e9)  # fmt: skip
+    assert p is not None and p["estimated"] and p["gb_per_day"] == 4.0 and p["days_left"] == 4.5
+    # first day, or too early to extrapolate, or no disk metric: no projection
+    assert disk_projection([row("2026-09-25", 300)], date(2026, 9, 25), 0.9, 38e9, 20e9) is None
+    assert disk_projection([row("2026-09-26", 9), row("2026-09-25", 3)], date(2026, 9, 26),
+                           0.05, 38e9, 20e9) is None  # fmt: skip
+    assert disk_projection(rows, today, 0.5, None, 20e9) is None
+    # below the floor already: zero days left
+    assert disk_projection(rows, today, 0.5, 19e9, 20e9)["days_left"] == 0.0  # type: ignore[index]
+
+    hist, m = History(), healthy_metrics()
+    now = feed(hist, m, 1000, 3)
+    warn = {"gb_per_day": 3.0, "days_left": 6.0}
+    codes = [i.code for i in evaluate(hist, now, now, CFG, projection=warn).issues]
+    assert codes == ["disk_projection"]
+    assert evaluate(hist, now, now, CFG, projection={**warn, "days_left": 9.0}).issues == []

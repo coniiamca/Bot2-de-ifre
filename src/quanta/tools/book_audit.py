@@ -6,10 +6,16 @@ event with ``U <= L <= u``; price levels touched by that event are excluded (the
 changed between L and u). Only the price range covered by the snapshot is compared (a
 1000-level snapshot does not show deeper levels). Any mismatch means our reconstruction —
 sequencing, parsing or scaling — is wrong.
+
+Diff events are streamed (a day at 100 ms is ~864k events per symbol): a small heap restores
+update-id order across overlapping connections (make-before-break rotation) and drops the
+duplicates, so memory stays bounded.
 """
 
 from __future__ import annotations
 
+import heapq
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -23,6 +29,7 @@ from quanta.tools.raw_reader import days_around, decode_rest, iter_records, segm
 from quanta.venues.binance_usdm import messages as msg
 
 VENUE = "binance_usdm"
+REORDER_WINDOW = 5000  # events (~8 min of one symbol at 100 ms)
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,19 +64,40 @@ class AuditReport:
         self.skipped[reason] = self.skipped.get(reason, 0) + 1
 
 
-def _load(
-    data_dir: Path, symbol: str, day: date
-) -> tuple[list[msg.DepthUpdate], list[Snapshot], tuple[Scale, Scale] | None]:
-    days = days_around(day, 0, 0)
-    events: dict[int, msg.DepthUpdate] = {}
+def _raw_events(data_dir: Path, symbol: str, day: date) -> Iterator[msg.DepthUpdate]:
     prefix = f"{symbol.lower()}@depth"
-    for rec in iter_records(segment_files(data_dir, VENUE, "public_depth", days)):
+    for rec in iter_records(segment_files(data_dir, VENUE, "public_depth", days_around(day, 0, 0))):
         if rec.k != "ws":
             continue
         env = msg.decode_envelope(bytes(rec.p))
         if env.stream.startswith(prefix):
-            ev = msg.decode_depth(env.data)
-            events[ev.u] = ev
+            yield msg.decode_depth(env.data)
+
+
+def in_order(
+    events: Iterable[msg.DepthUpdate], window: int = REORDER_WINDOW
+) -> Iterator[msg.DepthUpdate]:
+    """Arrival order → update-id order, without duplicates (bounded reorder buffer)."""
+    heap: list[tuple[int, int, msg.DepthUpdate]] = []
+    last: int | None = None
+    for n, ev in enumerate(events):
+        heapq.heappush(heap, (ev.u, n, ev))
+        if len(heap) > window:
+            u, _, out = heapq.heappop(heap)
+            if last is None or u > last:
+                last = u
+                yield out
+    while heap:
+        u, _, out = heapq.heappop(heap)
+        if last is None or u > last:
+            last = u
+            yield out
+
+
+def _load(
+    data_dir: Path, symbol: str, day: date
+) -> tuple[list[Snapshot], tuple[Scale, Scale] | None]:
+    days = days_around(day, 0, 0)
     snaps: list[Snapshot] = []
     scales: tuple[Scale, Scale] | None = None
     for rec in iter_records(segment_files(data_dir, VENUE, "rest", days)):
@@ -98,9 +126,8 @@ def _load(
                         Scale(f["PRICE_FILTER"]["tickSize"]),
                         Scale(f["LOT_SIZE"]["stepSize"]),
                     )
-    ordered = [events[u] for u in sorted(events)]
     snaps.sort(key=lambda s: s.last_update_id)
-    return ordered, snaps, scales
+    return snaps, scales
 
 
 def _infer_scale(values: list[str]) -> Scale:
@@ -138,9 +165,11 @@ def _compare(book: L2Book, snap: Snapshot, exclude: set[int], rep: AuditReport) 
 
 
 def audit(data_dir: Path, symbol: str, day: date) -> AuditReport:
-    events, snaps, scales = _load(data_dir, symbol, day)
-    rep = AuditReport(symbol, day.isoformat(), events=len(events), snapshots=len(snaps))
-    if not events or not snaps:
+    snaps, scales = _load(data_dir, symbol, day)
+    rep = AuditReport(symbol, day.isoformat(), snapshots=len(snaps))
+    events = in_order(_raw_events(data_dir, symbol, day))
+    if not snaps:
+        rep.events = sum(1 for _ in events)
         return rep
     if scales is None:
         prices = [p for s in snaps for p, _ in s.bids + s.asks]
@@ -159,6 +188,7 @@ def audit(data_dir: Path, symbol: str, day: date) -> AuditReport:
     last_u: int | None = None
     j = 0
     for ev in events:
+        rep.events += 1
         try:
             book, last_u, j = _step(ev, book, last_u, j, snaps, scales, symbol, rep, check)
         except ScaleError as exc:

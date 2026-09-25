@@ -86,6 +86,18 @@ async def test_ui_reports_ok_then_problem(tmp_path: Path) -> None:
         assert v["name"] == "Binance USDⓈ-M"
         assert all(s["up"] for s in v["streams"]) and v["msg_rate"] is not None
         assert d["system"]["disk_free_gb"] is not None
+        # Phase 0 section: nothing checked yet, then a check file appears
+        assert d["checks"] == [] and d["phase0"] == {"full_days": 0, "target_days": 3}
+        assert d["system"]["disk_projection"] is None  # no finished day yet
+        cdir = cfg.data_dir / "lake" / "_checks"
+        cdir.mkdir(parents=True)
+        (cdir / "date=2026-09-26.json").write_text(
+            '{"date": "2026-09-26", "status": "ok", "checked_at": "2026-09-27T06:20:00Z",'
+            ' "trades": {"BTCUSDT": {"status": "ok"}}, "book": {"BTCUSDT": {"status": "ok",'
+            ' "compared": 144}}}'
+        )
+        d = await status()
+        assert d["checks"][0]["trades_state"] == "ok" and d["checks"][0]["book_state"] == "ok"
 
         # the exchange goes away: every stream disconnects and reconnects fail
         fake.restricted = True

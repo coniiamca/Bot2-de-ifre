@@ -116,6 +116,33 @@ def test_normalize_all_venues_and_determinism(rec: Recording) -> None:
     assert report["ok"], report
 
 
+def test_spilling_to_disk_gives_identical_parquet(
+    rec: Recording, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from quanta.lake import table as lt
+
+    for venue in ("binance_usdm", "bybit_linear", "deribit"):
+        ref = normalize_day(rec.root, venue, rec.day)
+        monkeypatch.setattr(lt, "SPILL_ROWS", 40)  # a full day is ~10⁸ rows; here: many chunks
+        monkeypatch.setattr(lt, "BUCKET_NS", 10**9)
+        spilled = normalize_day(rec.root, venue, rec.day)
+        monkeypatch.undo()
+        assert spilled.tables == ref.tables, venue
+        assert not (rec.root / "lake" / venue / f".spill-{rec.day.isoformat()}").exists()
+
+
+def test_disk_guard_stops_normalization(rec: Recording, monkeypatch: pytest.MonkeyPatch) -> None:
+    from quanta.lake import table as lt
+    from quanta.lake.table import DiskGuardError
+
+    monkeypatch.setattr(lt, "SPILL_ROWS", 40)
+    with pytest.raises(DiskGuardError):
+        normalize_day(
+            rec.root, "binance_usdm", rec.day, min_free_bytes=5e9, disk_free=lambda _: 1e9
+        )
+    assert not (rec.root / "lake" / "binance_usdm" / f".spill-{rec.day.isoformat()}").exists()
+
+
 def test_binance_tables(rec: Recording) -> None:
     normalize_day(rec.root, "binance_usdm", rec.day)
     trades = read(rec, "binance_usdm", "trades")

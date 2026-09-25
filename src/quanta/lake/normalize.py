@@ -3,11 +3,17 @@
 Records are assigned to a day by **arrival** time (the hour of the raw segment), consistent
 with arrival-time semantics (ADR-004). Only finalized segments are read; a day that still
 has ``.partial`` segments is refused unless ``allow_partial`` is set.
+
+Records are streamed and the table builders spill to ``lake/<venue>/.spill-<date>/`` (removed
+afterwards), so memory stays bounded for a full day of L2 data. Spilling stops with
+:class:`DiskGuardError` when free space falls below ``min_free_bytes``.
 """
 
 from __future__ import annotations
 
 import hashlib
+import shutil
+from collections.abc import Callable, Iterator
 from datetime import date
 from pathlib import Path
 from typing import Protocol
@@ -18,6 +24,7 @@ from quanta.lake import binance_usdm, bybit_linear, deribit
 from quanta.lake.table import (
     NORMALIZER_VERSION,
     DayManifest,
+    DiskGuardError,
     TableBuilder,
     write_day_manifest,
     write_partition,
@@ -60,9 +67,49 @@ def _day_files(root: Path, venue: str, channel: str, day: date) -> tuple[list[Pa
     return final, partial
 
 
-def normalize_day(root: Path, venue: str, day: date, *, allow_partial: bool = False) -> DayManifest:
+def _free_bytes(path: Path) -> float:
+    return float(shutil.disk_usage(path).free)
+
+
+def normalize_day(
+    root: Path,
+    venue: str,
+    day: date,
+    *,
+    allow_partial: bool = False,
+    min_free_bytes: float = 0.0,
+    disk_free: Callable[[Path], float] = _free_bytes,
+) -> DayManifest:
+    spill = root / "lake" / venue / f".spill-{day.isoformat()}"
+    shutil.rmtree(spill, ignore_errors=True)  # left over by an interrupted run
+    try:
+        return _normalize(root, venue, day, spill, allow_partial, min_free_bytes, disk_free)
+    finally:
+        shutil.rmtree(spill, ignore_errors=True)
+
+
+def _normalize(
+    root: Path,
+    venue: str,
+    day: date,
+    spill: Path,
+    allow_partial: bool,
+    min_free_bytes: float,
+    disk_free: Callable[[Path], float],
+) -> DayManifest:
     cls, channels = VENUES[venue]
     norm: Normalizer = cls()
+
+    def check_space() -> None:
+        free = disk_free(root)
+        if free < min_free_bytes:
+            raise DiskGuardError(
+                f"{free / 1e9:.1f} GB free < {min_free_bytes / 1e9:.1f} GB (disk guard)"
+            )
+
+    for builder in norm.t.values():
+        builder.spill_dir = spill / builder.name
+        builder.before_spill = check_space
     sources: list[dict[str, object]] = []
     for ch in channels:
         files, partial = _day_files(root, venue, ch, day)
@@ -74,6 +121,7 @@ def normalize_day(root: Path, venue: str, day: date, *, allow_partial: bool = Fa
                 {"file": f.name, "channel": ch, "sha256": info.sha256, "records": info.records}
             )
         norm.feed(ch, _records(files))
+    check_space()
     digest = hashlib.sha256(
         "\n".join(f"{s['file']}:{s['sha256']}" for s in sources).encode()
     ).hexdigest()
@@ -100,5 +148,5 @@ def normalize_day(root: Path, venue: str, day: date, *, allow_partial: bool = Fa
     return manifest
 
 
-def _records(files: list[Path]) -> list[RawRecord]:
-    return list(iter_records(files))
+def _records(files: list[Path]) -> Iterator[RawRecord]:
+    return iter_records(files)

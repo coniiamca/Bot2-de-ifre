@@ -88,7 +88,8 @@
   .banner { display: none; margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; background: var(--chip-crit); }
   footer { margin-top: 32px; color: var(--muted); font-size: 12px; }
   footer a { color: var(--series-1); }
-  @media (max-width: 480px) { .verdict .title { font-size: 20px; } .tile .value { font-size: 22px; } }
+  @media (max-width: 480px) { .verdict .title { font-size: 20px; } .tile .value { font-size: 22px; }
+                              .wide-only { display: none; } }
 </style>
 </head>
 <body>
@@ -110,6 +111,12 @@
 
     <h2>Sistem</h2>
     <div class="tiles" id="system"></div>
+
+    <h2>Faz 0 doğrulaması</h2>
+    <p class="small" style="margin-top:-4px">Başarı ölçütleri: 72 saat (3 tam gün) kesintisiz kayıt ·
+      açıklanamayan boşluk 0 · Binance işlemleri resmî günlük arşivle birebir aynı · yeniden kurulan
+      order book, borsanın anlık görüntüleriyle aynı. Her gün otomatik kontrol edilir.</p>
+    <div class="card" id="phase0"></div>
 
     <div id="access-wrap" hidden>
       <h2>Erişim kontrolü</h2>
@@ -287,12 +294,18 @@ function render(d) {
   if (!d.venues.length) venues.append(el("div", { class: "card small" }, "Henüz borsa verisi yok."));
   for (const x of d.venues) venues.append(venueCard(x));
   const s = d.system || {};
+  const pj = s.disk_projection;
+  const diskDays = pj ? tile("Disk yeterliliği", "≈ " + fmt(pj.days_left >= 2 ? Math.round(pj.days_left) : pj.days_left, " gün"),
+      "günde ≈ " + fmt(pj.gb_per_day, " GB") + (pj.estimated ? " (bugünden tahmin)" : "") + "; sonra kayıt durur")
+    : tile("Disk yeterliliği", "—", "ilk tam kayıt günü bitince hesaplanır");
   $("system").replaceChildren(
     tile("Disk boş", fmt(s.disk_free_gb, " GB"),
       s.disk_guard_active ? "kayıt durdu: disk koruması" : (s.disk_floor_gb != null ? "kayıt " + fmt(s.disk_floor_gb, " GB") + "'ta durur" : "")),
     tile("Yükleme kuyruğu", fmt(s.pending_uploads), "buluta gönderilmeyi bekleyen dosya"),
     tile("Saat farkı", fmt(s.clock_offset_ms, " ms"), "sunucu − borsa"),
+    diskDays,
     tile("REST ağırlığı", fmt(s.rest_weight), "Binance, dakikada 2400 sınırından"));
+  renderPhase0(d);
   const acc = d.access;
   $("access-wrap").hidden = !acc;
   if (acc) {
@@ -326,11 +339,44 @@ function render(d) {
   if (!d.volume || !d.volume.length) vol.append(el("div", { class: "small" }, "Henüz tamamlanmış kayıt dosyası yok."));
   else {
     const ids = [...new Set(d.volume.flatMap((r) => Object.keys(r.venues)))].sort();
-    const t = el("table", {}, el("tr", {}, el("th", {}, "Gün"), ...ids.map((x) => el("th", { class: "num" }, vname(x) + " (MB)"))));
+    const t = el("table", {}, el("tr", {}, el("th", {}, "Gün"), ...ids.map((x) => el("th", { class: "num" }, vname(x) + " (MB)")),
+      el("th", { class: "num" }, "Lake / Parquet (MB)")));
     for (const r of d.volume) t.append(el("tr", {}, el("td", { class: "date" }, r.date),
-      ...ids.map((x) => el("td", { class: "num" }, fmt(r.venues[x] ? r.venues[x].compressed_mb : null)))));
+      ...ids.map((x) => el("td", { class: "num" }, fmt(r.venues[x] ? r.venues[x].compressed_mb : null))),
+      el("td", { class: "num" }, r.lake_mb ? fmt(r.lake_mb) : "—")));
     vol.append(t);
   }
+}
+
+const CHECK = {
+  ok: ["ok", "Geçti"], failed: ["critical", "Başarısız"], waiting: ["none", "Bekliyor"], no_data: ["none", "Veri yok"],
+};
+function checkChip(state) {
+  const [lvl, text] = CHECK[state] || ["none", state || "—"];
+  return chip(lvl === "none" ? "none" : lvl, text);
+}
+function renderPhase0(d) {
+  const box = $("phase0"); box.replaceChildren();
+  const p = d.phase0 || { full_days: 0, target_days: 3 };
+  const done = p.full_days >= p.target_days;
+  box.append(el("div", { class: "venue-head" },
+    el("span", { class: "name" }, "Doğrulanmış tam gün: " + p.full_days + " / " + p.target_days),
+    chip(done ? "ok" : "none", done ? "Faz 0 ölçütleri sağlandı" : "Devam ediyor")));
+  const rows = d.checks || [];
+  if (!rows.length) {
+    box.append(el("p", { class: "small" }, "Henüz doğrulama yok. Kaydın ilk günü bittikten sonra 00:20 UTC'de başlar; " +
+      "Binance'in resmî işlem arşivi genelde birkaç saat sonra yayımlanır, bu yüzden 06:20, 12:20 ve 18:20 UTC'de tekrar denenir."));
+    return;
+  }
+  const t = el("table", {}, el("tr", {}, el("th", {}, "Gün"), el("th", {}, "İşlemler (resmî arşivle)"),
+    el("th", {}, "Order book (anlık görüntülerle)"), el("th", { class: "wide-only" }, "Kontrol")));
+  for (const r of rows) {
+    t.append(el("tr", {}, el("td", { class: "date" }, r.date),
+      el("td", {}, checkChip(r.trades_state), el("div", { class: "small" }, r.trades_text)),
+      el("td", {}, checkChip(r.book_state), el("div", { class: "small" }, r.book_text)),
+      el("td", { class: "small wide-only" }, r.checked_at ? new Date(r.checked_at).toLocaleString("tr-TR") : "—")));
+  }
+  box.append(el("div", { class: "table-wrap", style: "margin-top:10px" }, t));
 }
 
 async function refresh() {

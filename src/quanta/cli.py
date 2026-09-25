@@ -10,13 +10,16 @@ import sys
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 
 from quanta.core.config import load_yaml_config
 from quanta.core.errors import ConfigError
 from quanta.core.log import configure_logging
+
+if TYPE_CHECKING:
+    from quanta.lake.checks import CheckSettings
 
 app = typer.Typer(add_completion=False, help="quanta — research-first perp trading platform")
 recorder_app = typer.Typer(help="Market data recorder")
@@ -362,10 +365,12 @@ def lake_quality(
     raise typer.Exit(1 if any(v["flag"] == "bad" for v in report.values()) else 0)
 
 
-def _lake_min_free_bytes(config: Path | None) -> float:
-    """Free space the lake job must leave: the recorder's disk-guard floor + resume margin."""
+def _lake_settings(config: Path | None, data_dir: Path) -> tuple[float, CheckSettings | None]:
+    """From the recorder config: the free space the lake job must leave (disk-guard floor +
+    resume margin) and what the daily checks verify (Binance universe and L2 symbols)."""
     if config is None:
-        return 0.0
+        return 0.0, None
+    from quanta.lake.checks import CheckSettings
     from quanta.recorder.config import RecorderConfig
 
     try:
@@ -373,7 +378,17 @@ def _lake_min_free_bytes(config: Path | None) -> float:
     except ConfigError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(2) from exc
-    return (cfg.min_free_disk_gb + cfg.disk_resume_margin_gb) * 1e9
+    min_free = (cfg.min_free_disk_gb + cfg.disk_resume_margin_gb) * 1e9
+    b = cfg.binance_usdm
+    if not b.enabled:
+        return min_free, None
+    checks = CheckSettings(
+        trade_symbols=list(b.universe),
+        book_symbols=list(b.depth_symbols),
+        cache_dir=data_dir / "archive-cache",
+        min_free_bytes=min_free,
+    )
+    return min_free, checks
 
 
 RecorderConfigOption = Annotated[
@@ -394,18 +409,20 @@ def lake_daily(
 
     configure_logging("INFO", json=True)
     d = date.fromisoformat(day) if day else previous_utc_day()
-    problems, report = run_daily(data_dir, d, _lake_min_free_bytes(config))
-    typer.echo(
-        json.dumps(
-            {
-                "date": d.isoformat(),
-                "problems": problems,
-                "flags": {v: q["flag"] for v, q in report.items()},
-            }
-        )
-    )
+    min_free, checks = _lake_settings(config, data_dir)
+    problems, report = run_daily(data_dir, d, min_free)
+    out: dict[str, Any] = {
+        "date": d.isoformat(),
+        "problems": problems,
+        "flags": {v: q["flag"] for v, q in report.items()},
+    }
+    if checks is not None:
+        from quanta.lake.checks import run_checks
+
+        out["checks"] = run_checks(data_dir, d, checks)["status"]
+    typer.echo(json.dumps(out))
     bad = problems or any(q["flag"] == "bad" for q in report.values())
-    raise typer.Exit(1 if bad else 0)
+    raise typer.Exit(1 if bad or out.get("checks") == "failed" else 0)
 
 
 @lake_app.command("schedule")
@@ -419,16 +436,42 @@ def lake_schedule(
 
     configure_logging("INFO", json=True)
     hour, minute = (int(x) for x in at.split(":"))
-    min_free = _lake_min_free_bytes(config)
+    min_free, checks = _lake_settings(config, data_dir)
 
     async def main() -> None:
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, stop.set)
-        await schedule(data_dir, stop, hour, minute, min_free)
+        await schedule(data_dir, stop, hour, minute, min_free, checks)
 
     _run(main())
+
+
+@lake_app.command("checks")
+def lake_checks(
+    data_dir: Annotated[Path, typer.Option("--data-dir", "-d")],
+    config: Annotated[Path, typer.Option("--config", "-c", help="recorder config (symbols)")],
+    day: Annotated[
+        str | None, typer.Option("--date", help="UTC day; default: pending days of the window")
+    ] = None,
+) -> None:
+    """Daily verification: trades vs the official archive + order book audit
+    (lake/_checks/date=….json, shown on the status page)."""
+    from quanta.lake.checks import run_checks, run_pending
+
+    configure_logging("INFO", json=True)
+    _, checks = _lake_settings(config, data_dir)
+    if checks is None:
+        typer.echo("binance_usdm is not enabled in the config: nothing to check", err=True)
+        raise typer.Exit(2)
+    docs = (
+        [run_checks(data_dir, date.fromisoformat(day), checks)]
+        if day
+        else run_pending(data_dir, checks)
+    )
+    typer.echo(json.dumps(docs, indent=2))
+    raise typer.Exit(1 if any(d["status"] == "failed" for d in docs) else 0)
 
 
 @lake_app.command("verify")

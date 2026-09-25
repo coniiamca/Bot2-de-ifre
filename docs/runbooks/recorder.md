@@ -197,18 +197,36 @@ Grafana `127.0.0.1:3000`'de dinler. Tailnet'e açmak için: `sudo tailscale serv
 
 ## Günlük doğrulama (Faz 0 başarı kriterleri)
 
-Sunucuda (`quanta` komutu CLI'yi konteynerde çalıştırır; yollar konteyner yollarıdır):
+Doğrulama **otomatiktir**; sonuçlar durum sayfasındaki "Faz 0 doğrulaması" tablosunda görünür. Komut çalıştırmak gerekmez.
+
+**Ne kontrol edilir (her UTC günü için, `lake/_checks/date=….json`):**
+- **İşlemler:** Config'teki Binance evrenindeki her sembol için kaydedilen aggTrade'ler, Binance'in resmî günlük arşiviyle (data.binance.vision, sha256 doğrulamalı) alan alan karşılaştırılır. Kayıt penceresinde eksik bir işlem şu durumlarda **açıklanmış** sayılır:
+  - kayıt onu kendisi işaretlemişse (`trade_gap` meta kaydı, genelde bağlantı kopması);
+  - eksik aralığın içinde bir yeniden başlatma (`recorder_start/stop`; örn. otomatik güncelleme), disk koruması ya da işlem akışı yeniden bağlanması varsa.
+  Başka her eksik **açıklanamayan** sayılır ve günü başarısız yapar. Farklı (`mismatched`) ya da fazla (`extra`) işlem de günü başarısız yapar.
+- **Order book:** Kaydedilen L2 diff'lerinden yeniden kurulan defter, gün içindeki her REST anlık görüntüsüyle (`depth_audit_s`, 10 dakikada bir) karşılaştırılır.
+
+**Ne zaman:** Lake işi (`quanta-lake` servisi / compose `lake-daily`) her gün 00:20 UTC'de dünü doğrular. Binance arşivi genelde birkaç saat sonra yayımlanır; yayımlanmamışsa gün "Bekliyor" kalır. 06:20, 12:20 ve 18:20 UTC'de, son 3 günün bekleyenleri yeniden denenir. İndirilen arşivler karşılaştırmadan hemen sonra silinir. Boş alan disk koruma tabanına 1 GB'tan fazla yaklaşmışsa indirme yapılmaz ("disk koruması nedeniyle indirilmedi").
+
+**Faz 0 tamam:** Sayfadaki "Doğrulanmış tam gün" sayacı 3'e ulaştığında. Sayılan günler şunları sağlamalı: art arda tam UTC günleri (kaydın başladığı yarım gün sayılmaz), işlemler resmî arşivle aynı (açıklanamayan eksik 0) ve order book denetimi temiz.
+
+**"Günlük doğrulaması başarısız" görünürse:**
+1. Tablodaki açıklamaya bak. Örnek: "BTCUSDT: 12 açıklanamayan eksik". Ayrıntı dosyada: `sudo cat /var/lib/quanta/data/lake/_checks/date=GÜN.json`. `unexplained_ranges` alanı eksik işlemlerin id'lerini ve zamanlarını gösterir.
+2. O saatlerde ne olduğuna bak: `journalctl -u quanta-recorder --since "GÜN SAAT"`. Aynı saatte ağ kopması, OOM ya da sunucu yeniden başlatması olabilir.
+3. `mismatched` ya da order book uyuşmazlığı yazılım hatasıdır: dosyayı sakla ve bildir. Ham veri kaybolmaz; düzeltmeden sonra aynı gün tekrar doğrulanabilir.
+
+**"Günlük doğrulaması tamamlanamadı":** Arşiv 3 gün içinde indirilemedi (ağ sorunu ya da disk koruması). Elle tekrar:
 ```bash
-# 1) Trade tamlığı: dünkü UTC günü, resmi arşivle
-sudo quanta data verify-aggtrades -d /var/lib/quanta/data -s BTCUSDT --date 2026-09-25
-# 2) Defter yeniden kurulumu: kaydedilen diff'ler vs REST snapshot'ları
-sudo quanta data book-audit -d /var/lib/quanta/data -s BTCUSDT --date 2026-09-25
-# 3) Hacim (GB/gün, sıkıştırma oranı)
-sudo quanta data volume -d /var/lib/quanta/data
+sudo quanta lake checks -d /var/lib/quanta/data -c /etc/quanta/recorder.yaml --date 2026-09-26
 ```
-Geliştirme ortamında aynı komutlar `uv run quanta …` ile çalışır.
-`verify-aggtrades`: kayıt penceresi içinde `missing_in_window` her eksik için bir `trade_gap` meta kaydıyla açıklanmalı; `mismatched = 0`, `extra_ids = 0`.
-`book-audit`: `ok: true` (`compared > 0`, `mismatched = 0`, `errors = 0`).
+
+**Tek sembol, elle (ayrıntılı çıktı):**
+```bash
+sudo quanta data verify-aggtrades -d /var/lib/quanta/data -s BTCUSDT --date 2026-09-26
+sudo quanta data book-audit -d /var/lib/quanta/data -s BTCUSDT --date 2026-09-26
+sudo quanta data volume -d /var/lib/quanta/data     # hacim (GB/gün, sıkıştırma oranı)
+```
+Docker modunda `quanta` komutu CLI'yi konteynerde çalıştırır ve yollar konteyner yollarıdır. Geliştirme ortamında aynı komutlar `uv run quanta …` ile çalışır. Karşılaştırma sütun tabanlıdır: sembol başına belleği işlem başına ~55 bayt tutar, BTCUSDT'nin bir günü birkaç yüz MB eder.
 
 ## Venue'ler
 | Venue | Neden | Protokol notu |
@@ -221,7 +239,12 @@ Bybit ve Deribit de ABD dahil bazı bölgelere hizmet vermez. `quanta recorder c
 
 ## Günlük lake işi
 - `quanta lake daily -d /var/lib/quanta/data`: dünkü UTC gününü her venue için Parquet'e normalize eder (`lake/<venue>/<table>/date=…`) ve kalite raporunu yazar (`lake/_quality/date=….json`). Çıkış kodu 1 ise bir venue `bad` durumdadır ya da gün tamamlanmamıştır.
-- Zamanlama: compose'daki `lake-daily` servisi (`quanta lake schedule`) her gün 00:20 UTC'de çalışır. Açılışta dünün raporu yoksa önce onu üretir. Günlük: `sudo quanta-compose logs lake-daily`. Belirli bir günü elle çalıştırmak için: `sudo quanta lake daily -d /var/lib/quanta/data --date 2026-09-25`. Docker'sız kurulumda aynı iş `infra/systemd/quanta-daily.{service,timer}` ile zamanlanır.
+- Zamanlama: `quanta lake schedule` her gün 00:20 UTC'de çalışır: Docker'sız kurulumda `quanta-lake` systemd servisi, Docker modunda compose'daki `lake-daily` servisi. Açılışta dünün raporu yoksa önce onu üretir. Ardından [günlük doğrulama](#günlük-doğrulama-faz-0-başarı-kriterleri) çalışır; doğrulama 6 saatte bir tekrar denenir. Günlük: `journalctl -u quanta-lake` (Docker: `sudo quanta-compose logs lake-daily`). Belirli bir günü elle çalıştırmak için: `sudo quanta lake daily -d /var/lib/quanta/data -c /etc/quanta/recorder.yaml --date 2026-09-25`.
+- **Bellek ve disk:**
+  - Tam bir L2 günü ~10⁸ satırdır. Normalizer tabloları 250 bin satırlık sıkıştırılmış parçalar halinde `lake/<venue>/.spill-<gün>/` altına yazar ve sonunda sıralı birleştirir. Bellek ~1–2 GB'ta kalır; çıktı, bellekte yapılan yöntemle bayt bayt aynıdır.
+  - Geçici dosyalar iş bitince silinir. Yazarken boş alan disk koruma tabanına inerse iş durur ("stopped … disk guard").
+  - Paylaşılan sunucu için ek güvence: servis 6 GB ile sınırlıdır (`MemoryMax`) ve bellek sıkışırsa ilk bu iş sonlandırılır (`OOMScoreAdjust=500`).
+- **Yarıda kalan gün:** İş bir günü işlerken ölürse `lake/_quality/date=….running` işareti kalır. Açılıştaki telafi o günü tekrar denemez; böylece hata bir yeniden başlatma döngüsüne dönüşmez. Sonraki günler normal işlenir. Elle tekrar: `sudo quanta lake daily -d /var/lib/quanta/data -c /etc/quanta/recorder.yaml --date GÜN`; başarılı olunca işaret silinir.
 - Tekrarlanabilirlik kontrolü (haftalık önerilir): `quanta lake verify -d … --date …` → `ok: true`.
 - Kalite bayrakları (ADR-009): `bad` → araştırmada kullanılmaz; nedeni `streams_connected_fraction`, `schema_errors` (API drift) ve `events` alanlarından okunur.
 
@@ -273,7 +296,13 @@ Süreç scrape edilemiyor. `sudo quanta-compose ps`, `sudo quanta-compose logs -
 `ParseErrors`: bir payload artık şemamıza uymuyor, yani Binance API değişikliği. Raw veri **kaybolmaz** (`ws_invalid` olarak saklanır). Binance change log'unu kontrol et (https://developers.binance.com/docs/derivatives/change-log), `quanta/venues/binance_usdm/messages.py`'yi güncelle, test ekle.
 
 ### Disk
-`DiskSpaceLow/Critical`, `RecorderDiskGuardActive`, `SegmentWriteErrors`, `SegmentBacklogDropped`; durum sayfasında "Disk dolmak üzere", "Kayıt durdu: disk koruması".
+`DiskSpaceLow/Critical`, `RecorderDiskGuardActive`, `SegmentWriteErrors`, `SegmentBacklogDropped`; durum sayfasında "Disk dolmak üzere", "Kayıt durdu: disk koruması", "Disk koruma tabanına ≈ N gün kaldı".
+
+**Disk yeterliliği (sayfadaki kutu):**
+- Tamamlanmış kayıt günlerinin ortalama büyümesidir: ham segmentler ve lake (Parquet) toplamı.
+- Kaydın başladığı yarım gün hesaba katılmaz. Tek tam gün varken bugünkü veriden tahmin edilir ("bugünden tahmin").
+- "Boş alan − taban" bu hızla kaç günde biter, onu gösterir. 7 günden az kalınca uyarı çıkar.
+- Depolama kararı (ek disk ya da buluta yükleme) bu sayıyla verilir.
 
 **Disk koruması:**
 - Veri diskindeki boş alan `min_free_disk_gb` değerinin altına inerse kayıt piyasa verisi yazmayı **durdurur**. Sunucudaki diğer işler diski kaybetmesin diye diski asla sonuna kadar doldurmaz.
@@ -283,7 +312,7 @@ Süreç scrape edilemiyor. `sudo quanta-compose ps`, `sudo quanta-compose logs -
 
 **Tabanı değiştirmek:**
 1. `/etc/quanta/recorder.yaml` içinde `min_free_disk_gb: N` satırını düzenle.
-2. `sudo quanta-compose up -d --force-recreate recorder lake-daily` çalıştır.
+2. Docker'sız kurulumda `sudo systemctl restart quanta-recorder quanta-lake`, Docker modunda `sudo quanta-compose up -d --force-recreate recorder lake-daily` çalıştır.
 
 Paylaşılan sunucuda taban, diğer işlerin büyümesine yetecek kadar yüksek tutulur (öneri ≥ 20 GB).
 

@@ -22,7 +22,15 @@ from quanta.core.log import get_logger
 from quanta.ui.health import VENUE_NAMES, HealthConfig, evaluate, stream_label, venue_name
 from quanta.ui.history import History
 from quanta.ui.metrics_reader import bucket_deltas, histogram_quantile, parse
-from quanta.ui.sources import VolumeCache, load_access, load_quality, load_update
+from quanta.ui.sources import (
+    VolumeCache,
+    disk_projection,
+    load_access,
+    load_checks,
+    load_quality,
+    load_update,
+    phase0_progress,
+)
 
 log = get_logger(__name__)
 STATE_KEY: web.AppKey[UiState] = web.AppKey("state")
@@ -78,10 +86,30 @@ class UiState:
         access_file = self.cfg.access_file or self.cfg.data_dir / "access.json"
         access = load_access(access_file)
         update = load_update(self.cfg.data_dir)
-        verdict = evaluate(
-            self.history, now, self.last_ok_ts, self.cfg.health, quality, access, update
-        )
+        checks = load_checks(self.cfg.data_dir)
+        volume = self.volume.get()
         snap = self.history.latest
+        projection = None
+        if snap is not None:
+            dt = datetime.fromtimestamp(now, tz=UTC)
+            projection = disk_projection(
+                volume,
+                dt.date(),
+                (dt.hour * 3600 + dt.minute * 60 + dt.second) / 86400,
+                snap.get("quanta_recorder_disk_free_bytes"),
+                snap.get("quanta_recorder_disk_floor_bytes"),
+            )
+        verdict = evaluate(
+            self.history,
+            now,
+            self.last_ok_ts,
+            self.cfg.health,
+            quality,
+            access,
+            update,
+            checks,
+            projection,
+        )
         venues: list[dict[str, Any]] = []
         system: dict[str, Any] = {}
         if snap is not None:
@@ -157,6 +185,7 @@ class UiState:
                     round(max(offsets.values(), key=abs) * 1000, 1) if offsets else None
                 ),
                 "rest_weight": snap.get("quanta_recorder_rest_used_weight", venue="binance_usdm"),
+                "disk_projection": projection,
             }
         return {
             "generated_at": datetime.fromtimestamp(now, tz=UTC).isoformat(timespec="seconds"),
@@ -174,7 +203,9 @@ class UiState:
             "access": access,
             "update": update,
             "quality": quality,
-            "volume": self.volume.get(),
+            "checks": checks,
+            "phase0": phase0_progress(checks, quality),
+            "volume": volume,
         }
 
 

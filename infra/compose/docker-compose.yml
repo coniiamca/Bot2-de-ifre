@@ -62,6 +62,8 @@ services:
     volumes:
       - ${QUANTA_DATA:-quanta-data}:/var/lib/quanta/data
       - ${QUANTA_CONFIG:-../../config/recorder.local.yaml}:/etc/quanta/recorder.yaml:ro
+    mem_limit: 6g                   # bounded by design (~1-2 GB); protects a shared server
+    oom_score_adj: 500
     healthcheck:
       disable: true                 # the image's check probes the recorder's metrics port
 
