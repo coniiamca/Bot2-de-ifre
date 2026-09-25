@@ -42,6 +42,7 @@ Araştırma odaklı, üretim seviyesinde **vadeli kripto (perpetual futures) tra
 - Hayatta kalma yanlılığı olmayan aylık evren: arşivdeki tüm USDT perp'ler, kaldırılanlar dahil
 - Ön-kayıt (commit edilmiş YAML), deneme defteri, tek seferlik kilitli son 6 ay, Türkçe rapor (`quanta research …`)
 - İlk sonuçlar ([özet](docs/research/02-ilk-hipotezler.md)): trend takibi hem ilk-10'da (H6) hem ilk-5'te (H6B) ELENDİ; kaldıraç kalabalığı (H2) SONUÇSUZ
+- Hızlı işlem ([özet](docs/research/03-hizli-islem.md)): 1 dakikalık mumlarda dört hipotez (I1–I4, 5/10/20 coin) ELENDİ — maliyet öncesi yön bilgisi ≈ 0, maliyet işlem başı %0,08–0,15
 
 Sonraki fazlar: [yol haritası §17](docs/design/01-mimari-ve-yol-haritasi.md).
 
