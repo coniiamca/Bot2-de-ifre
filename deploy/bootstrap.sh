@@ -698,7 +698,8 @@ start_native() {
   say "  Bağımlılıklar kuruluyor (kilit dosyasındaki sürümler; ilk seferde 1–2 dk)…"
   install -d -m 0755 "$UV_CACHE"
   (cd "$INSTALL_DIR" && UV_CACHE_DIR="$UV_CACHE" UV_PYTHON_INSTALL_DIR="$UV_PYTHON_DIR" \
-    UV_LINK_MODE=copy uv sync -q --frozen --no-dev --no-editable --compile-bytecode --extra s3)
+    UV_LINK_MODE=copy uv sync -q --frozen --no-dev --no-editable --compile-bytecode --extra s3 \
+    --reinstall-package quanta)   # uv does not rebuild a local package whose version is unchanged
   "$INSTALL_DIR/.venv/bin/quanta" --help >/dev/null || die "Python ortamı çalışmıyor"
   ok "Python ortamı hazır: $INSTALL_DIR/.venv ($("$INSTALL_DIR/.venv/bin/python" --version))"
   write_units

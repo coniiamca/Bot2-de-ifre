@@ -262,6 +262,10 @@ jobs:
           checks "$A" "$green"
           upd; test "$(result)" = updated; test "$(deployed)" = "$A"
           systemctl is-active quanta-recorder quanta-ui quanta-lake
+          # the running code is the checked-out code (not a stale build)
+          site=/opt/quanta/.venv/lib/python3.12/site-packages/quanta
+          installed_is_checkout() { cmp /opt/quanta/src/quanta/ui/app.py "$site/ui/app.py"; }
+          installed_is_checkout
 
           # breaks the status page on start; CI "green" → deployed, fails, rolled back
           sed -i '1i raise SystemExit("broken on purpose")' src/quanta/ui/app.py
@@ -269,6 +273,7 @@ jobs:
           checks "$B" "$green"
           upd; test "$(result)" = failed_rolled_back; test "$(deployed)" = "$A"
           systemctl is-active quanta-recorder quanta-ui quanta-lake
+          installed_is_checkout
           for _ in $(seq 1 20); do curl -fsS http://127.0.0.1:8080/api/status > st.json && break; sleep 2; done
           python3 -c 'import json; d=json.load(open("st.json")); assert any(i["code"]=="update_failed" for i in d["verdict"]["issues"]), d["verdict"]'
 
