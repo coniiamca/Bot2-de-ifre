@@ -1,0 +1,333 @@
+{
+ "alpha": {
+  "alpha_annual": 0.28721928430463883,
+  "beta": -0.1274535964434185,
+  "t_nw": 4.6856817026231035
+ },
+ "asset_contribution": {
+  "1000PEPEUSDT": 0.05132393606059933,
+  "1000SHIBUSDT": 0.03734656658675295,
+  "ADAUSDT": 0.128916296688109,
+  "AVAXUSDT": 0.0813773023268884,
+  "BCHUSDT": 0.028920290801768497,
+  "BNBUSDT": 0.15363837736724456,
+  "BTCUSDT": 0.09933403181063183,
+  "DOGEUSDT": 0.17249407542087175,
+  "ETCUSDT": 0.04741131670093779,
+  "ETHUSDT": 0.12233721803519988,
+  "LTCUSDT": 0.0809425724944214,
+  "MATICUSDT": 0.05246562961865488,
+  "SOLUSDT": 0.06309764851732151,
+  "SUIUSDT": 0.011083545206525575,
+  "XRPUSDT": 0.16539913873780893
+ },
+ "benchmark": {
+  "cagr": 0.0043731694378970065,
+  "max_drawdown": -0.281903945028502,
+  "sr_annual": 0.09865505103838652,
+  "yearly": {
+   "2021": 0.1294749972180913,
+   "2022": -0.25084983029318564,
+   "2023": 0.25755197241133154,
+   "2024": 0.14293950870387384,
+   "2025": -0.08259946329334134,
+   "2026": -0.08328707494189147
+  }
+ },
+ "best": {
+  "break_even_maker_bps": 6.336832377238853,
+  "cagr": 0.3193172012488923,
+  "max_drawdown": -0.17499388956052409,
+  "name": "horizon60_q0.0025_modellgbm",
+  "params": {
+   "horizon": 60,
+   "model": "lgbm",
+   "q": 0.0025
+  },
+  "recent_sr": 0.7996801101389858,
+  "sr_annual": 2.19729093995326,
+  "trades": {
+   "avg_before_cost": 0.002011508629297271,
+   "avg_cost": 0.00016353545394300862,
+   "avg_loss": -0.015026944001730746,
+   "avg_minutes": 56.976971504307485,
+   "avg_net": 0.0018411318632270254,
+   "avg_weight": 0.20593306332010708,
+   "avg_win": 0.015447676148189971,
+   "liquidation_flags": 5,
+   "long_share": 0.49867461895294896,
+   "per_day": 3.2021220159151196,
+   "reasons": {
+    "gap": 0,
+    "sl": 553,
+    "time": 5483,
+    "tp": 0
+   },
+   "trades": 6036,
+   "win_rate": 0.5535122597746852
+  },
+  "vol_annual": 0.1299724739829079,
+  "yearly": {
+   "2021": 0.8852097105432553,
+   "2022": 0.5275420522896908,
+   "2023": 0.14636113526908856,
+   "2024": 0.11612621369803722,
+   "2025": 0.13617261667687441,
+   "2026": -0.0006959786133510226
+  }
+ },
+ "commit": "9b1b26dab79fb143621538ba4abafb77e173ea88",
+ "data_sha": "92c63996ca1621a5",
+ "exploratory": false,
+ "family": {
+  "best": 4,
+  "best_sr_annual": 2.19729093995326,
+  "best_t_nw": 4.647200521744638,
+  "cpcv_path_sr_annual": [
+   2.19729093995326,
+   2.19729093995326,
+   2.19729093995326,
+   2.19729093995326,
+   2.19729093995326
+  ],
+  "days": 1885,
+  "dsr": 0.0001571690573820561,
+  "gates": [
+   {
+    "name": "cpcv",
+    "passed": true,
+    "rule": "medyan yol SR > 0 ve yollar\u0131n \u2265 %80'i pozitif",
+    "value": "medyan 2.20, pozitif yol %100"
+   },
+   {
+    "name": "dsr",
+    "passed": false,
+    "rule": "DSR \u2265 0.95",
+    "value": "0.000 (N_eff 242.3 / 245 deneme)"
+   },
+   {
+    "name": "pbo",
+    "passed": true,
+    "rule": "PBO \u2264 0.25",
+    "value": "0.16"
+   },
+   {
+    "name": "t_nw",
+    "passed": true,
+    "rule": "Newey\u2013West t \u2265 3.4",
+    "value": "4.65"
+   }
+  ],
+  "mean_corr": 0.24821264716537772,
+  "n_eff": 242.26966088118084,
+  "n_prior": 233,
+  "passed": false,
+  "pbo": 0.16418026418026418,
+  "pbo_slope": -0.915508601496526,
+  "sr_annual": [
+   0.859263392574793,
+   -0.9479959276388011,
+   0.8673765304589721,
+   -2.5392241974279606,
+   2.19729093995326,
+   1.1279431409129168,
+   1.8693397149111852,
+   0.7597389155315724,
+   1.4184217261324839,
+   1.4213983139389799,
+   1.2740292259335364,
+   1.0783962325945649
+  ],
+  "trials": [
+   "horizon15_q0.0025_modellgbm",
+   "horizon15_q0.0025_modelridge",
+   "horizon15_q0.01_modellgbm",
+   "horizon15_q0.01_modelridge",
+   "horizon60_q0.0025_modellgbm",
+   "horizon60_q0.0025_modelridge",
+   "horizon60_q0.01_modellgbm",
+   "horizon60_q0.01_modelridge",
+   "horizon240_q0.0025_modellgbm",
+   "horizon240_q0.0025_modelridge",
+   "horizon240_q0.01_modellgbm",
+   "horizon240_q0.01_modelridge"
+  ]
+ },
+ "features": {
+  "btc_60": 0.04798245492486494,
+  "dow_cos": 0.04101628373257202,
+  "dow_sin": 0.06340477127246871,
+  "funding_8h": 0.03583057432394864,
+  "funding_left": 0.06895672274802969,
+  "hour_cos": 0.09423657777600979,
+  "hour_sin": 0.08130640058675198,
+  "loc_hi_1440": 0.033194907462644446,
+  "loc_lo_1440": 0.030079421175200398,
+  "ret_1440": 0.053842362560351346,
+  "ret_240": 0.029137955335199237,
+  "rv_240": 0.04450263585832904
+ },
+ "gates": [
+  {
+   "name": "cpcv",
+   "passed": true,
+   "rule": "medyan yol SR > 0 ve yollar\u0131n \u2265 %80'i pozitif",
+   "value": "medyan 2.20, pozitif yol %100"
+  },
+  {
+   "name": "dsr",
+   "passed": false,
+   "rule": "DSR \u2265 0.95",
+   "value": "0.000 (N_eff 242.3 / 245 deneme)"
+  },
+  {
+   "name": "pbo",
+   "passed": true,
+   "rule": "PBO \u2264 0.25",
+   "value": "0.16"
+  },
+  {
+   "name": "t_nw",
+   "passed": true,
+   "rule": "Newey\u2013West t \u2265 3.4",
+   "value": "4.65"
+  },
+  {
+   "name": "plateau",
+   "passed": true,
+   "rule": "kom\u015fu ayarlar\u0131n ortalama SR'\u0131 \u2265 en iyinin yar\u0131s\u0131",
+   "value": "kom\u015fu ort. 1.32 / en iyi 2.20"
+  },
+  {
+   "name": "maliyet_x1_5",
+   "passed": true,
+   "rule": "\u00fccret ve kayma \u00d71,5, limit emir 1 bps daha \u00f6tesine ge\u00e7meli: SR > 0",
+   "value": "SR 1.75"
+  },
+  {
+   "name": "gecikme",
+   "passed": true,
+   "rule": "emir 1 dk ge\u00e7 gitse de SR > 0",
+   "value": "SR 1.73"
+  },
+  {
+   "name": "varlik_degismezlik",
+   "passed": true,
+   "rule": "coinlerin \u2265 2/3'\u00fcnde pozitif katk\u0131",
+   "value": "%100 pozitif (15 coin)"
+  },
+  {
+   "name": "yil_degismezlik",
+   "passed": true,
+   "rule": "y\u0131llar\u0131n \u00e7o\u011funda pozitif",
+   "value": "%83 pozitif (6 y\u0131l)"
+  },
+  {
+   "name": "alfa",
+   "passed": true,
+   "rule": "al-tut k\u0131yas\u0131na g\u00f6re alfa > 0 ve t \u2265 2",
+   "value": "y\u0131ll\u0131k %28.7, t 4.69, beta -0.13"
+  },
+  {
+   "name": "likidasyon",
+   "passed": false,
+   "rule": "hi\u00e7bir i\u015flemde %30 ters hareket yok",
+   "value": "5"
+  },
+  {
+   "name": "islem_sayisi",
+   "passed": true,
+   "rule": "en az 300 i\u015flem (daha az\u0131: sonu\u00e7suz)",
+   "value": "6036"
+  },
+  {
+   "name": "sizinti_bekcisi",
+   "passed": true,
+   "rule": "y\u0131ll\u0131k Sharpe < 10 (daha y\u00fckse\u011fi ger\u00e7ek de\u011fil, veri s\u0131z\u0131nt\u0131s\u0131 i\u015faretidir)",
+   "value": "SR 2.20"
+  },
+  {
+   "name": "son_donem",
+   "passed": true,
+   "rule": "2025-01 \u2026 2026-03 (hari\u00e7) d\u00f6neminde SR > 0",
+   "value": "SR 0.80"
+  },
+  {
+   "name": "usdc_kontrol",
+   "passed": true,
+   "rule": "ger\u00e7ek USDC mumlar\u0131nda net > 0, SR \u2265 vekilin yar\u0131s\u0131, dolum oran\u0131 \u00b1%30",
+   "value": "USDC SR 0.73 / vekil 0.85, dolum oran\u0131 0.99"
+  }
+ ],
+ "hypothesis": "M1",
+ "lockbox": null,
+ "models": {
+  "lgbm": {
+   "best": "horizon60_q0.0025_modellgbm",
+   "sr_annual": 2.19729093995326
+  },
+  "ridge": {
+   "best": "horizon240_q0.0025_modelridge",
+   "sr_annual": 1.4213983139389799
+  }
+ },
+ "period": "2021-01-01..2026-03-01",
+ "prereg_sha": "3aca07935fc17cb2249873d6e9d86602d683c21209b8d9587b0a0fca085bf3b8",
+ "program_trials": 245,
+ "rows": {
+  "all": 6226354,
+  "tradable": 5748274
+ },
+ "sensitivity_sr_annual": {
+  "1 dakika gecikme": 1.7287309307621428,
+  "USDC standart \u00fccret (promosyon biterse)": 1.570553060134123,
+  "USDT kontrat\u0131, VIP0 \u00fccret": 1.5496131037033045,
+  "maliyet \u00d71,5 ve +1 bps ge\u00e7i\u015f": 1.7511318653927848,
+  "piyasa emriyle giri\u015f": 0.9782990890378658,
+  "yaln\u0131z long": 1.190734705864249,
+  "yaln\u0131z short": 1.8630386446571128
+ },
+ "strategy": "ml",
+ "stress": {
+  "A\u011fustos 2024 (yen carry)": {
+   "al-tut": -0.02007452616818428,
+   "strateji": 0.015813579876641892
+  },
+  "Ekim 2025 likidasyon zinciri": {
+   "al-tut": -0.022319995922642222,
+   "strateji": 0.08905279270287703
+  },
+  "Kas\u0131m 2022 (FTX)": {
+   "al-tut": -0.023719799451149992,
+   "strateji": 0.13216104486270597
+  },
+  "May\u0131s 2021 \u00e7\u00f6k\u00fc\u015f\u00fc": {
+   "al-tut": -0.007709413021404488,
+   "strateji": 0.07341299086136033
+  },
+  "May\u0131s 2022 (LUNA)": {
+   "al-tut": -0.11730560513180899,
+   "strateji": 0.0013725891924809552
+  }
+ },
+ "symbols": 65,
+ "timing_run": false,
+ "title": "Mumlardan \u00f6\u011frenen model + s\u0131f\u0131r komisyonlu limit emir (USDC kontratlar\u0131)",
+ "universe_top": 10,
+ "usdc_check": {
+  "daily_corr": 0.9879511411780817,
+  "fill_ratio": 0.9892047499100396,
+  "passed": true,
+  "proxy_fills": 2779,
+  "proxy_return": 0.2521579791539552,
+  "proxy_sr": 0.8492094709830603,
+  "proxy_trades": 2039,
+  "signals": 9385,
+  "usdc_fills": 2749,
+  "usdc_return": 0.20985534258178218,
+  "usdc_sr": 0.7339121081024714,
+  "usdc_trades": 2013
+ },
+ "verdict": "ELENDI",
+ "version": 1
+}

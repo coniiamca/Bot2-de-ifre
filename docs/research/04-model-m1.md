@@ -124,3 +124,48 @@ Bu test iki kaldıracı birlikte kullanır:
    0'dan büyükse yeni işlem açmaz.
 
 "Elendi" kesindir; "geçti" yalnız adaylıktır.
+
+## Sonuç: ELENDİ, sınıra çok yakın
+
+Koşu bir kez, temiz commit'te (`9b1b26d`) yapıldı. Kilitli dönem açılmadı. Ayrıntılar:
+[`sonuclar/M1.md`](sonuclar/M1.md).
+
+**En iyi ayar:** 60 dakika tutma, tahminlerin en uç %0,25'i, LightGBM.
+- Net yıllık getiri %31,9, en büyük düşüş %−17,5, yıllık Sharpe 2,2 (2021-01 … 2026-02).
+- 6.036 işlem; kazanma oranı %55; işlem başı maliyet öncesi %0,20, maliyet %0,016.
+
+**Geçtiği 13 kapı:** Şimdiye kadarki bütün testlerin en iyisi.
+- CPCV yollarının hepsi pozitif; PBO 0,16; t 4,65; parametre platosu.
+- Maliyet ×1,5 + limit emir için 1 bps ek geçiş şartında Sharpe 1,75; 1 dakika gecikmede 1,73.
+- 15 coinin hepsi, 6 yılın 5'i pozitif.
+- Al-tut'a göre alfa yıllık %28,7 (t 4,69).
+- Son dönem (2025+) Sharpe 0,80.
+- Gerçek USDC mumlarında: Sharpe 0,73 (vekil 0,85), dolum oranı aynı, günlük korelasyon 0,99.
+- Komisyona dayanıklılık: Kâr limit emir ücreti %0,063'e çıkana kadar sürüyor; USDT VIP0 ücretleriyle bile Sharpe 1,55.
+
+**Geçemediği 2 kapı:**
+1. **Şans düzeltmeli Sharpe (DSR) 0,00.** Ön-kayda göre deneme sayısı 12 + önceki 233. Sharpe
+   varyansı M1'in kendi ızgarasından alındı. M1 ayarları birbirinden çok farklı çıktı: 15
+   dakikalık ridge −2,5, en iyi ayar +2,2. Bu yüzden şans çıtası yıllık Sharpe 3,67'ye çıktı.
+   Ön-kayıttaki "≈ 2" bir tahmindi ve yanlış çıktı; bağlayıcı olan kuraldır.
+2. **Likidasyon riski:** 5 işlemde fiyat girişten %30 ters yöne gitti (mum içi ani iğneler). ≤ 3×
+   kaldıraçta bu, borsada zarar kes tetiklenmeden likidasyon riski demektir.
+
+**Bağlayıcı olmayan, sonradan yapılan hesap (yalnız bilgi için):**
+- Yalnız M1'in 12 denemesi sayılsaydı çıta 1,99 olurdu; DSR 0,69 ile yine geçemezdi.
+- Varyans saf şans düzeyinde (1/T) alınsaydı DSR 0,99 olurdu. Ama bu ön-kayıtlı kural değil.
+
+**Dikkat çekenler:**
+- **Etki zamanla zayıflıyor.** Yıllık net getiri: 2021 %88, 2022 %53, 2023 %15, 2024 %12, 2025
+  %14, 2026'nın ilk iki ayı ≈ %0. Bugünkü piyasada beklenti yıllık Sharpe ≈ 0,7–0,8: %0,5
+  riskle yılda ≈ %10–14.
+- **Model en çok takvime bakıyor:** gün içi saat, haftanın günü, bir sonraki funding'e kalan
+  süre. Ardından 1 günlük getiri, BTC'nin son 1 saati ve oynaklık geliyor.
+- **Short tarafı daha güçlü:** yalnız short Sharpe 1,86, yalnız long 1,19.
+
+**Anlamı:** Ön-kayıtlı kurallara göre M1 gerçek paraya çıkmaz. Aile başka ızgara, evren ya da
+modelle aynı veride yeniden denenmez. Yine de bu, şimdiye kadar maliyetten sonra ayakta kalan
+tek sonuç.
+
+Yeni kanıt yalnız **ileriye dönük** veriden gelebilir: donmuş model, bugünden sonraki canlı
+piyasada, parasız, gölge modda izlenir. Bu, ayrı bir ön-kayıtla ve kullanıcının kararıyla yapılır.

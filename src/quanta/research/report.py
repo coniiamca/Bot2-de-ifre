@@ -410,7 +410,7 @@ def ml_markdown(doc: dict[str, Any]) -> str:
         "",
         f"- Model her ay yalnız geçmiş verilerle yeniden eğitildi; her tahmin örneklem dışı. "
         f"En iyi ayar **{b['name']}**: {p['horizon']} dakika tutma, tahminlerin en uç "
-        f"%{float(p['q']) * 100:g}'i, model {p['model']}.",
+        f"{pct(float(p['q']), 2)}'i, model {p['model']}.",
         f"- Yıllık net getiri {pct(b['cagr'])}, en büyük düşüş {pct(b['max_drawdown'])}, "
         f"yıllık Sharpe {num(b['sr_annual'])}; son dönemde (2025+) Sharpe {num(b['recent_sr'])}.",
     ]
@@ -426,13 +426,14 @@ def ml_markdown(doc: dict[str, Any]) -> str:
     be = b.get("break_even_maker_bps")
     if be is not None:
         lines.append(
-            f"- Kâr, limit emir (maker) ücreti işlem başına %{be / 100:.4f}'e çıkarsa sıfırlanır "
-            "(bugün USDC kontratlarında %0)."
+            f"- Kâr, limit emir (maker) ücreti emir başına {pct(be / 1e4, 3)}'e çıkarsa sıfırlanır "
+            "(bugün USDC kontratlarında %0, USDT kontratlarında %0,02)."
         )
     lines += [
         f"- Gerçek USDC kontratlarında kontrol (2024+): Sharpe {num(u['usdc_sr'])}, getiri "
         f"{pct(u['usdc_return'])}; aynı işlemler USDT fiyatlarıyla Sharpe {num(u['proxy_sr'])}; "
-        f"dolum oranı oranı {num(u['fill_ratio'])} → " + ("geçti." if u["passed"] else "geçemedi."),
+        f"dolum oranı USDC / vekil {num(u['fill_ratio'])} → "
+        + ("geçti." if u["passed"] else "geçemedi."),
         f"- Aynı coinleri sadece alıp tutmak (kıyas): yıllık {pct(bench['cagr'])}, "
         f"en büyük düşüş {pct(bench['max_drawdown'])}, Sharpe {num(bench['sr_annual'])}.",
         "- Sonuçlar komisyon, kayma ve funding düşüldükten sonradır; geçmiş performans geleceği "
