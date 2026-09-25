@@ -1,0 +1,57 @@
+# Ön-kayıt: sonuçlar görülmeden önce sabitlenir. Değiştirmek yeni bir sürüm demektir
+# (version artar) ve her deneme deneme defterine (research/ledger) sayılır.
+id: H6
+version: 1
+title: Saatlik zaman serisi momentumu (trend takibi)
+mechanism: >-
+  Kripto vadelilerde bilgi ve pozisyon akışı piyasaya yavaş yayılır; kaldıraçlı katılımcıların
+  zorunlu alım-satımları hareketleri besler. Bu yüzden fiyat hareketleri saatlerden günlere
+  uzanan ufukta aynı yönde devam etme eğilimindedir (zaman serisi momentumu: Moskowitz, Ooi ve
+  Pedersen 2012; kripto için Liu ve Tsyvinski 2021). Strateji her coinde son L saatin yönünde,
+  oynaklığa göre ölçeklenmiş pozisyon tutar; her coine eşit risk verilir.
+falsification: >-
+  Maliyetler (komisyon, kayma, funding) düşüldükten sonra örneklem dışı performans pozitif
+  değilse ya da aşağıdaki kapılardan biri geçilemezse hipotez bu kurallar ve maliyetlerle
+  elenir. Aynı coinleri sadece alıp tutmaya göre anlamlı fazladan getiri (alfa) yoksa "trend"
+  değil piyasa yükselişi ölçülmüş demektir ve hipotez elenir.
+universe_file: research/universe/um_top10.csv
+# Arşiv 2020-01'de başlar; bir coin evrene 60 günlük geçmişle girer → ilk evren ayı 2020-03.
+data_start: "2020-01-01"
+warmup_days: 60
+dev_end: "2026-03-01"       # geliştirme dönemi sonu (hariç); kilitli dönem buradan başlar
+lockbox_end: "2026-09-01"   # kilitli dönem (6 ay) — yalnız kapıları geçen aday için, bir kez
+grid:                       # 4 × 2 × 2 = 16 deneme, hepsi sayılır
+  lookback_h: [24, 72, 168, 336]
+  rebalance_h: [4, 24]
+  signal: [sign, scaled]
+fixed:
+  vol_halflife_h: 168       # EWMA oynaklık yarı ömrü
+  min_history_h: 336        # en az 14 gün kesintisiz fiyat geçmişi
+  target_vol_annual: 0.20   # coin başına eşit risk, portföy hedefi yıllık %20
+  cap_asset: 0.5            # coin başına en fazla sermayenin %50'si
+  cap_gross: 1.5            # toplam brüt kaldıraç tavanı (tasarım §13.4)
+  band: 0.02                # hedef sermayenin %2'sinden az değişirse işlem yok
+costs:
+  fee_bps: 5.0              # Binance VIP0 taker, BNB indirimi yok
+  slip_top2_bps: 1.0        # evren sırası 1–2 (BTC/ETH): yarım spread + kayma
+  slip_rest_bps: 3.0        # diğerleri
+validation:
+  hold_days: 14             # purge: en uzun geriye bakış/tutma
+  lookback_days: 14         # embargo = 14 + 1 gün
+  cpcv_groups: 6
+  cpcv_k: 2
+  pbo_blocks: 16
+stress_windows:
+  - ["2020-03-01", "2020-04-01", "Mart 2020 (COVID çöküşü)"]
+  - ["2021-05-01", "2021-06-01", "Mayıs 2021 çöküşü"]
+  - ["2022-05-01", "2022-06-01", "Mayıs 2022 (LUNA)"]
+  - ["2022-11-01", "2022-12-01", "Kasım 2022 (FTX)"]
+  - ["2024-08-01", "2024-08-15", "Ağustos 2024 (yen carry)"]
+  - ["2025-10-01", "2025-11-01", "Ekim 2025 likidasyon zinciri"]
+notes: >-
+  Kapılar (tasarım §17.2): CPCV medyan yol > 0 ve yolların ≥ %80'i pozitif; DSR ≥ 0,95
+  (etkin deneme sayısıyla); PBO ≤ 0,25; Newey–West t ≥ 3,4 (yaklaşık yıllık net Sharpe ≥ 1,37;
+  bilinçli olarak sıkı); maliyet ×1,5'te pozitif; parametre platosu; coinlerin ≥ 2/3'ünde ve
+  yılların çoğunda pozitif; al-tut kıyasına göre alfa > 0 ve t ≥ 2; likidasyon mesafesi
+  hiç aşılmaz. Kilitli dönem ölçütü zayıftır (6 ay ≈ 180 gün): Sharpe > 0 ve CPCV yollarının
+  5. yüzdeliğinin altında değil. Tier-0 (saatlik bar) testi: "elendi" kesin, "geçti" adaylık.

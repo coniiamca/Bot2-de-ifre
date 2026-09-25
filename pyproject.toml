@@ -20,6 +20,8 @@ dependencies = [
 
 [project.optional-dependencies]
 s3 = ["boto3>=1.35"]
+# research/backtest (quanta.research): not installed on the recording server
+research = ["numpy>=2"]
 
 [project.scripts]
 quanta = "quanta.cli:app"
@@ -75,5 +77,6 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "live: requires network access to real exchanges (skipped unless QUANTA_LIVE_TESTS=1)",
+    "slow: research pipeline self-tests on synthetic markets (tens of seconds)",
 ]
 filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]

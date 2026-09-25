@@ -7,14 +7,20 @@
   some were discontinued (UM bookTicker ended 2024-03; see research report §8.1).
 * Conversion writes ``<data_dir>/lake/binance_vision_um/<dataset>/<date|month>=…/part-0.parquet``
   with nanosecond UTC timestamps (ms and µs inputs both handled) and lineage metadata.
+* The archive's S3 bucket listing (:func:`list_keys`) gives every key with its size and MD5
+  (ETag): the research tooling uses it to discover symbols and to verify a download without
+  the extra ``.CHECKSUM`` request. Files are sometimes re-published, so callers keep a
+  manifest (key, size, MD5, last-modified) of what they used.
 """
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
+import html
 import io
 import os
+import re
 import zipfile
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -32,9 +38,11 @@ from quanta.core.log import get_logger
 log = get_logger(__name__)
 
 BASE_URL = "https://data.binance.vision"
+LISTING_URL = "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
 PREFIX = "data/futures/um"
 KLINE_DATASETS = ("klines", "markPriceKlines", "indexPriceKlines", "premiumIndexKlines")
 MONTHLY_ONLY = ("fundingRate",)
+DAILY_ONLY = ("metrics", "bookDepth")
 
 _KLINE_COLS = [
     "open_time",
@@ -136,8 +144,15 @@ class BackfillReport:
         return not any(r.status in ("checksum_mismatch", "error") for r in self.results)
 
 
-def _stamps(dataset: str, start: date, end: date) -> tuple[str, list[str]]:
-    if dataset in MONTHLY_ONLY:
+def _stamps(
+    dataset: str, start: date, end: date, period: str | None = None
+) -> tuple[str, list[str]]:
+    period = period or ("monthly" if dataset in MONTHLY_ONLY else "daily")
+    if (period == "monthly" and dataset in DAILY_ONLY) or (
+        period == "daily" and dataset in MONTHLY_ONLY
+    ):
+        raise ValueError(f"{dataset} has no {period} files")
+    if period == "monthly":
         months: list[str] = []
         d = start.replace(day=1)
         while d <= end:
@@ -149,12 +164,24 @@ def _stamps(dataset: str, start: date, end: date) -> tuple[str, list[str]]:
 
 
 async def fetch(
-    session: aiohttp.ClientSession, base_url: str, rel: str, mirror: Path, attempts: int = 3
+    session: aiohttp.ClientSession,
+    base_url: str,
+    rel: str,
+    mirror: Path,
+    attempts: int = 3,
+    expected_md5: str | None = None,
 ) -> FetchResult:
+    """Download ``rel`` into the mirror after verification: against ``expected_md5`` (a
+    plain S3 ETag from the listing) when given, else against the published ``.CHECKSUM``
+    (sha256). A cached file is re-verified against ``expected_md5`` when given."""
     url = f"{base_url.rstrip('/')}/{rel}"
     dest = mirror / rel
+    md5 = expected_md5.lower() if expected_md5 and "-" not in expected_md5 else None
     if dest.exists():
-        return FetchResult(url, "cached", dest, _sha256_bytes(dest.read_bytes()))
+        cached = dest.read_bytes()
+        if md5 is None or hashlib.md5(cached, usedforsecurity=False).hexdigest() == md5:
+            return FetchResult(url, "cached", dest, _sha256_bytes(cached))
+        dest.unlink()  # re-published upstream: fetch the current version
     last_err = ""
     for attempt in range(attempts):
         try:
@@ -163,13 +190,19 @@ async def fetch(
                     return FetchResult(url, "missing")
                 resp.raise_for_status()
                 data = await resp.read()
-            async with session.get(url + ".CHECKSUM") as resp:
-                resp.raise_for_status()
-                expected = (await resp.text()).split()[0].strip().lower()
             digest = _sha256_bytes(data)
-            if digest != expected:
-                log.error("archive_checksum_mismatch", url=url)
-                return FetchResult(url, "checksum_mismatch", error=f"{digest} != {expected}")
+            if md5 is not None:
+                got = hashlib.md5(data, usedforsecurity=False).hexdigest()
+                if got != md5:
+                    log.error("archive_checksum_mismatch", url=url)
+                    return FetchResult(url, "checksum_mismatch", error=f"md5 {got} != {md5}")
+            else:
+                async with session.get(url + ".CHECKSUM") as resp:
+                    resp.raise_for_status()
+                    expected = (await resp.text()).split()[0].strip().lower()
+                if digest != expected:
+                    log.error("archive_checksum_mismatch", url=url)
+                    return FetchResult(url, "checksum_mismatch", error=f"{digest} != {expected}")
             dest.parent.mkdir(parents=True, exist_ok=True)
             tmp = dest.with_name(dest.name + ".tmp")
             tmp.write_bytes(data)
@@ -183,6 +216,75 @@ async def fetch(
 
 def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class Listed:
+    key: str
+    size: int
+    etag: str  # MD5 of the object for single-part uploads
+    last_modified: str
+
+
+_TAG = {
+    name: re.compile(f"<{name}>(.*?)</{name}>", re.S)
+    for name in (
+        "Contents",
+        "Key",
+        "Size",
+        "ETag",
+        "LastModified",
+        "Prefix",
+        "CommonPrefixes",
+        "IsTruncated",
+        "NextMarker",
+    )
+}
+
+
+def _tag(name: str, text: str) -> str:
+    m = _TAG[name].search(text)
+    return html.unescape(m.group(1)) if m else ""
+
+
+async def list_keys(
+    session: aiohttp.ClientSession,
+    prefix: str,
+    *,
+    delimiter: str | None = None,
+    listing_url: str = LISTING_URL,
+) -> tuple[list[Listed], list[str]]:
+    """All objects under ``prefix`` (and, with ``delimiter``, the sub-prefixes), following
+    the bucket listing's pages (1000 entries each)."""
+    objects: list[Listed] = []
+    prefixes: list[str] = []
+    marker = ""
+    while True:
+        params = {"prefix": prefix, "marker": marker}
+        if delimiter:
+            params["delimiter"] = delimiter
+        async with session.get(listing_url, params=params) as resp:
+            resp.raise_for_status()
+            text = await resp.text()
+        for block in _TAG["Contents"].findall(text):
+            objects.append(
+                Listed(
+                    _tag("Key", block),
+                    int(_tag("Size", block) or 0),
+                    _tag("ETag", block).strip('"'),
+                    _tag("LastModified", block),
+                )
+            )
+        for block in _TAG["CommonPrefixes"].findall(text):
+            prefixes.append(_tag("Prefix", block))
+        if _tag("IsTruncated", text) != "true":
+            break
+        nxt = _tag("NextMarker", text)
+        last = objects[-1].key if objects else ""
+        marker = nxt or max(last, prefixes[-1] if prefixes else "")
+        if not marker:
+            break
+    return objects, prefixes
 
 
 def read_csv_zip(path: Path, dataset: str) -> pa.Table:
@@ -237,7 +339,7 @@ def convert(
         }
     )
     name = f"{dataset}_{interval}" if dataset in KLINE_DATASETS else dataset
-    part = "month" if dataset in MONTHLY_ONLY else "date"
+    part = "month" if len(stamp) == 7 else "date"  # YYYY-MM (monthly file) or YYYY-MM-DD
     dest = root / "lake" / "binance_vision_um" / name / f"symbol={symbol}" / f"{part}={stamp}"
     dest.mkdir(parents=True, exist_ok=True)
     tmp = dest / "part-0.parquet.tmp"
@@ -257,10 +359,11 @@ async def backfill(
     convert_parquet: bool = True,
     concurrency: int = 4,
     base_url: str = BASE_URL,
+    period: str | None = None,
 ) -> BackfillReport:
     if dataset not in (*COLUMNS, *KLINE_DATASETS):
         raise ValueError(f"unsupported dataset {dataset!r}")
-    period, stamps = _stamps(dataset, start, end)
+    period, stamps = _stamps(dataset, start, end, period)
     mirror = root / "archive" / "binance_vision"
     report = BackfillReport(dataset, symbol)
     sem = asyncio.Semaphore(concurrency)

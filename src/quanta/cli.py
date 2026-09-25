@@ -28,6 +28,8 @@ app.add_typer(recorder_app, name="recorder")
 app.add_typer(data_app, name="data")
 lake_app = typer.Typer(help="Normalized Parquet lake")
 app.add_typer(lake_app, name="lake")
+research_app = typer.Typer(help="Research and backtests (needs the 'research' extra)")
+app.add_typer(research_app, name="research")
 
 
 def _run(coro: object) -> object:
@@ -504,6 +506,84 @@ def ui(
     run_ui(
         UiConfig(metrics_url=metrics_url, data_dir=data_dir, access_file=access_file), host, port
     )
+
+
+ResearchRoot = Annotated[Path, typer.Option("--root", help="downloaded research data (not in git)")]
+
+
+@research_app.command("universe")
+def research_universe(
+    root: ResearchRoot = Path("research-data"),
+    start: Annotated[str, typer.Option(help="first month YYYY-MM")] = "2020-02",
+    end: Annotated[str, typer.Option(help="last month YYYY-MM")] = "2026-08",
+    top: int = 10,
+    out: Path = Path("research/universe/um_top10.csv"),
+    manifest: Path = Path("research/universe/manifest_1d.csv.gz"),
+) -> None:
+    """Point-in-time top-N universe from the archive (every USDT perp, delisted included)."""
+    from quanta.research.universe import build_universe
+
+    configure_logging("INFO", json=True)
+    rows = _run(build_universe(root, start, end, out, manifest, top_n=top))
+    months = sorted({r[0] for r in rows})  # type: ignore[attr-defined]
+    typer.echo(json.dumps({"months": len(months), "rows": len(rows), "out": str(out)}))  # type: ignore[arg-type]
+
+
+@research_app.command("fetch")
+def research_fetch(
+    root: ResearchRoot = Path("research-data"),
+    universe: Path = Path("research/universe/um_top10.csv"),
+    manifest: Path = Path("research/data/manifest.csv.gz"),
+) -> None:
+    """Download hourly klines, premium index, funding (+ BTC/ETH metrics) for the universe."""
+    from quanta.research.fetch import fetch_dataset
+    from quanta.research.universe import read_universe
+
+    configure_logging("INFO", json=True)
+    used = _run(fetch_dataset(root, read_universe(universe), manifest))
+    bad = [u for u in used if u.result.path is None]  # type: ignore[attr-defined]
+    typer.echo(json.dumps({"files": len(used), "failed": len(bad)}))  # type: ignore[arg-type]
+    raise typer.Exit(1 if bad else 0)
+
+
+@research_app.command("selftest")
+def research_selftest() -> None:
+    """Pipeline self-test on synthetic markets: a planted trend must pass, noise must fail."""
+    from quanta.research.selftest import selftest
+
+    configure_logging("WARNING", json=True)
+    out = selftest()
+    typer.echo(json.dumps(out, indent=2))
+    raise typer.Exit(0 if out["ok"] else 1)
+
+
+@research_app.command("run")
+def research_run(
+    hypothesis: Annotated[str, typer.Argument(help="e.g. H6 (research/prereg/H6.yaml)")],
+    root: ResearchRoot = Path("research-data"),
+    final: Annotated[
+        bool, typer.Option(help="open the lockbox (once, only after passing)")
+    ] = False,
+    exploratory: Annotated[
+        bool, typer.Option(help="allow an uncommitted pre-registration (never counts)")
+    ] = False,
+) -> None:
+    """Run a pre-registered hypothesis and write docs/research/sonuclar/<H>.md."""
+    from quanta.research.prereg import load_prereg, repo_root
+    from quanta.research.report import trend_markdown, write_report
+    from quanta.research.runner import run_trend
+
+    configure_logging("INFO", json=True)
+    path = Path("research/prereg") / f"{hypothesis}.yaml"
+    prereg, sha = load_prereg(path, require_committed=not exploratory)
+    repo = repo_root(path.resolve())
+    if prereg.id != hypothesis:
+        raise typer.BadParameter(f"{path} is for {prereg.id}")
+    doc = run_trend(prereg, sha, root, repo, final=final, exploratory=exploratory)
+    out = write_report(
+        repo, doc, trend_markdown(doc), None if not doc["exploratory"] else root / "reports"
+    )
+    typer.echo(json.dumps({"verdict": doc["verdict"], "report": str(out)}))
 
 
 if __name__ == "__main__":
