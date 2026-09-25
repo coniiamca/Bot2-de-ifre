@@ -5,6 +5,11 @@ delisted ones — is a candidate. For month ``m`` the universe is the ``top_n`` 
 quote volume in month ``m − 1`` that had at least ``min_history_days`` of data before ``m``
 began. Nothing about month ``m`` itself is used, so a coin that is delisted during ``m`` can
 still be picked (and then simply stops being tradable, as it would have in reality).
+
+Binance also lists perpetuals on stocks, ETFs, commodities and pre-IPO companies (from
+late 2025). The hypotheses are about crypto markets, so a reviewed list of those
+(``research/universe/non_crypto.txt``, built from the weekend/weekday volume fingerprint of
+market-hours assets) is excluded.
 """
 
 from __future__ import annotations
@@ -47,6 +52,18 @@ MANIFEST_HEADER = ["key", "size", "md5", "sha256", "last_modified"]
 
 def is_candidate(symbol: str) -> bool:
     return bool(SYMBOL_RE.match(symbol)) and symbol[: -len("USDT")] not in STABLE_BASES
+
+
+def read_exclusions(path: Path) -> set[str]:
+    """Symbols listed in an exclusion file (first column; ``#`` starts a comment)."""
+    if not path.exists():
+        return set()
+    out: set[str] = set()
+    for line in path.read_text().splitlines():
+        body = line.split("#", 1)[0].split()
+        if body:
+            out.add(body[0])
+    return out
 
 
 def month_range(start: str, end: str) -> list[str]:
@@ -120,6 +137,7 @@ async def build_universe(
     *,
     top_n: int = 10,
     min_history_days: int = 60,
+    exclude: set[str] | None = None,
     concurrency: int = 16,
     base_url: str = BASE_URL,
     listing_url: str = LISTING_URL,
@@ -133,7 +151,7 @@ async def build_universe(
             session, f"{PREFIX}/monthly/klines/", delimiter="/", listing_url=listing_url
         )
         symbols = [p.rstrip("/").rsplit("/", 1)[-1] for p in prefixes]
-        symbols = sorted(s for s in symbols if is_candidate(s))
+        symbols = sorted(s for s in symbols if is_candidate(s) and s not in (exclude or set()))
         log.info("universe_candidates", symbols=len(symbols))
         sem = asyncio.Semaphore(concurrency)
 

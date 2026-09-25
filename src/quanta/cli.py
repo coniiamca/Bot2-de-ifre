@@ -519,12 +519,17 @@ def research_universe(
     top: int = 10,
     out: Path = Path("research/universe/um_top10.csv"),
     manifest: Path = Path("research/universe/manifest_1d.csv.gz"),
+    exclude: Annotated[
+        Path, typer.Option(help="non-crypto perps (stocks, ETFs, commodities) to leave out")
+    ] = Path("research/universe/non_crypto.txt"),
 ) -> None:
     """Point-in-time top-N universe from the archive (every USDT perp, delisted included)."""
-    from quanta.research.universe import build_universe
+    from quanta.research.universe import build_universe, read_exclusions
 
     configure_logging("INFO", json=True)
-    rows = _run(build_universe(root, start, end, out, manifest, top_n=top))
+    rows = _run(
+        build_universe(root, start, end, out, manifest, top_n=top, exclude=read_exclusions(exclude))
+    )
     months = sorted({r[0] for r in rows})  # type: ignore[attr-defined]
     typer.echo(json.dumps({"months": len(months), "rows": len(rows), "out": str(out)}))  # type: ignore[arg-type]
 

@@ -1,0 +1,183 @@
+# Kripto olmayan vadeliler (hisse, ETF, emtia, endeks, halka arz öncesi) — araştırma evreninden çıkarılır.
+# Yöntem: 2025-10'dan sonra listelenen ve hafta sonu/hafta içi günlük işlem hacmi oranı < 0,35 olan
+# semboller (hisse/ETF'lerin dayanağı hafta sonu kapalı; kripto için oran ~0,5–1), artı elle tanınan
+# diğer hisse/ETF/emtia adları ve altına bağlı tokenlar (PAXG, XAUT). Oranlar 2025–2026 1d arşivinden.
+# symbol  hafta_sonu_orani  ilk_ay  neden
+42USDT  0.33  2025-10  oran<0.35
+AAOIUSDT  0.08  2026-06  oran<0.35
+AAPLUSDT  0.14  2026-04  oran<0.35
+ADBEUSDT  0.33  2026-06  oran<0.35
+ALABUSDT  0.09  2026-06  oran<0.35
+AMATUSDT  0.15  2026-06  oran<0.35
+AMDUSDT  0.11  2026-05  oran<0.35
+AMZNUSDT  0.14  2026-02  oran<0.35
+APPUSDT  0.14  2026-07  oran<0.35
+ARMUSDT  0.10  2026-05  oran<0.35
+ASMLUSDT  0.17  2026-06  oran<0.35
+ASTSUSDT  0.18  2026-06  oran<0.35
+AVGOUSDT  0.18  2026-04  oran<0.35
+AXTIUSDT  0.14  2026-06  oran<0.35
+BABAUSDT  0.14  2026-04  oran<0.35
+BBXUSDT  0.19  2026-06  oran<0.35
+BEUSDT  0.08  2026-05  oran<0.35
+BMNRUSDT  0.19  2026-06  oran<0.35
+BNCUSDT  0.27  2026-07  oran<0.35
+BOTUSDT  0.12  2026-07  oran<0.35
+BSPUSDT  0.08  2026-07  oran<0.35
+BZUSDT  0.34  2026-04  oran<0.35
+CATUSDT  0.18  2026-07  oran<0.35
+CBRSUSDT  0.10  2026-05  oran<0.35
+CIENUSDT  0.12  2026-06  oran<0.35
+CLUSDT  0.30  2026-04  oran<0.35
+COHRUSDT  0.16  2026-05  oran<0.35
+COINUSDT  0.17  2026-02  oran<0.35
+CRCLUSDT  0.12  2026-02  oran<0.35
+CRDOUSDT  0.14  2026-06  oran<0.35
+CRMUSDT  0.26  2026-06  oran<0.35
+CRWDUSDT  0.18  2026-06  oran<0.35
+CRWVUSDT  0.13  2026-05  oran<0.35
+CSCOUSDT  0.32  2026-05  oran<0.35
+CSOPSAMSUNG2LUSDT  0.11  2026-08  oran<0.35
+CSOPSKHYNIX2LUSDT  0.13  2026-08  oran<0.35
+CXMTUSDT  0.17  2026-08  oran<0.35
+DELLUSDT  0.07  2026-06  oran<0.35
+DJTUSDT  0.23  2026-08  oran<0.35
+DRAMUSDT  0.11  2026-05  oran<0.35
+EWYUSDT  0.12  2026-03  oran<0.35
+FLNCUSDT  0.07  2026-05  oran<0.35
+GDXUSDT  0.19  2026-08  oran<0.35
+GEVUSDT  0.18  2026-07  oran<0.35
+GIGADEVUSDT  0.07  2026-08  oran<0.35
+GLWUSDT  0.11  2026-06  oran<0.35
+GMEUSDT  0.31  2026-06  oran<0.35
+GOOGLUSDT  0.13  2026-03  oran<0.35
+GSUSDT  0.28  2026-07  oran<0.35
+HIMSUSDT  0.20  2026-06  oran<0.35
+HK0700USDT  0.12  2026-07  oran<0.35
+HK1810USDT  0.11  2026-07  oran<0.35
+HOODUSDT  0.12  2026-02  oran<0.35
+HPEUSDT  0.23  2026-06  oran<0.35
+HYUNDAIUSDT  0.30  2026-06  oran<0.35
+IBMUSDT  0.10  2026-06  oran<0.35
+INTCUSDT  0.10  2026-02  oran<0.35
+INTWUSDT  0.21  2026-07  oran<0.35
+IRENUSDT  0.10  2026-06  oran<0.35
+KLACUSDT  0.10  2026-06  oran<0.35
+KORUUSDT  0.07  2026-06  oran<0.35
+KSTRUSDT  0.17  2026-07  oran<0.35
+KUAISHOUUSDT  0.14  2026-08  oran<0.35
+LITEUSDT  0.07  2026-05  oran<0.35
+LLYUSDT  0.21  2026-06  oran<0.35
+LRCXUSDT  0.09  2026-06  oran<0.35
+MEITUANUSDT  0.27  2026-08  oran<0.35
+METAUSDT  0.09  2026-03  oran<0.35
+MINIMAXUSDT  0.08  2026-07  oran<0.35
+MRKUSDT  0.33  2026-08  oran<0.35
+MRNAUSDT  0.09  2026-08  oran<0.35
+MRVLUSDT  0.08  2026-05  oran<0.35
+MSFTUSDT  0.13  2026-04  oran<0.35
+MSTRUSDT  0.18  2026-02  oran<0.35
+MUUSDT  0.08  2026-04  oran<0.35
+MUUUSDT  0.06  2026-07  oran<0.35
+MVLLUSDT  0.10  2026-06  oran<0.35
+NATGASUSDT  0.19  2026-04  oran<0.35
+NBISUSDT  0.09  2026-05  oran<0.35
+NFLXUSDT  0.20  2026-06  oran<0.35
+NOKUSDT  0.17  2026-06  oran<0.35
+NOWUSDT  0.22  2026-06  oran<0.35
+NVDAUSDT  0.13  2026-03  oran<0.35
+NVOUSDT  0.24  2026-06  oran<0.35
+ONDSUSDT  0.14  2026-06  oran<0.35
+ORCLUSDT  0.10  2026-05  oran<0.35
+PANWUSDT  0.27  2026-07  oran<0.35
+PAYPUSDT  0.24  2026-03  oran<0.35
+PDDUSDT  0.30  2026-08  oran<0.35
+PLTRUSDT  0.11  2026-02  oran<0.35
+POPMARTUSDT  0.15  2026-07  oran<0.35
+PYPLUSDT  0.30  2026-07  oran<0.35
+QCOMUSDT  0.13  2026-05  oran<0.35
+QNTXUSDT  0.18  2026-05  oran<0.35
+QQQUSDT  0.22  2026-04  oran<0.35
+RAMUSDT  0.30  2026-08  oran<0.35
+RDDTUSDT  0.17  2026-08  oran<0.35
+RIVNUSDT  0.26  2026-06  oran<0.35
+RKLBUSDT  0.08  2026-05  oran<0.35
+SAMSUNGEMUSDT  0.19  2026-08  oran<0.35
+SAMSUNGUSDT  0.09  2026-06  oran<0.35
+SHAZUSDT  0.11  2026-07  oran<0.35
+SHOPUSDT  0.26  2026-08  oran<0.35
+SKHYNIXUSDT  0.10  2026-06  oran<0.35
+SKHYUSDT  0.08  2026-07  oran<0.35
+SKUUUSDT  0.30  2026-08  oran<0.35
+SMCIUSDT  0.10  2026-06  oran<0.35
+SMHUSDT  0.21  2026-07  oran<0.35
+SNDKUSDT  0.07  2026-04  oran<0.35
+SNXXUSDT  0.06  2026-07  oran<0.35
+SOFIUSDT  0.16  2026-07  oran<0.35
+SONYUSDT  0.31  2026-06  oran<0.35
+SOXLUSDT  0.07  2026-05  oran<0.35
+SOXSUSDT  0.07  2026-07  oran<0.35
+SPCXUSDT  0.09  2026-05  oran<0.35
+SQQQUSDT  0.14  2026-06  oran<0.35
+STRCUSDT  0.17  2026-07  oran<0.35
+STXXUSDT  0.18  2026-06  oran<0.35
+TBTUSDT  0.31  2026-07  oran<0.35
+TEMUSDT  0.25  2026-08  oran<0.35
+TENCENTUSDT  0.26  2026-07  oran<0.35
+TERUSDT  0.14  2026-07  oran<0.35
+TMFUSDT  0.20  2026-07  oran<0.35
+TQQQUSDT  0.12  2026-06  oran<0.35
+TSLAUSDT  0.11  2026-01  oran<0.35
+TSMUSDT  0.16  2026-04  oran<0.35
+TTWOUSDT  0.25  2026-07  oran<0.35
+TXNUSDT  0.20  2026-07  oran<0.35
+UBERUSDT  0.29  2026-05  oran<0.35
+UNITREEUSDT  0.11  2026-08  oran<0.35
+URNMUSDT  0.31  2026-06  oran<0.35
+USARUSDT  0.12  2026-05  oran<0.35
+UVXYUSDT  0.27  2026-06  oran<0.35
+VRTUSDT  0.14  2026-07  oran<0.35
+WDCUSDT  0.09  2026-05  oran<0.35
+WENUSDT  0.17  2026-07  oran<0.35
+WMTUSDT  0.28  2026-05  oran<0.35
+XAGUSDT  0.13  2026-01  oran<0.35
+XAUUSDT  0.18  2025-12  oran<0.35
+XPDUSDT  0.29  2026-01  oran<0.35
+XPTUSDT  0.29  2026-01  oran<0.35
+ZHIPUUSDT  0.09  2026-07  oran<0.35
+ZHONGJIUSDT  0.07  2026-08  oran<0.35
+SPYUSDT  0.38  2026-04  ad (hisse/ETF/emtia)
+JPMUSDT  0.39  2026-05  ad (hisse/ETF/emtia)
+NETUSDT  0.39  2026-08  ad (hisse/ETF/emtia)
+DISUSDT  0.43  2026-05  ad (hisse/ETF/emtia)
+IONQUSDT  0.44  2026-08  ad (hisse/ETF/emtia)
+MARAUSDT  0.45  2026-08  ad (hisse/ETF/emtia)
+KOUSDT  0.48  2026-08  ad (hisse/ETF/emtia)
+VUSDT  0.49  2026-05  ad (hisse/ETF/emtia)
+COSTUSDT  0.50  2026-06  ad (hisse/ETF/emtia)
+HDUSDT  0.35  2026-05  ad (hisse/ETF/emtia)
+FLEXUSDT  0.35  2026-07  ad (hisse/ETF/emtia)
+EWTUSDT  0.37  2026-06  ad (hisse/ETF/emtia)
+EWJUSDT  0.44  2026-03  ad (hisse/ETF/emtia)
+EWZUSDT  0.72  2026-06  ad (hisse/ETF/emtia)
+IWMUSDT  0.70  2026-06  ad (hisse/ETF/emtia)
+DKNGUSDT  0.38  2026-06  ad (hisse/ETF/emtia)
+BITOUSDT  0.40  2026-07  ad (hisse/ETF/emtia)
+COPPERUSDT  0.38  2026-03  ad (hisse/ETF/emtia)
+HANMIUSDT  0.40  2026-08  ad (hisse/ETF/emtia)
+LGELECTRONICSUSDT  0.47  2026-08  ad (hisse/ETF/emtia)
+KODEX200USDT  0.47  2026-08  ad (hisse/ETF/emtia)
+OPENAIUSDT  0.48  2026-05  ad (hisse/ETF/emtia)
+ANTHROPICUSDT  0.65  2026-06  ad (hisse/ETF/emtia)
+BXUSDT  0.45  2026-06  ad (hisse/ETF/emtia)
+VSTUSDT  0.46  2026-08  ad (hisse/ETF/emtia)
+NAVERUSDT  0.53  2026-08  ad (hisse/ETF/emtia)
+EBAYUSDT  0.70  2026-06  ad (hisse/ETF/emtia)
+BRKBUSDT  0.53  2026-05  ad (hisse/ETF/emtia)
+INXUSDT  2.22  2026-01  ad (hisse/ETF/emtia)
+XLEUSDT  0.74  2026-06  ad (hisse/ETF/emtia)
+XBIUSDT  0.68  2026-07  ad (hisse/ETF/emtia)
+TZAUSDT  0.55  2026-07  ad (hisse/ETF/emtia)
+SLXUSDT  0.99  2026-06  ad (hisse/ETF/emtia)
+PAXGUSDT  0.34  2025-03  ad (hisse/ETF/emtia)
+XAUTUSDT  0.70  2026-03  ad (hisse/ETF/emtia)
