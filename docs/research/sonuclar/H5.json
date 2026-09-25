@@ -1,0 +1,237 @@
+{
+ "alpha": {
+  "alpha_annual": -0.04163160819883311,
+  "beta": 0.038782166313468765,
+  "t_nw": -1.5661488472082388
+ },
+ "asset_contribution": {
+  "ADAUSDT": 0.015567477256082752,
+  "BTCUSDT": 0.002927475435292609,
+  "DOGEUSDT": 0.02867549917536484,
+  "ETHUSDT": 0.02487160564654771,
+  "SOLUSDT": 0.023593890760607403,
+  "XRPUSDT": 0.08915606261850544
+ },
+ "benchmark": {
+  "cagr": 0.12078803108583491,
+  "max_drawdown": -0.2924726732986017,
+  "sr_annual": 0.7155369917042864,
+  "yearly": {
+   "2021": 0.5302138262944291,
+   "2022": -0.22757250258922035,
+   "2023": 0.3844598146122806,
+   "2024": 0.2608924658536529,
+   "2025": -0.03962985903152161,
+   "2026": -0.09060749892542364
+  }
+ },
+ "best": {
+  "cagr": -0.037733174440765405,
+  "cost_sum": 0.3777952698057717,
+  "funding_sum": 0.003416451165219568,
+  "gross_sum": 0.1847920108924,
+  "max_drawdown": -0.22996949458564142,
+  "name": "L4_R12_scaled",
+  "params": {
+   "lookback_h": 4,
+   "rebalance_h": 12,
+   "signal": "scaled"
+  },
+  "sr_annual": -0.5928563452354347,
+  "turnover_per_day": 0.2832408246145064,
+  "vol_annual": 0.061669620900404905,
+  "yearly": {
+   "2021": 0.008791920880443671,
+   "2022": -0.02078304341496995,
+   "2023": -0.017429837595423936,
+   "2024": -0.03410627905047692,
+   "2025": -0.09519409238343624,
+   "2026": -0.033497988542245394
+  }
+ },
+ "commit": "80f917284702a65391a5859b9260f28a3833aeb4",
+ "data_sha": "e7c26dd3e9026ace",
+ "exploratory": false,
+ "family": {
+  "best": 7,
+  "best_sr_annual": -0.5928563452354347,
+  "best_t_nw": -1.3791476269907328,
+  "cpcv_path_sr_annual": [
+   -1.2842338751477607,
+   -0.8177138699281209,
+   -1.1813841038122133,
+   -1.09840231865649,
+   -1.09840231865649
+  ],
+  "days": 1885,
+  "dsr": 0.0009318875709609653,
+  "gates": [
+   {
+    "name": "cpcv",
+    "passed": false,
+    "rule": "medyan yol SR > 0 ve yollar\u0131n \u2265 %80'i pozitif",
+    "value": "medyan -1.10, pozitif yol %0"
+   },
+   {
+    "name": "dsr",
+    "passed": false,
+    "rule": "DSR \u2265 0.95",
+    "value": "0.001 (N_eff 5.2 / 8 deneme)"
+   },
+   {
+    "name": "pbo",
+    "passed": true,
+    "rule": "PBO \u2264 0.25",
+    "value": "0.13"
+   },
+   {
+    "name": "t_nw",
+    "passed": false,
+    "rule": "Newey\u2013West t \u2265 3.4",
+    "value": "-1.38"
+   }
+  ],
+  "mean_corr": 0.40577350553443353,
+  "n_eff": 5.159585461258965,
+  "n_prior": 0,
+  "passed": false,
+  "pbo": 0.12843822843822844,
+  "pbo_slope": -0.803962863986758,
+  "sr_annual": [
+   -1.953307349370278,
+   -1.9566381251824663,
+   -0.8834900282217423,
+   -0.7694960742704298,
+   -2.350157886557771,
+   -1.6148773227766042,
+   -1.1388324900664364,
+   -0.5928563452354347
+  ],
+  "trials": [
+   "L1_R4_sign",
+   "L1_R4_scaled",
+   "L1_R12_sign",
+   "L1_R12_scaled",
+   "L4_R4_sign",
+   "L4_R4_scaled",
+   "L4_R12_sign",
+   "L4_R12_scaled"
+  ]
+ },
+ "gates": [
+  {
+   "name": "cpcv",
+   "passed": false,
+   "rule": "medyan yol SR > 0 ve yollar\u0131n \u2265 %80'i pozitif",
+   "value": "medyan -1.10, pozitif yol %0"
+  },
+  {
+   "name": "dsr",
+   "passed": false,
+   "rule": "DSR \u2265 0.95",
+   "value": "0.001 (N_eff 5.2 / 8 deneme)"
+  },
+  {
+   "name": "pbo",
+   "passed": true,
+   "rule": "PBO \u2264 0.25",
+   "value": "0.13"
+  },
+  {
+   "name": "t_nw",
+   "passed": false,
+   "rule": "Newey\u2013West t \u2265 3.4",
+   "value": "-1.38"
+  },
+  {
+   "name": "plateau",
+   "passed": false,
+   "rule": "kom\u015fu ayarlar\u0131n ortalama SR'\u0131 \u2265 en iyinin yar\u0131s\u0131",
+   "value": "kom\u015fu ort. -1.17 / en iyi -0.59"
+  },
+  {
+   "name": "maliyet_x1_5",
+   "passed": false,
+   "rule": "maliyet \u00d71,5'te SR > 0",
+   "value": "SR -1.18"
+  },
+  {
+   "name": "varlik_degismezlik",
+   "passed": true,
+   "rule": "varl\u0131klar\u0131n \u2265 2/3'\u00fcnde pozitif katk\u0131",
+   "value": "%100 pozitif (6 varl\u0131k)"
+  },
+  {
+   "name": "yil_degismezlik",
+   "passed": false,
+   "rule": "y\u0131llar\u0131n \u00e7o\u011funda pozitif",
+   "value": "%17 pozitif (6 y\u0131l)"
+  },
+  {
+   "name": "alfa",
+   "passed": false,
+   "rule": "al-tut k\u0131yas\u0131na g\u00f6re alfa > 0 ve t \u2265 2",
+   "value": "y\u0131ll\u0131k %-4.2, t -1.57, beta 0.04"
+  },
+  {
+   "name": "likidasyon",
+   "passed": false,
+   "rule": "hi\u00e7bir barda likidasyon mesafesi a\u015f\u0131lmaz",
+   "value": "7"
+  }
+ ],
+ "hypothesis": "H5",
+ "lockbox": null,
+ "period": "2020-12-01..2026-03-01",
+ "prereg_sha": "09676d55014c7673bc87e02097dc4dffb56e1cc5fe08a8e02bdbbd240294ecf0",
+ "prior": null,
+ "program_trials": 233,
+ "sensitivity_sr_annual": {
+  "1 bar gecikme": -0.655279071705036,
+  "maliyet \u00d71,5": -1.1844643089817177,
+  "maliyet \u00d72": -1.7738928425536373,
+  "saatlik VWAP ile i\u015flem": -0.6511172027891569
+ },
+ "stress": {
+  "A\u011fustos 2024 (yen carry)": {
+   "al-tut": -0.04700480728597023,
+   "strateji": -0.01127682387697404
+  },
+  "Ekim 2025 likidasyon zinciri": {
+   "al-tut": -0.042851354900807936,
+   "strateji": -0.03967535496175145
+  },
+  "Kas\u0131m 2022 (FTX)": {
+   "al-tut": -0.0476304211456009,
+   "strateji": 0.00967013360374791
+  },
+  "May\u0131s 2021 \u00e7\u00f6k\u00fc\u015f\u00fc": {
+   "al-tut": -0.008497809852803462,
+   "strateji": 0.024109587655004594
+  },
+  "May\u0131s 2022 (LUNA)": {
+   "al-tut": -0.0774292514933097,
+   "strateji": 0.010582608359735346
+  }
+ },
+ "subperiods": {
+  "Makale d\u00f6nemi (2021-01 \u2026 2024-10)": {
+   "cagr": -0.018315998085503216,
+   "days": 1400,
+   "return": -0.06844913705476874,
+   "sr_annual": -0.2766487335581586
+  },
+  "Makale sonras\u0131 \u2014 ger\u00e7ek \u00f6rneklem d\u0131\u015f\u0131 (2024-11 \u2026 2026-02)": {
+   "cagr": -0.09165503584782175,
+   "days": 485,
+   "return": -0.11991412128656054,
+   "sr_annual": -1.4347620920031179
+  }
+ },
+ "symbols": 6,
+ "title": "\u00c7eyrek saat a\u00e7\u0131l\u0131\u015f dengesizli\u011fi (Kim & Hansen 2026; 1 dakikal\u0131k yakla\u015f\u0131k replikasyon)",
+ "universe_label": "Kim & Hansen'in 6 coini \u2014 BTC, ETH, XRP, SOL, DOGE, ADA (makalenin sabit listesi)",
+ "universe_top": 6,
+ "verdict": "ELENDI",
+ "version": 1
+}

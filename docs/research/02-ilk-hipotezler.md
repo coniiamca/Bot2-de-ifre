@@ -1,4 +1,4 @@
-# İlk hipotezler: H6 (trend), H6B (trend, en hacimli 5) ve H2 (kaldıraç kalabalığı)
+# İlk hipotezler: H6 (trend), H6B (trend, en hacimli 5), H5 (çeyrek saat) ve H2 (kaldıraç kalabalığı)
 
 Faz 2–3'ün ilk diliminde ücretsiz Binance arşiv verisiyle test edilen iki hipotez; nasıl ve neden
 böyle test edildikleri. Sonuçlar: [`sonuclar/H6.md`](sonuclar/H6.md), [`sonuclar/H6B.md`](sonuclar/H6B.md),
@@ -49,6 +49,32 @@ büyük coinlerde işlem yapsak?"
 
 **Trend ailesi bu kurallarla kapandı.** Başka bir coin listesi ya da ayar ızgarasıyla yeniden
 denenmeyecek. Aynı veride sonuç beğenilene kadar denemek, tam da DSR'ın cezalandırdığı şeydir.
+
+## H5 — çeyrek saat açılış dengesizliği (az işlemli fikir)
+**Kaynak:** Kim & Hansen, "The Quarter-Hour Effect" (arXiv:2607.09426, 2026).
+- **Makalenin iddiası:** Saatin çeyrek başlarında (:00/:15/:30/:45) algoritmik işlemler
+  yoğunlaşır. Açılışın ilk saniyelerindeki agresif alış-satış dengesizliği sonraki 4–12 saati
+  öngörür.
+- **Makalenin eksiği:** Maliyet hesabı yok.
+
+**Nasıl test ettik:**
+- Makalenin 6 coini (BTC, ETH, XRP, SOL, DOGE, ADA), 2021-01 … 2026-02, VIP0 maliyetleri.
+- 1 dakikalık yaklaşım: makale ilk 10 saniyeyi ölçer; o veri ~100 GB olduğu için çeyrek saatin
+  ilk dakikası kullanıldı.
+- 8 deneme, ön-kayıtlı (`research/prereg/H5.yaml`), bir kez koşuldu.
+
+**Sonuç: ELENDİ** (2/10 kapı), ama öğretici:
+- **Maliyet öncesi küçük bir etki var.** Brüt katkı 6 coinin 6'sında pozitif; 5 yılda brüt
+  yaklaşık %+18,5. Bu, makaleyle tutarlı.
+- **Maliyet bunun iki katı** (≈ %38). En iyi ayar net yıllık %−3,8, Sharpe −0,59.
+- **Makale yayımlandıktan sonra daha zayıf:**
+  - makale dönemi (2021-01 … 2024-10): Sharpe −0,28;
+  - makale sonrası (2024-11 … 2026-02): Sharpe −1,43.
+- **Sonuç:** Etki gerçek olabilir ama VIP0 maliyetleriyle işlem yapılamayacak kadar küçük.
+  10 saniyelik tam ölçüm (sunucudaki kendi kaydımızla) bunu değiştirebilir mi, ayrı bir soru.
+  Makale de kendi öngördüğü hareketin tek bir komisyonun onda biri kadar olduğunu yazıyor.
+
+Ayrıntı: [`sonuclar/H5.md`](sonuclar/H5.md).
 
 ## Düzeltme notu: Mart 2020 coin listesi
 İlk-20 listesi kurulurken bir hata bulundu:
