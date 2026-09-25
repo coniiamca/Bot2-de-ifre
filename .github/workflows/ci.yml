@@ -246,6 +246,13 @@ jobs:
           sudo QUANTA_REPO_URL="file://$GITHUB_WORKSPACE" QUANTA_BRANCH="$QUANTA_BRANCH" \
             bash deploy/bootstrap.sh --yes --auto-update on
           systemctl is-enabled quanta-update.timer
+          # the real hourly timer must not fire between the manual runs below (it once
+          # rewrote update.json right before a check); a drop-in survives the re-installs
+          sudo mkdir -p /etc/systemd/system/quanta-update.timer.d
+          printf '[Timer]\nOnCalendar=\nOnCalendar=2099-01-01\nRandomizedDelaySec=0\n' \
+            | sudo tee /etc/systemd/system/quanta-update.timer.d/ci-no-fire.conf >/dev/null
+          sudo systemctl daemon-reload && sudo systemctl restart quanta-update.timer
+          systemctl show quanta-update.timer -p NextElapseUSecRealtime
           sudo grep -qx 'QUANTA_AUTO_UPDATE=on' /etc/quanta/compose.env
           sudo grep -qx 'QUANTA_TAILSCALE=off' /etc/quanta/compose.env   # remembered
           # a fake GitHub API answering check-run queries
