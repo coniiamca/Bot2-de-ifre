@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -112,7 +113,12 @@ def _asset_contrib(m: Market, res: Result) -> dict[str, float]:
 
 
 def _prior_returns(
-    prereg: Prereg, ledger: Ledger, period: str, dsha: str, days: NDArray[np.int64]
+    prereg: Prereg,
+    ledger: Ledger,
+    period: str,
+    dsha: str,
+    days: NDArray[np.int64],
+    namer: Callable[[dict[str, Any]], str] = _trend_name,
 ) -> tuple[Floats | None, dict[str, Any] | None]:
     """Recorded returns of earlier hypotheses of the family, on exactly the same days."""
     if not prereg.prior_trials:
@@ -132,7 +138,7 @@ def _prior_returns(
     summary = {
         "hypotheses": sorted(found),
         "trials": len(entries),
-        "best": f"{best['hypothesis']} {_trend_name(best['params'])}",
+        "best": f"{best['hypothesis']} {namer(best['params'])}",
         "best_sr_annual": float(best["sr_annual"]),
     }
     return np.column_stack(cols), summary

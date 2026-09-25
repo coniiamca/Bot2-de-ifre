@@ -166,7 +166,14 @@ async def build_universe(
         first_month = {
             s: min((stamp_of(o.key) for o in objs), default="") for s, objs in listed.items()
         }
-        items = [o for objs in listed.values() for o in objs if stamp_of(o.key) in want]
+        # the first listed month is always read: the 60-day history rule needs the real
+        # listing day, not the first day of that month
+        items = [
+            o
+            for s, objs in listed.items()
+            for o in objs
+            if stamp_of(o.key) in want or stamp_of(o.key) == first_month[s]
+        ]
         used = await fetch_listed(session, items, mirror, base_url, concurrency)
     qv: dict[str, dict[str, float]] = defaultdict(dict)
     first_day: dict[str, date] = {}
@@ -183,8 +190,8 @@ async def build_universe(
         first_ms = first_ms // 1000 if first_ms > 10**15 else first_ms  # µs archives
         d = date(1970, 1, 1) + timedelta(milliseconds=first_ms)
         first_day[sym] = min(first_day.get(sym, d), d)
-    for sym, fm in first_month.items():  # listed before our window: history is long enough
-        if fm and fm < min(want):
+    for sym, fm in first_month.items():  # first file unreadable: assume its first day
+        if fm and sym not in first_day:
             first_day[sym] = date.fromisoformat(fm + "-01")
     rows: list[list[str]] = []
     for m in month_range(start, end):

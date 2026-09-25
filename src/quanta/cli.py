@@ -7,6 +7,7 @@ import contextlib
 import json
 import signal
 import sys
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
@@ -552,14 +553,32 @@ def research_universe_subset(
 def research_fetch(
     root: ResearchRoot = Path("research-data"),
     universe: Path = Path("research/universe/um_top10.csv"),
-    manifest: Path = Path("research/data/manifest.csv.gz"),
+    manifest: Path | None = None,
+    minute: Annotated[
+        bool, typer.Option(help="1-minute klines only (intraday research), 1 month of warm-up")
+    ] = False,
 ) -> None:
-    """Download hourly klines, premium index, funding (+ BTC/ETH metrics) for the universe."""
-    from quanta.research.fetch import fetch_dataset
+    """Download hourly klines, premium index, funding (+ BTC/ETH metrics) for the universe;
+    with --minute, 1-minute klines instead."""
+    from quanta.research.fetch import MINUTE, fetch_dataset
     from quanta.research.universe import read_universe
 
     configure_logging("INFO", json=True)
-    used = _run(fetch_dataset(root, read_universe(universe), manifest))
+    if minute:
+        job = fetch_dataset(
+            root,
+            read_universe(universe),
+            manifest or Path("research/data/manifest_1m.csv.gz"),
+            datasets=MINUTE,
+            pad_before=1,
+            pad_after=0,
+            metrics_symbols=(),
+        )
+    else:
+        job = fetch_dataset(
+            root, read_universe(universe), manifest or Path("research/data/manifest.csv.gz")
+        )
+    used = _run(job)
     bad = [u for u in used if u.result.path is None]  # type: ignore[attr-defined]
     typer.echo(json.dumps({"files": len(used), "failed": len(bad)}))  # type: ignore[arg-type]
     raise typer.Exit(1 if bad else 0)
@@ -589,8 +608,15 @@ def research_run(
 ) -> None:
     """Run a pre-registered hypothesis and write docs/research/sonuclar/<H>.md."""
     from quanta.research.crowding import run_crowding
+    from quanta.research.intraday_runner import run_intraday
+    from quanta.research.intraday_strategies import STRATEGIES
     from quanta.research.prereg import load_prereg, repo_root
-    from quanta.research.report import crowding_markdown, trend_markdown, write_report
+    from quanta.research.report import (
+        crowding_markdown,
+        intraday_markdown,
+        trend_markdown,
+        write_report,
+    )
     from quanta.research.runner import run_trend
 
     configure_logging("INFO", json=True)
@@ -599,9 +625,14 @@ def research_run(
     repo = repo_root(path.resolve())
     if prereg.id != hypothesis:
         raise typer.BadParameter(f"{path} is for {prereg.id}")
-    runner, render = (
-        (run_crowding, crowding_markdown) if prereg.symbols else (run_trend, trend_markdown)
-    )
+    runner: Callable[..., dict[str, Any]]
+    render: Callable[[dict[str, Any]], str]
+    if prereg.strategy in STRATEGIES:
+        runner, render = run_intraday, intraday_markdown
+    elif prereg.symbols:
+        runner, render = run_crowding, crowding_markdown
+    else:
+        runner, render = run_trend, trend_markdown
     doc = runner(prereg, sha, root, repo, final=final, exploratory=exploratory)
     out = write_report(repo, doc, render(doc), None if not doc["exploratory"] else root / "reports")
     typer.echo(json.dumps({"verdict": doc["verdict"], "report": str(out)}))

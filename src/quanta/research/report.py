@@ -17,7 +17,10 @@ GATE_NAMES = {
     "yil_degismezlik": "Yıllar arasında tutarlılık",
     "alfa": "Al-tut'a göre fazladan getiri (alfa)",
     "likidasyon": "Likidasyon riski",
+    "gecikme": "1 dakika gecikme",
+    "islem_sayisi": "Yeterli işlem sayısı",
 }
+REASON_NAMES = {"tp": "kâr al", "sl": "zarar kes", "time": "süre doldu", "gap": "veri boşluğu"}
 VERDICT = {
     "GECTI": "GEÇTİ — aday (sonraki adım: kayıtlı canlı veride gölge + gerçek maliyet ölçümü)",
     "ELENDI": "ELENDİ — gerçek paraya çıkmaz",
@@ -204,6 +207,129 @@ def crowding_markdown(doc: dict[str, Any]) -> str:
         "- σ: saatlik oynaklığın EWMA'sı (yarı ömür 168 saat) × √24. Belirsizlik: zaman "
         "blokları halinde yeniden örnekleme (iki coin birlikte).",
         "- Bu bir öngörü testidir; geçerse ticaret kuralı ayrı ve yeni bir ön-kayıtla test edilir.",
+        f"- Ön-kayıt sha256 `{doc['prereg_sha'][:12]}`, veri manifesti `{doc['data_sha']}`.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def intraday_markdown(doc: dict[str, Any]) -> str:
+    b, bench, fam, st = doc["best"], doc["benchmark"], doc["family"], doc["best"]["trades"]
+    passed = sum(g["passed"] for g in doc["gates"])
+    lines = [
+        f"# {doc['hypothesis']} — {doc['title']}",
+        "",
+        f"**Karar: {VERDICT[doc['verdict']]}**",
+        "",
+        f"Kapılar: {passed}/{len(doc['gates'])} geçti · dönem {doc['period'].replace('..', ' – ')} "
+        f"(kilitli son 6 ay hariç) · 1 dakikalık mumlar · {len(fam['trials'])} ön-kayıtlı "
+        f"deneme · kod `{doc['commit'][:7]}`"
+        + (" · **keşif koşusu (kapılara sayılmaz)**" if doc["exploratory"] else ""),
+        "",
+        "## Sade özet",
+        "",
+        f"- En iyi ayar **{b['name']}** (her ay hacimce ilk {doc['universe_top']} coin): yıllık "
+        f"net getiri {pct(b['cagr'])}, en büyük düşüş {pct(b['max_drawdown'])}, yıllık Sharpe "
+        f"{num(b['sr_annual'])}.",
+    ]
+    if st.get("trades"):
+        lines += [
+            f"- {st['trades']} işlem (günde ortalama {num(st['per_day'], 1)}); kazanan işlem oranı "
+            f"{pct(st['win_rate'])}; ortalama tutma {num(st['avg_minutes'], 0)} dakika; "
+            f"işlemlerin {pct(st['long_share'], 0)}'i long.",
+            f"- İşlem başına (pozisyon büyüklüğüne oranla): maliyetler öncesi ortalama "
+            f"{pct(st['avg_before_cost'], 3)}, komisyon + kayma {pct(st['avg_cost'], 3)}, net "
+            f"{pct(st['avg_net'], 3)}. Kazananların ortalaması {pct(st['avg_win'], 2)}, "
+            f"kaybedenlerin {pct(st['avg_loss'], 2)}.",
+        ]
+    lines += [
+        f"- Aynı coinleri sadece alıp tutmak (kıyas): yıllık {pct(bench['cagr'])}, "
+        f"en büyük düşüş {pct(bench['max_drawdown'])}, Sharpe {num(bench['sr_annual'])}.",
+        "- Sonuçlar komisyon, kayma ve funding düşüldükten sonradır; geçmiş performans geleceği "
+        "garanti etmez.",
+        "",
+        "## Kapılar",
+        "",
+        "| Kapı | Sonuç | Değer | Kural |",
+        "|---|---|---|---|",
+    ]
+    for g in doc["gates"]:
+        mark = "✓" if g["passed"] else "✗"
+        lines.append(
+            f"| {GATE_NAMES.get(g['name'], g['name'])} | {mark} | {g['value']} | {g['rule']} |"
+        )
+    lines += [
+        "",
+        "## Coin havuzu: 5, 10 ya da 20 coin",
+        "",
+        "Her havuzun en iyi ayarı (seçim yukarıdaki kapılarla değil, aynı ölçüyle: yıllık Sharpe):",
+        "",
+        "| Havuz | En iyi ayar | Sharpe | Yıllık getiri | En büyük düşüş | İşlem | "
+        "İşlem başı net | İşlem başı maliyet |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for pool, r in doc["pools"].items():
+        lines.append(
+            f"| ilk {pool} | {r['best']} | {num(r['sr_annual'])} | {pct(r['cagr'])} | "
+            f"{pct(r['max_drawdown'])} | {r['trades']} | {pct(r['avg_net'], 3)} | "
+            f"{pct(r['avg_cost'], 3)} |"
+        )
+    if st.get("reasons"):
+        lines += ["", "## İşlemler nasıl kapandı", "", "| Sebep | İşlem |", "|---|---|"]
+        for k, n in st["reasons"].items():
+            lines.append(f"| {REASON_NAMES.get(k, k)} | {n} |")
+    lines += ["", "## Yıllara göre net getiri", "", "| Yıl | Strateji | Al-tut |", "|---|---|---|"]
+    for y, r in b["yearly"].items():
+        lines.append(f"| {y} | {pct(r)} | {pct(bench['yearly'].get(y))} |")
+    lines += ["", "## Duyarlılık (en iyi ayar, yıllık Sharpe)", "", "| Senaryo | Sharpe |"]
+    lines += ["|---|---|", f"| Temel | {num(b['sr_annual'])} |"]
+    for k, v in doc["sensitivity_sr_annual"].items():
+        lines.append(f"| {k} | {num(v)} |")
+    if doc["stress"]:
+        lines += ["", "## Stres dönemleri", "", "| Dönem | Strateji | Al-tut |", "|---|---|---|"]
+        for k, v in doc["stress"].items():
+            lines.append(f"| {k} | {pct(v['strateji'])} | {pct(v['al-tut'])} |")
+    lines += ["", "## Tüm denemeler (yıllık net Sharpe)", "", "| Deneme | Sharpe |", "|---|---|"]
+    for name, sr in zip(fam["trials"], fam["sr_annual"], strict=True):
+        lines.append(f"| {name}{' ← en iyi' if name == b['name'] else ''} | {num(sr)} |")
+    contrib = doc["asset_contribution"]
+    if contrib:
+        items = list(contrib.items())
+        k = min(5, max(1, len(items) // 2))
+        lines += [
+            "",
+            "## Coin katkıları (net, sermayeye oranla)",
+            "",
+            "- En çok katkı: " + ", ".join(f"{s} {pct(v)}" for s, v in items[-k:][::-1]),
+            "- En zayıf: " + ", ".join(f"{s} {pct(v)}" for s, v in items[:k]),
+        ]
+    lb = doc.get("lockbox")
+    lines += ["", "## Kilitli dönem (son 6 ay)", ""]
+    if lb:
+        lines.append(
+            f"Bir kez açıldı: {lb['days']} gün, getiri {pct(lb['return'])}, Sharpe "
+            f"{num(lb['sr_annual'])} (eşik: > 0 ve CPCV yollarının 5. yüzdeliği "
+            f"{num(lb['cpcv_p5'])}) → " + ("geçti" if lb["passed"] else "geçemedi")
+        )
+    else:
+        lines.append("Açılmadı (yalnız geliştirme kapılarını geçen bir aday için bir kez açılır).")
+    lines += [
+        "",
+        "## Yöntem",
+        "",
+        "- 1 dakikalık mumlar. Karar mum kapanışında; işlem en erken bir sonraki mumda.",
+        "- Piyasa emri: sonraki mumun açılışı + kayma (hacim sırası 1–2: 1 bps, 3–5: 3 bps, "
+        "6–10: 5 bps, 11–20: 8 bps), komisyon %0,05. Limit emir: fiyat limitin ötesine geçerse "
+        "dolar (dokunmak yetmez), komisyon %0,02. Zarar kes: 2 kat kayma. Aynı mumda hem kâr al "
+        "hem zarar kes varsa zarar kes sayılır.",
+        "- İşlem başı risk sermayenin %0,5'i; coin başına ≤ 1×, toplam ≤ 1,5× kaldıraç; aynı anda "
+        "en fazla 3 pozisyon, coin başına 1.",
+        "- Coin listesi her ay bir önceki ayın hacmine göre seçilir (kaldırılan coinler dahil).",
+        f"- Deneme sayısı: aile {len(fam['trials']) + fam.get('n_prior', 0)} "
+        f"(etkin {num(fam['n_eff'], 1)}); programdaki toplam kayıtlı deneme "
+        f"{doc['program_trials']}. DSR bu sayıyla şans payını düşer.",
+        '- Dakikalık mum testi: "elendi" kesindir; "geçti" yalnız adaylıktır. Sonraki adım '
+        "kayıtlı canlı emir defterinde gerçek spread ve dolum ölçümüdür.",
         f"- Ön-kayıt sha256 `{doc['prereg_sha'][:12]}`, veri manifesti `{doc['data_sha']}`.",
         "",
     ]

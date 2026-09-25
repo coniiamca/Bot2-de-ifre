@@ -21,6 +21,7 @@ from quanta.research.universe import Used, fetch_listed, month_range, stamp_of, 
 log = get_logger(__name__)
 
 MONTHLY = (("klines", "1h"), ("premiumIndexKlines", "1h"), ("fundingRate", ""))
+MINUTE = (("klines", "1m"),)  # intraday research: 1-minute bars incl. taker buy volume
 CORE_METRICS = ("BTCUSDT", "ETHUSDT")
 
 
@@ -46,6 +47,9 @@ async def fetch_dataset(
     universe: list[tuple[str, int, str]],
     manifest: Path,
     *,
+    datasets: tuple[tuple[str, str], ...] = MONTHLY,
+    pad_before: int = 4,
+    pad_after: int = 1,
     metrics_symbols: tuple[str, ...] = CORE_METRICS,
     metrics_start: date = date(2020, 9, 1),
     metrics_end: date | None = None,
@@ -54,7 +58,7 @@ async def fetch_dataset(
     listing_url: str = LISTING_URL,
 ) -> list[Used]:
     mirror = root / "archive" / "binance_vision"
-    windows = symbol_windows(universe)
+    windows = symbol_windows(universe, pad_before, pad_after)
     last_month = max(m for m, _, _ in universe)
     metrics_end = metrics_end or (
         date.fromisoformat(_shift(last_month, 1) + "-01") - timedelta(days=1)
@@ -71,7 +75,7 @@ async def fetch_dataset(
 
         specs: list[tuple[str, str, str, str, str]] = []  # prefix, dataset, sym, interval, window
         for sym, (lo, hi) in windows.items():
-            for ds, iv in MONTHLY:
+            for ds, iv in datasets:
                 sub = f"{sym}/{iv}/" if iv else f"{sym}/"
                 specs.append((f"{PREFIX}/monthly/{ds}/{sub}", ds, sym, iv, f"{lo}|{hi}"))
         for sym in metrics_symbols:

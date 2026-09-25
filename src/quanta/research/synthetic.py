@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from quanta.research.minute import MIN_NS, Bars
 from quanta.research.panel import HOUR_NS, Market, asof_align, kline_close_feature
 
 START_NS = 1_577_836_800 * 10**9  # 2020-01-01T00:00Z
@@ -106,3 +107,41 @@ def _features(
             avs[name].append(avail)
     for name in cols:
         m.add_feature(name, np.column_stack(cols[name]), np.column_stack(avs[name]))
+
+
+def make_minute_bars(
+    n_days: int = 360,
+    seed: int = 0,
+    shock_rate: float = 4.0,
+    shock_sigmas: float = 8.0,
+    revert: float = 0.0,
+    sigma: float = 0.0008,
+    symbol: str = "SYNUSDT",
+    rank: int = 1,
+) -> Bars:
+    """1-minute bars of a random walk with volume
+    spikes. ``shock_rate`` times a day on average a 5-minute move of ``shock_sigmas`` σ·√5
+    happens on heavy volume; ``revert`` of it drifts back over the next 30 minutes (0 = the
+    move is permanent, i.e. no snap-back effect)."""
+    rng = np.random.default_rng(seed)
+    n = n_days * 1440
+    r = rng.standard_normal(n) * sigma
+    qv = rng.lognormal(0.0, 0.3, n) * 1e5
+    starts = np.flatnonzero(rng.random(n) < shock_rate / 1440)
+    starts = starts[(starts > 1440) & (starts < n - 60)]
+    for s in starts:
+        jump = rng.choice([-1.0, 1.0]) * shock_sigmas * sigma * np.sqrt(5.0)
+        r[s : s + 5] += jump / 5.0
+        qv[s : s + 5] *= 8.0
+        r[s + 5 : s + 35] -= revert * jump / 30.0
+    c = 100.0 * np.exp(np.cumsum(r))
+    o = np.concatenate([[100.0], c[:-1]])
+    wick = np.abs(rng.standard_normal((2, n))) * 0.3 * sigma
+    h = np.maximum(o, c) * np.exp(wick[0])
+    low = np.minimum(o, c) * np.exp(-wick[1])
+    v = qv / c
+    tb = v * rng.uniform(0.4, 0.6, n)
+    t = START_NS + np.arange(n, dtype=np.int64) * MIN_NS
+    ft = START_NS + np.arange(0, n_days * 3, dtype=np.int64) * 8 * 3600 * 10**9
+    fr = rng.normal(0.0001, 0.0002, ft.size)
+    return Bars(symbol, t, o, h, low, c, v, qv, tb, np.full(n, rank, np.int16), ft, fr)

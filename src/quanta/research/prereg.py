@@ -23,9 +23,14 @@ class Strict(BaseModel):
 
 
 class Costs(Strict):
-    fee_bps: float = 5.0
-    slip_top2_bps: float = 1.0
-    slip_rest_bps: float = 3.0
+    fee_bps: float = 5.0  # taker
+    slip_top2_bps: float = 1.0  # universe rank 1–2
+    slip_rest_bps: float = 3.0  # hourly tests: rank 3–10; intraday: rank 3–5
+    # intraday (minute-bar) tests only
+    maker_bps: float = 2.0
+    slip_6_10_bps: float = 5.0
+    slip_11_20_bps: float = 8.0
+    stop_slip_mult: float = 2.0
 
 
 class Validation(Strict):
@@ -40,6 +45,9 @@ class Prereg(Strict):
     id: str
     version: int
     title: str
+    # "" = trend (universe file) or crowding (symbols); intraday: snapback | breakout | flow |
+    # funding_time (research.intraday_strategies)
+    strategy: str = ""
     mechanism: str
     falsification: str
     universe_file: str = ""  # point-in-time universe CSV …

@@ -50,6 +50,24 @@ büyük coinlerde işlem yapsak?"
 **Trend ailesi bu kurallarla kapandı.** Başka bir coin listesi ya da ayar ızgarasıyla yeniden
 denenmeyecek. Aynı veride sonuç beğenilene kadar denemek, tam da DSR'ın cezalandırdığı şeydir.
 
+## Düzeltme notu: Mart 2020 coin listesi
+İlk-20 listesi kurulurken bir hata bulundu:
+- **Hata:** Ocak 2020'de listelenen coinler için "en az 60 gün geçmiş" kuralı gerçek listeleme günü
+  yerine ayın 1'i ile uygulanmıştı.
+- **Sonuç:** İlk-10 (ve ondan türetilen ilk-5) listesi yalnız **Mart 2020'de** bu kuralı henüz
+  geçmemiş 7 coini fazladan içeriyordu. Diğer bütün aylar birebir aynı.
+- **Düzeltme:** Kod düzeltildi ve bunu yakalayan bir test eklendi.
+- **Etkisi:** H6 ve H6B düzeltilmiş listeyle (sayılmayan keşif koşusu olarak) yeniden hesaplandı.
+  Kararlar değişmedi:
+
+  | | Sharpe (eski → düzeltilmiş) | t (eşik 3,4) | Geçen kapı |
+  |---|---|---|---|
+  | H6 | 0,82 → 0,86 | 2,12 → 2,17 | 6/10 → 6/10 |
+  | H6B | 0,59 → 0,62 | 1,59 → 1,68 | 4/10 → 4/10 |
+
+- Kayıtlı sonuçlar ve deneme defteri, commit edildikleri haliyle bırakıldı. Yeni testler düzeltilmiş
+  listeyi (`research/universe/um_top20.csv`) kullanır.
+
 ## Dürüstlük kuralları
 - **Ön-kayıt:** Hipotez, parametre ızgarası, dönemler ve kapılar sonuçlar görülmeden
   `research/prereg/*.yaml` dosyasına yazılır ve commit edilir. Commit edilmemiş ya da değiştirilmiş

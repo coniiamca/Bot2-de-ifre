@@ -20,10 +20,12 @@ from aiohttp import web
 np = pytest.importorskip("numpy")
 
 from quanta.research.data import load_market  # noqa: E402
-from quanta.research.fetch import fetch_dataset  # noqa: E402
+from quanta.research.fetch import MINUTE, fetch_dataset  # noqa: E402
+from quanta.research.intraday_runner import run_intraday  # noqa: E402
 from quanta.research.ledger import Ledger  # noqa: E402
+from quanta.research.minute import load_bars  # noqa: E402
 from quanta.research.prereg import Prereg, PreregError, load_prereg  # noqa: E402
-from quanta.research.report import trend_markdown, write_report  # noqa: E402
+from quanta.research.report import intraday_markdown, trend_markdown, write_report  # noqa: E402
 from quanta.research.runner import run_trend  # noqa: E402
 from quanta.research.universe import (  # noqa: E402
     build_universe,
@@ -124,17 +126,19 @@ def populate(fa: FakeS3Archive) -> None:
     rng = np.random.default_rng(3)
     # AAA biggest; BBB listed late (needs 60 days); CCC delisted after 2020-03;
     # stablecoin and dated contracts must be ignored
+    # DDD: listed mid-month (2020-01-20), tiny volume — only the 60-day rule looks at it
     specs = {
-        "AAAUSDT": (MONTHS, 1e9),
-        "BBBUSDT": (MONTHS[1:], 5e9),
-        "CCCUSDT": (MONTHS[:3], 2e8),
-        "USDCUSDT": (MONTHS, 9e9),
-        "XYZUSDT_200626": (MONTHS, 9e9),
+        "AAAUSDT": (MONTHS, 1e9, 1),
+        "BBBUSDT": (MONTHS[1:], 5e9, 1),
+        "CCCUSDT": (MONTHS[:3], 2e8, 1),
+        "DDDUSDT": (MONTHS, 1e6, 20),
+        "USDCUSDT": (MONTHS, 9e9, 1),
+        "XYZUSDT_200626": (MONTHS, 9e9, 1),
     }
-    for sym, (months, qv) in specs.items():
+    for sym, (months, qv, first_day) in specs.items():
         px = 100.0
         for m in months:
-            days = _month_days(m)
+            days = [d for d in _month_days(m) if m != months[0] or d.day >= first_day]
             daily = [
                 f"{_ms(d)},1,1,1,1,1,{_ms(d) + 86_399_999},{qv / len(days):.0f},10,0,0,0"
                 for d in days
@@ -279,6 +283,111 @@ async def test_universe_fetch_panel_and_run(tmp_path: Path, archive: FakeS3Archi
         run_trend(
             narrow.model_copy(update={"id": "HT4", "prior_trials": ["NOPE"]}), "sha", root, repo
         )
+
+
+async def test_history_rule_uses_the_real_listing_day(
+    tmp_path: Path, archive: FakeS3Archive
+) -> None:
+    """A universe built from a later start must still read the first listed month: DDD was
+    listed on 2020-01-20, so it has 60 days of history only from 2020-03-20."""
+    kw: dict[str, Any] = {"listing_url": archive.url + "/listing", "base_url": archive.url}
+    rows = await build_universe(
+        tmp_path / "d",
+        "2020-03",
+        "2020-05",
+        tmp_path / "u.csv",
+        tmp_path / "m.csv.gz",
+        top_n=10,
+        **kw,
+    )
+    months = {m for m, _, s, _ in rows if s == "DDDUSDT"}
+    assert months == {"2020-04", "2020-05"}
+
+
+def add_minutes(fa: FakeS3Archive, symbols: dict[str, list[str]]) -> None:
+    """1-minute klines (random walk with occasional bursts) for the given months."""
+    rng = np.random.default_rng(7)
+    for sym, months in symbols.items():
+        px = 100.0
+        for m in months:
+            t0 = _ms(datetime.fromisoformat(m + "-01").replace(tzinfo=UTC))
+            n = len(_month_days(m)) * 1440
+            r = rng.normal(0, 0.001, n)
+            burst = rng.random(n) < 0.01
+            r[burst] *= 8
+            c = px * np.exp(np.cumsum(r))
+            o = np.concatenate([[px], c[:-1]])
+            px = float(c[-1])
+            h, lo = np.maximum(o, c) * 1.0002, np.minimum(o, c) * 0.9998
+            v = np.where(burst, 50.0, 5.0)
+            tb = v * rng.uniform(0.2, 0.8, n)
+            rows = [
+                f"{t0 + 60_000 * i},{o[i]:.5f},{h[i]:.5f},{lo[i]:.5f},{c[i]:.5f},{v[i]},"
+                f"{t0 + 60_000 * i + 59_999},{v[i] * c[i]:.3f},3,{tb[i]:.4f},0,0"
+                for i in range(n)
+            ]
+            fa.add(
+                f"{PREFIX}/monthly/klines/{sym}/1m/{sym}-1m-{m}.zip", _zip("x.csv", rows, KL_HEADER)
+            )
+
+
+async def test_intraday_run_end_to_end(tmp_path: Path, archive: FakeS3Archive) -> None:
+    root, repo = tmp_path / "data", tmp_path / "repo"
+    kw: dict[str, Any] = {"listing_url": archive.url + "/listing", "base_url": archive.url}
+    ucsv = repo / "research/universe/u.csv"
+    await build_universe(root, "2020-03", "2020-04", ucsv, tmp_path / "m1.csv.gz", top_n=2, **kw)
+    universe = read_universe(ucsv)
+    add_minutes(archive, {"AAAUSDT": ["2020-02", "2020-03", "2020-04"], "CCCUSDT": ["2020-03"]})
+    await fetch_dataset(root, universe, tmp_path / "m2.csv.gz", metrics_symbols=(), **kw)
+    used = await fetch_dataset(
+        root,
+        universe,
+        tmp_path / "m3.csv.gz",
+        datasets=MINUTE,
+        pad_before=1,
+        pad_after=0,
+        metrics_symbols=(),
+        **kw,
+    )
+    assert {u.listed.key.rsplit("/", 1)[-1] for u in used} == {
+        "AAAUSDT-1m-2020-02.zip",
+        "AAAUSDT-1m-2020-03.zip",
+        "AAAUSDT-1m-2020-04.zip",
+        "CCCUSDT-1m-2020-03.zip",
+    }
+    b = load_bars(root, universe, "AAAUSDT", "2020-02-01", "2020-05-01")
+    assert b is not None and len(b) == (29 + 31 + 30) * 1440
+    assert (b.rank[: 29 * 1440] == 0).all() and (b.rank[29 * 1440 :] > 0).all()
+    assert np.all(np.diff(b.t) == 60 * 10**9) and b.funding_t.size > 0
+    pr = Prereg(
+        id="HI",
+        version=1,
+        title="intraday test",
+        mechanism="m",
+        falsification="f",
+        strategy="flow",
+        universe_file="research/universe/u.csv",
+        data_start="2020-02-01",
+        warmup_days=29,
+        dev_end="2020-05-01",
+        lockbox_end="2020-06-01",
+        grid={"k": [5, 15], "e": [2.0], "hold": [15], "entry": ["market"], "pool": [1, 2]},
+        fixed={"vol_halflife_min": 1440, "warmup_days": 5, "limit_valid": 5},
+        validation={"hold_days": 1, "lookback_days": 1},
+        stress_windows=[("2020-03-10", "2020-03-20", "test")],
+    )
+    doc = run_intraday(pr, "sha", root, repo, workers=1)
+    assert doc["verdict"] in ("GECTI", "ELENDI", "SONUCSUZ") and len(doc["family"]["trials"]) == 4
+    assert {g["name"] for g in doc["gates"]} >= {"dsr", "gecikme", "islem_sayisi", "alfa"}
+    assert set(doc["pools"]) == {"1", "2"} and doc["best"]["trades"]["trades"] > 0
+    assert Ledger(repo).count("HI") == 4
+    again = run_intraday(pr, "sha", root, repo, workers=2)  # processes: same answer
+    strip = {"program_trials"}
+    assert {k: v for k, v in again.items() if k not in strip} == {
+        k: v for k, v in doc.items() if k not in strip
+    }
+    md = intraday_markdown(doc)
+    assert "Coin havuzu" in md and "Karar:" in md
 
 
 def _git(repo: Path, *args: str) -> None:
