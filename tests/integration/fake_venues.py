@@ -11,6 +11,7 @@ import contextlib
 import json
 import random
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,11 +22,14 @@ def _ms() -> int:
     return int(time.time() * 1000)
 
 
+OnSent = Callable[[], None] | None
+
+
 @dataclass
 class Conn:
     ws: web.WebSocketResponse
     topics: set[str] = field(default_factory=set)
-    queue: asyncio.Queue[str] = field(default_factory=asyncio.Queue)
+    queue: asyncio.Queue[tuple[str, OnSent]] = field(default_factory=asyncio.Queue)
 
 
 class _Server:
@@ -82,15 +86,25 @@ class _Server:
         if self.geo_blocked or (ws and self.ws_blocked):
             raise web.HTTPForbidden(text="The service is not available in your region")
 
-    def send(self, conn: Conn, obj: dict[str, Any]) -> None:
-        conn.queue.put_nowait(json.dumps(obj, separators=(",", ":")))
+    liquidations_sent: dict[str, int]
 
-    def broadcast(self, topic: str, obj: dict[str, Any]) -> int:
-        """Returns the number of connections the message was delivered to."""
+    def _count_liquidations(self, key: str, n: int) -> OnSent:
+        def count() -> None:
+            self.liquidations_sent[key] += n
+
+        return count if n else None
+
+    def send(self, conn: Conn, obj: dict[str, Any], on_sent: OnSent = None) -> None:
+        conn.queue.put_nowait((json.dumps(obj, separators=(",", ":")), on_sent))
+
+    def broadcast(self, topic: str, obj: dict[str, Any], on_sent: OnSent = None) -> int:
+        """Queues ``obj`` for every subscribed connection; ``on_sent`` runs once per frame
+        actually written to a socket (a frame still queued when a connection is closed was
+        never sent, so ground-truth counters must not count it)."""
         n = 0
         for c in self.conns:
             if topic in c.topics:
-                self.send(c, obj)
+                self.send(c, obj, on_sent)
                 n += 1
         return n
 
@@ -103,7 +117,10 @@ class _Server:
 
         async def sender() -> None:
             while True:
-                await ws.send_str(await conn.queue.get())
+                text, on_sent = await conn.queue.get()
+                await ws.send_str(text)
+                if on_sent is not None:
+                    on_sent()
 
         task = asyncio.create_task(sender())
         try:
@@ -276,16 +293,17 @@ class FakeBybit(_Server):
                     "data": {"symbol": s, "markPrice": "100.0", "fundingRate": "0.0001"},
                 },
             )
-            if self.rng.random() < 0.2 and self.broadcast(
-                f"allLiquidation.{s}",
-                {
-                    "topic": f"allLiquidation.{s}",
-                    "type": "snapshot",
-                    "ts": _ms(),
-                    "data": [{"T": _ms(), "s": s, "S": "Sell", "v": "0.003", "p": "99.0"}],
-                },
-            ):
-                self.liquidations_sent[s] += 1
+            if self.rng.random() < 0.2:
+                self.broadcast(
+                    f"allLiquidation.{s}",
+                    {
+                        "topic": f"allLiquidation.{s}",
+                        "type": "snapshot",
+                        "ts": _ms(),
+                        "data": [{"T": _ms(), "s": s, "S": "Sell", "v": "0.003", "p": "99.0"}],
+                    },
+                    on_sent=self._count_liquidations(s, 1),
+                )
 
     async def _time(self, request: web.Request) -> web.Response:
         self.guard()
@@ -458,8 +476,11 @@ class FakeDeribit(_Server):
                 if self.rng.random() < 0.2:
                     t["liquidation"] = "T"
                 trades.append(t)
-            if self.broadcast(f"trades.{i}.100ms", self._note(f"trades.{i}.100ms", trades)):
-                self.liquidations_sent[i] += sum(1 for t in trades if "liquidation" in t)
+            self.broadcast(
+                f"trades.{i}.100ms",
+                self._note(f"trades.{i}.100ms", trades),
+                on_sent=self._count_liquidations(i, sum(1 for t in trades if "liquidation" in t)),
+            )
             self.broadcast(
                 f"ticker.{i}.100ms",
                 self._note(
