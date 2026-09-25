@@ -95,6 +95,40 @@ sudo rm -rf /opt/quanta /usr/local/bin/quanta /usr/local/bin/quanta-compose
 
 Docker'sız çalıştırma (geliştirme): `uv sync --extra s3 && uv run quanta recorder run -c config/recorder.local.yaml`.
 
+## Windows bilgisayarda geçici çalıştırma (Docker Desktop)
+
+Sunucu hazır olana kadar kayıt kendi Windows bilgisayarında çalışabilir. `bootstrap.sh` yalnız Ubuntu/Debian içindir; Windows'ta aynı servisler Docker Desktop ile doğrudan başlatılır. Şu an yalnız **piyasa verisi kaydedilir**; emir yok, API anahtarı yok.
+
+**Gerekenler:** Docker Desktop açık (görev çubuğunda balina simgesi) ve Git Bash.
+
+```bash
+export MSYS_NO_PATHCONV=1        # Git Bash /etc/... gibi yolları Windows yoluna çevirmesin
+cd ~
+git clone https://github.com/coniiamca/Bot2-de-ifre.git quanta
+cd quanta
+cp config/recorder.example.yaml config/recorder.local.yaml
+sed -i "/^data_dir:/a host_id: $(hostname)" config/recorder.local.yaml
+mkdir -p secrets
+C="docker compose -f infra/compose/docker-compose.yml"
+$C build                         # ilk sefer birkaç dakika
+$C run --rm --no-deps recorder recorder check-access \
+    --config /etc/quanta/recorder.yaml --out /var/lib/quanta/data/access.json
+$C up -d
+$C ps                            # recorder, ui, lake-daily: "Up"
+```
+Durum sayfası: tarayıcıda **http://127.0.0.1:8080**.
+
+**Dikkat edilecekler:**
+- **Bilgisayar uyumamalı.** Ayarlar → Sistem → Güç: prize takılıyken uyku "Hiçbir zaman". Docker Desktop → Settings → General: "Start Docker Desktop when you sign in". Konteynerler Docker Desktop açılınca kendiliğinden kalkar. Kapalı kalınan süre veri kaybıdır; lifecycle kayıtlarında ve günlük kalite raporunda görünür.
+- **Saat:** uyku veya hazırda bekleme sonrası Docker'ın sanal makinesinde saat kayabilir. Durum sayfasındaki "Saat farkı" 250 ms'yi aşarsa Docker Desktop'ı yeniden başlat.
+- **Erişim:** bilgisayarın bulunduğu ülke bazı borsalarca kısıtlı olabilir; bunu `check-access` çıktısı ve sayfadaki erişim tablosu gösterir. Kısıtlı bir borsa için VPN/proxy kullanılmaz (bkz. [HTTP 451](#http-451)). O borsa `config/recorder.local.yaml` içinde `enabled: false` yapılıp `$C up -d --force-recreate recorder` çalıştırılır.
+- **Veri** Docker Desktop'ın diskindeki `quanta_quanta-data` volume'undadır. Sunucuya geçerken bu volume taşınabilir, ya da sunucu kaydı sıfırdan başlar.
+- **Komutlar:** her yeni Git Bash penceresinde önce `export MSYS_NO_PATHCONV=1; cd ~/quanta; C="docker compose -f infra/compose/docker-compose.yml"`.
+  - Günlük: `$C logs -f recorder`
+  - Durdur: `$C down` (veri kalır)
+  - Güncelle: `git pull && $C up -d --build`
+  - Araçlar: `$C run --rm --no-deps recorder data volume -d /var/lib/quanta/data`
+
 ## Durum sayfası ve alarmsız işletim (ADR-010)
 
 Varsayılan izleme, salt-okunur tek sayfadır (`quanta ui`). Alarm/bildirim gönderilmez; sayfaya günde birkaç kez bakılır.

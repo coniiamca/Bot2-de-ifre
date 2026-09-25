@@ -1,0 +1,7 @@
+# Every checkout keeps LF line endings, on Windows too: Dockerfile line continuations and
+# shell scripts break with CRLF.
+* text=auto eol=lf
+*.png binary
+*.zst binary
+*.parquet binary
+*.gz binary
