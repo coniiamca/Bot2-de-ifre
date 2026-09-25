@@ -1,0 +1,250 @@
+{
+ "alpha": {
+  "alpha_annual": 0.10427741261784305,
+  "beta": -0.15697470229454272,
+  "t_nw": 2.2149873660267363
+ },
+ "asset_contribution": {
+  "1000PEPEUSDT": 0.009896713160905792,
+  "ADAUSDT": 0.039762619192356755,
+  "BCHUSDT": -0.016472952124710494,
+  "BNBUSDT": 0.011036608818016888,
+  "BTCUSDT": 0.16722967736441285,
+  "DOGEUSDT": 0.061833634024175015,
+  "EOSUSDT": 0.0013235294360449757,
+  "ETCUSDT": -0.015692979067712078,
+  "ETHUSDT": 0.11803783431779356,
+  "LINKUSDT": 0.004324815250411062,
+  "LTCUSDT": 0.016168018608426208,
+  "MATICUSDT": -0.015553353142219214,
+  "SOLUSDT": 0.05387844826011865,
+  "SUIUSDT": 0.021573124225415012,
+  "XRPUSDT": 0.1318039664663556
+ },
+ "benchmark": {
+  "cagr": 0.03890005705256905,
+  "max_drawdown": -0.2708284154389212,
+  "sr_annual": 0.34867987783449683,
+  "yearly": {
+   "2020": 0.20646671346335266,
+   "2021": 0.13573382604972184,
+   "2022": -0.2429101449222515,
+   "2023": 0.26105230134518864,
+   "2024": 0.1429395090950074,
+   "2025": -0.08259944767493044,
+   "2026": -0.08328707489029408
+  }
+ },
+ "best": {
+  "cagr": 0.09409864394222045,
+  "cost_sum": 0.12150108375724653,
+  "funding_sum": -0.06663984529162674,
+  "gross_sum": 0.7768104539785035,
+  "max_drawdown": -0.12471304937752092,
+  "name": "L336_R24_sign",
+  "params": {
+   "lookback_h": 336,
+   "rebalance_h": 24,
+   "signal": "sign"
+  },
+  "sr_annual": 0.8223097517621965,
+  "turnover_per_day": 0.07535544699264647,
+  "vol_annual": 0.11774461499365302,
+  "yearly": {
+   "2020": 0.1570475473729842,
+   "2021": 0.0683343305093993,
+   "2022": 0.10725630827263455,
+   "2023": 0.09898797029821904,
+   "2024": 0.0914660890537149,
+   "2025": -0.017322756668893824,
+   "2026": 0.0634700026397077
+  }
+ },
+ "commit": "ba89ed2ffacd3529b18909b57ba5270721a06af6",
+ "data_sha": "b6263f65119b5a26",
+ "exploratory": false,
+ "family": {
+  "best": 14,
+  "best_sr_annual": 0.8223097517621965,
+  "best_t_nw": 2.1234025175048417,
+  "cpcv_path_sr_annual": [
+   0.47167796439164067,
+   0.7141841211000912,
+   0.5531786673780462,
+   0.47167796439164067,
+   0.6259258699804403
+  ],
+  "days": 2191,
+  "dsr": 0.5533118194027471,
+  "gates": [
+   {
+    "name": "cpcv",
+    "passed": true,
+    "rule": "medyan yol SR > 0 ve yollar\u0131n \u2265 %80'i pozitif",
+    "value": "medyan 0.55, pozitif yol %100"
+   },
+   {
+    "name": "dsr",
+    "passed": false,
+    "rule": "DSR \u2265 0.95",
+    "value": "0.553 (N_eff 7.7)"
+   },
+   {
+    "name": "pbo",
+    "passed": false,
+    "rule": "PBO \u2264 0.25",
+    "value": "0.35"
+   },
+   {
+    "name": "t_nw",
+    "passed": false,
+    "rule": "Newey\u2013West t \u2265 3.4",
+    "value": "2.12"
+   }
+  ],
+  "mean_corr": 0.5535880933960146,
+  "n_eff": 7.696178599059782,
+  "passed": false,
+  "pbo": 0.34615384615384615,
+  "pbo_slope": -0.9204589110090219,
+  "sr_annual": [
+   -1.1987776972479867,
+   -0.12482500179302129,
+   -0.4362308938675283,
+   0.011914804057396075,
+   0.39818435074885816,
+   0.5610278194222834,
+   0.34197568638800196,
+   0.793482296893659,
+   0.6470006374022927,
+   0.46352588288042523,
+   0.4584389837303637,
+   0.637832852626462,
+   0.7618257171281686,
+   0.5118195592013306,
+   0.8223097517621965,
+   0.6373476091431447
+  ],
+  "trials": [
+   "L24_R4_sign",
+   "L24_R4_scaled",
+   "L24_R24_sign",
+   "L24_R24_scaled",
+   "L72_R4_sign",
+   "L72_R4_scaled",
+   "L72_R24_sign",
+   "L72_R24_scaled",
+   "L168_R4_sign",
+   "L168_R4_scaled",
+   "L168_R24_sign",
+   "L168_R24_scaled",
+   "L336_R4_sign",
+   "L336_R4_scaled",
+   "L336_R24_sign",
+   "L336_R24_scaled"
+  ]
+ },
+ "gates": [
+  {
+   "name": "cpcv",
+   "passed": true,
+   "rule": "medyan yol SR > 0 ve yollar\u0131n \u2265 %80'i pozitif",
+   "value": "medyan 0.55, pozitif yol %100"
+  },
+  {
+   "name": "dsr",
+   "passed": false,
+   "rule": "DSR \u2265 0.95",
+   "value": "0.553 (N_eff 7.7)"
+  },
+  {
+   "name": "pbo",
+   "passed": false,
+   "rule": "PBO \u2264 0.25",
+   "value": "0.35"
+  },
+  {
+   "name": "t_nw",
+   "passed": false,
+   "rule": "Newey\u2013West t \u2265 3.4",
+   "value": "2.12"
+  },
+  {
+   "name": "plateau",
+   "passed": true,
+   "rule": "kom\u015fu ayarlar\u0131n ortalama SR'\u0131 \u2265 en iyinin yar\u0131s\u0131",
+   "value": "kom\u015fu ort. 0.62 / en iyi 0.82"
+  },
+  {
+   "name": "maliyet_x1_5",
+   "passed": true,
+   "rule": "maliyet \u00d71,5'te SR > 0",
+   "value": "SR 0.74"
+  },
+  {
+   "name": "varlik_degismezlik",
+   "passed": true,
+   "rule": "varl\u0131klar\u0131n \u2265 2/3'\u00fcnde pozitif katk\u0131",
+   "value": "%80 pozitif (15 varl\u0131k)"
+  },
+  {
+   "name": "yil_degismezlik",
+   "passed": true,
+   "rule": "y\u0131llar\u0131n \u00e7o\u011funda pozitif",
+   "value": "%86 pozitif (7 y\u0131l)"
+  },
+  {
+   "name": "alfa",
+   "passed": true,
+   "rule": "al-tut k\u0131yas\u0131na g\u00f6re alfa > 0 ve t \u2265 2",
+   "value": "y\u0131ll\u0131k %10.4, t 2.21, beta -0.16"
+  },
+  {
+   "name": "likidasyon",
+   "passed": false,
+   "rule": "hi\u00e7bir barda likidasyon mesafesi a\u015f\u0131lmaz",
+   "value": "19"
+  }
+ ],
+ "hypothesis": "H6",
+ "lockbox": null,
+ "period": "2020-01-01..2026-03-01",
+ "prereg_sha": "d5df51bfb49aa5a9f39734c402349b24c5d4a3d186c4ab29d25035f1e045ce03",
+ "program_trials": 17,
+ "sensitivity_sr_annual": {
+  "1 bar gecikme": 0.8370683590064879,
+  "maliyet \u00d71,5": 0.7363842225258606,
+  "maliyet \u00d72": 0.6504298685260149,
+  "saatlik VWAP ile i\u015flem": 0.8795621665638644
+ },
+ "stress": {
+  "A\u011fustos 2024 (yen carry)": {
+   "al-tut": -0.02007452616818428,
+   "strateji": 0.001428152085647394
+  },
+  "Ekim 2025 likidasyon zinciri": {
+   "al-tut": -0.022319995922642222,
+   "strateji": -0.035829101549892495
+  },
+  "Kas\u0131m 2022 (FTX)": {
+   "al-tut": -0.024933302879356245,
+   "strateji": -0.03906586257231237
+  },
+  "Mart 2020 (COVID \u00e7\u00f6k\u00fc\u015f\u00fc)": {
+   "al-tut": -0.060974179848094945,
+   "strateji": 0.04798429570768392
+  },
+  "May\u0131s 2021 \u00e7\u00f6k\u00fc\u015f\u00fc": {
+   "al-tut": -0.007066099721973806,
+   "strateji": -0.006856201219040736
+  },
+  "May\u0131s 2022 (LUNA)": {
+   "al-tut": -0.11394552748690645,
+   "strateji": 0.06507481686995686
+  }
+ },
+ "symbols": 93,
+ "title": "Saatlik zaman serisi momentumu (trend takibi)",
+ "verdict": "ELENDI",
+ "version": 1
+}
