@@ -12,7 +12,7 @@ import hashlib
 import io
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -85,6 +85,28 @@ class Ledger:
             }
         )
         return True
+
+    def trials_of(self, hypotheses: list[str], period: str, data_sha: str) -> list[dict[str, Any]]:
+        """Counted (non-exploratory) trials of ``hypotheses`` on the same period and data."""
+        return [
+            e
+            for e in self.entries()
+            if e.get("kind") == "trial"
+            and e.get("hypothesis") in hypotheses
+            and not e.get("exploratory")
+            and e.get("period") == period
+            and e.get("data_sha") == data_sha
+        ]
+
+    def load_returns(self, entry: dict[str, Any]) -> tuple[NDArray[np.int64], NDArray[np.float64]]:
+        """Daily returns of a recorded trial; the file must match its recorded sha256."""
+        data = (self.repo / entry["returns_file"]).read_bytes()
+        if hashlib.sha256(data).hexdigest() != entry["returns_sha256"]:
+            raise ValueError(f"{entry['returns_file']}: sha256 differs from the ledger")
+        rows = list(csv.reader(io.StringIO(gzip.decompress(data).decode())))[1:]
+        epoch = date(1970, 1, 1).toordinal()
+        days = np.array([date.fromisoformat(d).toordinal() - epoch for d, _ in rows], np.int64)
+        return days, np.array([float(r) for _, r in rows], dtype=np.float64)
 
     def lockbox_opened(self, hypothesis: str) -> bool:
         return any(

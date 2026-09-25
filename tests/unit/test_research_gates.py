@@ -63,3 +63,22 @@ def test_planted_trend_passes_and_noise_fails() -> None:
     fs0 = family_stats(noise, [str(p) for p in GRID], hold_days=7, lookback_days=7)
     assert not fs0.passed
     assert fs0.dsr < 0.95
+
+
+def test_prior_trials_raise_the_luck_bar_and_never_change_selection() -> None:
+    rng = np.random.default_rng(5)
+    t = 1500
+    edge = 0.0012 + 0.01 * rng.normal(size=(t, 1))  # a real but modest edge
+    r = edge + 0.004 * rng.normal(size=(t, 4))
+    names = [f"c{i}" for i in range(4)]
+    alone = family_stats(r, names, hold_days=1, lookback_days=1)
+    assert family_stats(r, names, 1, 1, prior=None).dsr == alone.dsr  # unchanged without prior
+    prior = 0.01 * rng.normal(size=(t, 16))  # 16 earlier, unrelated trials
+    both = family_stats(r, names, hold_days=1, lookback_days=1, prior=prior)
+    assert both.n_prior == 16 and both.n_eff > alone.n_eff
+    assert both.dsr < alone.dsr
+    # selection, t, PBO and CPCV stay within this grid
+    assert both.best == alone.best and both.best_t_nw == alone.best_t_nw
+    assert both.pbo == alone.pbo and both.cpcv_path_sr_annual == alone.cpcv_path_sr_annual
+    with pytest.raises(ValueError, match="same days"):
+        family_stats(r, names, 1, 1, prior=prior[:-1])

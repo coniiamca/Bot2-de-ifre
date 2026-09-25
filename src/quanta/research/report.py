@@ -42,7 +42,8 @@ def trend_markdown(doc: dict[str, Any]) -> str:
         f"**Karar: {VERDICT[doc['verdict']]}**",
         "",
         f"Kapılar: {passed}/{len(doc['gates'])} geçti · dönem {doc['period'].replace('..', ' – ')} "
-        f"(kilitli son 6 ay hariç) · {doc['symbols']} coin (her ay o anın en hacimli 10'u) · "
+        f"(kilitli son 6 ay hariç) · {doc['symbols']} coin (her ay o anın hacimce ilk "
+        f"{doc.get('universe_top', 10)} coini) · "
         f"{len(fam['trials'])} ön-kayıtlı deneme · kod `{doc['commit'][:7]}`"
         + (" · **keşif koşusu (kapılara sayılmaz)**" if doc["exploratory"] else ""),
         "",
@@ -99,6 +100,19 @@ def trend_markdown(doc: dict[str, Any]) -> str:
             f"- En çok katkı: {top}",
             f"- En zayıf: {worst}",
         ]
+    prior = doc.get("prior")
+    if prior:
+        names = ", ".join(prior["hypotheses"])
+        lines += [
+            "",
+            "## Önceki denemelerle birlikte sayım",
+            "",
+            f"Bu test, {names} sonuçları görüldükten sonra kararlaştırıldı. Bu yüzden {names} "
+            f"için kayıtlı {prior['trials']} deneme de aynı aileden sayılır: şans çıtası (DSR) "
+            f"{len(fam['trials'])} + {prior['trials']} = "
+            f"{len(fam['trials']) + prior['trials']} deneme üzerinden hesaplanır. Önceki "
+            f"denemelerin en iyisi: {prior['best']}, yıllık Sharpe {num(prior['best_sr_annual'])}.",
+        ]
     lb = doc.get("lockbox")
     lines += ["", "## Kilitli dönem (son 6 ay)", ""]
     if lb:
@@ -117,8 +131,9 @@ def trend_markdown(doc: dict[str, Any]) -> str:
         "(VIP0 taker) + kayma (BTC/ETH 1 bps, diğerleri 3 bps); funding gerçek oranlarla.",
         "- Coin listesi her ay bir önceki ayın hacmine göre seçilir; sonradan kaldırılan coinler "
         "dahildir (hayatta kalma yanlılığı yok).",
-        f"- Deneme sayısı: aile {len(fam['trials'])} (etkin {num(fam['n_eff'], 1)}); programdaki "
-        f"toplam kayıtlı deneme {doc['program_trials']}. DSR bu sayıyla şans payını düşer.",
+        f"- Deneme sayısı: aile {len(fam['trials']) + fam.get('n_prior', 0)} "
+        f"(etkin {num(fam['n_eff'], 1)}); programdaki toplam kayıtlı deneme "
+        f"{doc['program_trials']}. DSR bu sayıyla şans payını düşer.",
         '- Bu bir çubuk-seviyesi (Tier-0) testtir: "elendi" kesindir; "geçti" yalnız adaylıktır.',
         f"- Ön-kayıt sha256 `{doc['prereg_sha'][:12]}`, veri manifesti `{doc['data_sha']}`.",
         "",

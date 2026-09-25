@@ -25,7 +25,11 @@ from quanta.research.ledger import Ledger  # noqa: E402
 from quanta.research.prereg import Prereg, PreregError, load_prereg  # noqa: E402
 from quanta.research.report import trend_markdown, write_report  # noqa: E402
 from quanta.research.runner import run_trend  # noqa: E402
-from quanta.research.universe import build_universe, read_universe  # noqa: E402
+from quanta.research.universe import (  # noqa: E402
+    build_universe,
+    read_universe,
+    subset_universe,
+)
 
 PREFIX = "data/futures/um"
 MONTHS = ["2020-01", "2020-02", "2020-03", "2020-04", "2020-05"]
@@ -253,6 +257,28 @@ async def test_universe_fetch_panel_and_run(tmp_path: Path, archive: FakeS3Archi
         with pytest.raises(RuntimeError, match="lockbox stays closed"):
             run_trend(pr, "sha", root, repo, final=True)
         assert not ledger.lockbox_opened("HT")
+
+    # a narrower universe, decided after seeing HT: the same ranking cut at 1 ...
+    u1 = repo / "research/universe/u1.csv"
+    assert subset_universe(ucsv, u1, 1) == 3
+    rebuilt = tmp_path / "u1_rebuilt.csv"
+    await build_universe(root, "2020-03", "2020-05", rebuilt, tmp_path / "m3.csv.gz", top_n=1, **kw)
+    assert u1.read_text() == rebuilt.read_text()
+    # ... and HT's recorded trials count in its luck bar
+    narrow = pr.model_copy(update={"id": "HT2", "universe_file": "research/universe/u1.csv"})
+    alone = run_trend(narrow, "sha", root, repo)
+    counted = run_trend(
+        narrow.model_copy(update={"id": "HT3", "prior_trials": ["HT"]}), "sha", root, repo
+    )
+    assert counted["family"]["n_prior"] == 2 and counted["prior"]["trials"] == 2
+    assert counted["prior"]["hypotheses"] == ["HT"] and alone["prior"] is None
+    assert counted["best"] == alone["best"]
+    assert counted["family"]["dsr"] <= alone["family"]["dsr"]
+    assert "Önceki denemelerle" in trend_markdown(counted)
+    with pytest.raises(RuntimeError, match="no recorded trials"):
+        run_trend(
+            narrow.model_copy(update={"id": "HT4", "prior_trials": ["NOPE"]}), "sha", root, repo
+        )
 
 
 def _git(repo: Path, *args: str) -> None:

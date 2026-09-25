@@ -53,6 +53,8 @@ class Prereg(Strict):
     costs: Costs = Costs()
     validation: Validation = Validation()
     stress_windows: list[tuple[str, str, str]] = Field(default_factory=list)
+    # earlier hypotheses of the same family: their recorded trials count in DSR / N_eff
+    prior_trials: list[str] = Field(default_factory=list)
     notes: str = ""
 
     def combos(self) -> list[dict[str, Any]]:

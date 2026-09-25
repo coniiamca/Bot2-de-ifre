@@ -69,6 +69,8 @@ uv run quanta research fetch         # saatlik mum, premium, funding (+ BTC/ETH 
 uv run quanta research selftest      # sentetik piyasada: gömülü etki bulunur, gürültü elenir
 uv run quanta research run H6        # docs/research/sonuclar/H6.md
 uv run quanta research run H2
+uv run quanta research universe-subset 5   # research/universe/um_top5.csv (ilk-10'un 1–5. sıraları)
+uv run quanta research run H6B       # aynı trend, her ay en hacimli 5 coin
 ```
 İndirilen veri git'e girmez (`research-data/`, yeniden indirilebilir). Hangi dosyaların
 kullanıldığı (MD5, sha256, tarih) `research/universe/` ve `research/data/` altındaki manifestlerde

@@ -214,3 +214,19 @@ async def build_universe(
 def read_universe(path: Path) -> list[tuple[str, int, str]]:
     with path.open(newline="") as fh:
         return [(r["month"], int(r["rank"]), r["symbol"]) for r in csv.DictReader(fh)]
+
+
+def subset_universe(src: Path, dst: Path, top_n: int) -> int:
+    """The top-``top_n`` of an existing point-in-time universe. Ranks come from the same
+    previous-month volume ranking, so this equals rebuilding it with ``top_n``."""
+    with src.open(newline="") as fh:
+        rows = [r for r in csv.reader(fh)]
+    if rows[0] != UNIVERSE_HEADER:
+        raise ValueError(f"{src}: unexpected header {rows[0]}")
+    keep = [r for r in rows[1:] if int(r[1]) <= top_n]
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    with dst.open("w", newline="") as fh:
+        w = csv.writer(fh, lineterminator="\n")
+        w.writerow(UNIVERSE_HEADER)
+        w.writerows(keep)
+    return len(keep)

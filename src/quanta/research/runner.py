@@ -111,6 +111,33 @@ def _asset_contrib(m: Market, res: Result) -> dict[str, float]:
     return {s: float(contrib[i]) for i, s in enumerate(m.symbols) if share[i] >= 0.01}
 
 
+def _prior_returns(
+    prereg: Prereg, ledger: Ledger, period: str, dsha: str, days: NDArray[np.int64]
+) -> tuple[Floats | None, dict[str, Any] | None]:
+    """Recorded returns of earlier hypotheses of the family, on exactly the same days."""
+    if not prereg.prior_trials:
+        return None, None
+    entries = ledger.trials_of(prereg.prior_trials, period, dsha)
+    found = {e["hypothesis"] for e in entries}
+    missing = sorted(set(prereg.prior_trials) - found)
+    if missing:
+        raise RuntimeError(f"no recorded trials of {missing} on {period} / data {dsha}")
+    cols = []
+    for e in entries:
+        d, r = ledger.load_returns(e)
+        if not np.array_equal(d, days):
+            raise RuntimeError(f"trial {e['trial_id']} of {e['hypothesis']} covers other days")
+        cols.append(r)
+    best = max(entries, key=lambda e: float(e["sr_annual"]))
+    summary = {
+        "hypotheses": sorted(found),
+        "trials": len(entries),
+        "best": f"{best['hypothesis']} {_trend_name(best['params'])}",
+        "best_sr_annual": float(best["sr_annual"]),
+    }
+    return np.column_stack(cols), summary
+
+
 def run_trend(
     prereg: Prereg,
     prereg_sha: str,
@@ -133,8 +160,14 @@ def run_trend(
         days, daily, res = _run_trial(m, p, costs, first_day)
         trials.append(Trial(_trend_name(c), c, days, daily, res))
         log.info("trial_done", trial=trials[-1].name, sr=round(annual_sr(daily), 2))
+    commit, dirty = git_state(repo)
+    exploratory = exploratory or dirty
+    dsha = data_sha(repo)
+    period = f"{prereg.data_start}..{prereg.dev_end}"
+    ledger = Ledger(repo)
+    prior, prior_summary = _prior_returns(prereg, ledger, period, dsha, trials[0].days)
     R = np.column_stack([t.daily for t in trials])
-    fs = family_stats(R, [t.name for t in trials], v.hold_days, v.lookback_days)
+    fs = family_stats(R, [t.name for t in trials], v.hold_days, v.lookback_days, prior)
     best = trials[fs.best]
     bp = TrendParams(**best.params, **prereg.fixed)
     bench_p = TrendParams(168, 24, "sign", long_only=True, **prereg.fixed)
@@ -191,10 +224,6 @@ def run_trend(
         ),
     ]
     passed = all(g.passed for g in gates)
-    commit, dirty = git_state(repo)
-    exploratory = exploratory or dirty
-    dsha = data_sha(repo)
-    period = f"{prereg.data_start}..{prereg.dev_end}"
     base = {
         "hypothesis": prereg.id,
         "version": prereg.version,
@@ -204,7 +233,6 @@ def run_trend(
         "data_sha": dsha,
         "period": period,
     }
-    ledger = Ledger(repo)
     for t in trials:
         ledger.record_trial(
             base,
@@ -226,7 +254,9 @@ def run_trend(
         "period": period,
         "verdict": "GECTI" if passed else "ELENDI",
         "symbols": len(m.symbols),
+        "universe_top": max(rank for _, rank, _ in universe),
         "family": fs.as_dict(),
+        "prior": prior_summary,
         "gates": [asdict(g) for g in gates],
         "best": {
             "name": best.name,

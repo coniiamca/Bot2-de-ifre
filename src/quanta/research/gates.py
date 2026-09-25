@@ -56,6 +56,7 @@ class FamilyStats:
     pbo_slope: float
     cpcv_path_sr_annual: list[float]
     days: int
+    n_prior: int = 0  # earlier trials of the family counted in N_eff and DSR
     gates: list[Gate] = field(default_factory=list)
 
     @property
@@ -69,16 +70,27 @@ class FamilyStats:
 
 
 def family_stats(
-    daily: Floats, trials: list[str], hold_days: int, lookback_days: int
+    daily: Floats,
+    trials: list[str],
+    hold_days: int,
+    lookback_days: int,
+    prior: Floats | None = None,
 ) -> FamilyStats:
-    """``daily``: T × N net daily returns of all pre-registered trials."""
+    """``daily``: T × N net daily returns of all pre-registered trials. ``prior``: T × P
+    returns of earlier trials of the same family (e.g. the same strategy on another universe,
+    decided after seeing their results). The selection, t, PBO and CPCV stay within this
+    grid; N_eff and the luck bar of the DSR count every trial of the family."""
     r = np.asarray(daily, dtype=np.float64)
     t, n = r.shape
     srs = [sharpe(r[:, i]) for i in range(n)]
     best = int(np.argmax(srs))
     m = moments(r[:, best])
-    tc = effective_trials(r)
-    var_sr = float(np.var(srs, ddof=1)) if n > 1 else 0.0
+    if prior is not None and np.shape(prior)[0] != t:
+        raise ValueError("prior trials must cover the same days")
+    fam = r if prior is None else np.column_stack([r, np.asarray(prior, dtype=np.float64)])
+    fam_srs = [sharpe(fam[:, i]) for i in range(fam.shape[1])]
+    tc = effective_trials(fam)
+    var_sr = float(np.var(fam_srs, ddof=1)) if len(fam_srs) > 1 else 0.0
     d = dsr(srs[best], t, m.skew, m.kurt, tc.n_eff, var_sr)
     t_nw = newey_west_t(r[:, best], nw_lags(t, hold_days))
     pbo = pbo_cscv(r, 16) if n > 1 else None
@@ -97,6 +109,7 @@ def family_stats(
         pbo_slope=pbo.slope if pbo else 0.0,
         cpcv_path_sr_annual=path_sr,
         days=t,
+        n_prior=fam.shape[1] - n,
     )
     share = float(np.mean([s > 0 for s in path_sr]))
     fs.gates = [
@@ -106,7 +119,12 @@ def family_stats(
             f"medyan {np.median(path_sr):.2f}, pozitif yol %{share * 100:.0f}",
             f"medyan yol SR > 0 ve yolların ≥ %{CPCV_POSITIVE_SHARE * 100:.0f}'i pozitif",
         ),
-        Gate("dsr", d >= DSR_MIN, f"{d:.3f} (N_eff {tc.n_eff:.1f})", f"DSR ≥ {DSR_MIN}"),
+        Gate(
+            "dsr",
+            d >= DSR_MIN,
+            f"{d:.3f} (N_eff {tc.n_eff:.1f} / {fam.shape[1]} deneme)",
+            f"DSR ≥ {DSR_MIN}",
+        ),
         Gate("pbo", fs.pbo <= PBO_MAX, f"{fs.pbo:.2f}", f"PBO ≤ {PBO_MAX}"),
         Gate("t_nw", t_nw >= T_MIN, f"{t_nw:.2f}", f"Newey–West t ≥ {T_MIN}"),
     ]

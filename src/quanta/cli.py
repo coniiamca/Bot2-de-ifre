@@ -534,6 +534,20 @@ def research_universe(
     typer.echo(json.dumps({"months": len(months), "rows": len(rows), "out": str(out)}))  # type: ignore[arg-type]
 
 
+@research_app.command("universe-subset")
+def research_universe_subset(
+    top: int,
+    src: Path = Path("research/universe/um_top10.csv"),
+    out: Annotated[Path | None, typer.Option(help="default: um_top<N>.csv next to src")] = None,
+) -> None:
+    """The top-N of an existing point-in-time universe (same ranking, same exclusions)."""
+    from quanta.research.universe import subset_universe
+
+    dst = out or src.with_name(f"um_top{top}.csv")
+    n = subset_universe(src, dst, top)
+    typer.echo(json.dumps({"rows": n, "out": str(dst)}))
+
+
 @research_app.command("fetch")
 def research_fetch(
     root: ResearchRoot = Path("research-data"),
