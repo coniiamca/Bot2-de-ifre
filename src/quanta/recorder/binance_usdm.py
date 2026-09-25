@@ -58,6 +58,7 @@ class DepthState:
     book: L2Book | None = None
     snapshot_requested: bool = False
     consecutive_failures: int = 0
+    live: bool = False  # last published sync state (quanta_recorder_depth_synced)
 
 
 class BinanceUsdmCapture(VenueCapture):
@@ -171,7 +172,7 @@ class BinanceUsdmCapture(VenueCapture):
         if res.gap is not None:
             g = res.gap
             self._m.depth_gaps.labels(VENUE, st.symbol, g.reason).inc()
-            self._m.depth_synced.labels(VENUE, st.symbol).set(0)
+            self._set_live(st, False)
             self._w.meta(
                 recv_ns,
                 "depth_gap",
@@ -185,10 +186,27 @@ class BinanceUsdmCapture(VenueCapture):
             log.warning("depth_gap", symbol=st.symbol, reason=g.reason)
         if st.sequencer.state is SyncState.NEED_SNAPSHOT:
             self._request_snapshot(st)
+        elif not st.live and st.sequencer.state is SyncState.LIVE:
+            # The snapshot was newer than every buffered event (normal with a far-away
+            # exchange: the REST round trip outruns the stream); the bridging event has
+            # just arrived, so the book is live now.
+            self._set_live(st, True)
+            self._w.meta(
+                recv_ns,
+                "depth_synced",
+                symbol=st.symbol,
+                last_update_id=st.sequencer.snapshot_id,
+                bridged_by="stream",
+                live=True,
+            )
+
+    def _set_live(self, st: DepthState, live: bool) -> None:
+        st.live = live
+        self._m.depth_synced.labels(VENUE, st.symbol).set(1 if live else 0)
 
     def _book_error(self, st: DepthState, ts_ns: int, exc: Exception) -> None:
         self._m.parse_errors.labels(VENUE, "depth_levels").inc()
-        self._m.depth_synced.labels(VENUE, st.symbol).set(0)
+        self._set_live(st, False)
         self._w.meta(ts_ns, "book_error", symbol=st.symbol, error=str(exc))
         log.error("book_error", symbol=st.symbol, error=str(exc))
         st.sequencer.reset()
@@ -271,7 +289,7 @@ class BinanceUsdmCapture(VenueCapture):
             for st in self.depth.values():
                 if ep.depth_stream(st.symbol, self.cfg.depth_speed_ms) in ws.url:
                     st.sequencer.reset()
-                    self._m.depth_synced.labels(VENUE, st.symbol).set(0)
+                    self._set_live(st, False)
                     self._w.meta(
                         ev.ts_ns, "depth_reset", symbol=st.symbol, reason="depth_connection_lost"
                     )
@@ -348,7 +366,7 @@ class BinanceUsdmCapture(VenueCapture):
         st.consecutive_failures = 0
         synced = st.sequencer.state is SyncState.LIVE
         self._m.depth_resyncs.labels(VENUE, st.symbol).inc()
-        self._m.depth_synced.labels(VENUE, st.symbol).set(1 if synced else 0)
+        self._set_live(st, synced)
         self._w.meta(
             resp.recv_ns,
             "depth_synced",
@@ -506,6 +524,7 @@ class BinanceUsdmCapture(VenueCapture):
                 st = self.depth[name]
                 st.sequencer.reset()
                 st.book = None
+                self._set_live(st, False)
                 self._w.meta(
                     self._clock.now_ns(),
                     "instrument_changed",

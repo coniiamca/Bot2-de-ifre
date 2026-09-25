@@ -59,6 +59,9 @@ class FakeBinance:
         self.bad_price_once: set[str] = set()
         self.restricted = False
         self.snapshot_delay_s = 0.0
+        # Deliver depth diffs late, like the Tokyo → Europe path: a REST snapshot is then
+        # newer than every event the client has buffered (the usual case in production).
+        self.depth_latency_s = 0.0
         self.rest_calls: list[str] = []
         self.ws_connects = 0
         self._task: asyncio.Task[None] | None = None
@@ -228,9 +231,13 @@ class FakeBinance:
 
     def _broadcast(self, stream: str, data: dict[str, Any]) -> None:
         text = json.dumps({"stream": stream, "data": data}, separators=(",", ":"))
+        late = self.depth_latency_s if "@depth" in stream else 0.0
         for _, streams, q in self.conns:
             if stream in streams:
-                q.put_nowait(text)
+                if late:  # same delay for every frame: order is preserved
+                    asyncio.get_running_loop().call_later(late, q.put_nowait, text)
+                else:
+                    q.put_nowait(text)
 
     # -- handlers ------------------------------------------------------------------------
     async def _ws(self, request: web.Request) -> web.WebSocketResponse:

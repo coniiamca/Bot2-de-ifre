@@ -302,3 +302,39 @@ async def test_disk_guard_pauses_and_resumes_writing(tmp_path: Path, fake: FakeB
     assert len(on) == 1 and len(off) == 1
     assert on[0]["floor_bytes"] == 5_000_000_000
     assert off[0]["dropped_records"] > 0 and off[0]["paused_s"] > 0.5
+
+
+async def test_books_go_live_when_the_snapshot_is_newer_than_the_stream(
+    tmp_path: Path, fake: FakeBinance
+) -> None:
+    """Production timing: the REST round trip outruns the depth stream, so the snapshot is
+    newer than every buffered event and the book goes live on a *later* stream event. The
+    synced gauge must follow (it stayed 0 before, although the book was live)."""
+    fake.depth_latency_s = 0.3
+    cfg = make_config(tmp_path, fake)
+    svc = RecorderService(cfg, LiveClock())
+    stop = asyncio.Event()
+    task = asyncio.create_task(svc.run(stop))
+    m = svc.metrics.registry
+
+    def synced(sym: str) -> bool:
+        v = m.get_sample_value(
+            "quanta_recorder_depth_synced", {"venue": "binance_usdm", "symbol": sym}
+        )
+        return v == 1.0
+
+    await wait_for(lambda: all(synced(s) for s in SYMBOLS))
+    await asyncio.sleep(1.5)  # audit snapshots
+    stop.set()
+    await asyncio.wait_for(task, 15)
+    for sym in SYMBOLS:
+        events = [
+            x
+            for x in meta_records(cfg.data_dir)
+            if x["type"] == "depth_synced" and x["symbol"] == sym
+        ]
+        # the snapshot left the book waiting; the stream completed the sync
+        assert events[0]["live"] is False, events
+        assert any(x["live"] is True and x.get("bridged_by") == "stream" for x in events), events
+        rep = audit(cfg.data_dir, sym, datetime.now(UTC).date())
+        assert rep.mismatched == 0 and rep.errors == 0, rep
