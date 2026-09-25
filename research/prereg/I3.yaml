@@ -1,0 +1,75 @@
+# Ön-kayıt: sonuçlar görülmeden önce sabitlenir. Değiştirmek yeni bir sürüm demektir
+# (version artar) ve her deneme deneme defterine (research/ledger) sayılır.
+id: I3
+version: 1
+title: Agresif alım-satım dengesizliği (dakikalık)
+strategy: flow
+mechanism: >-
+  Piyasa emriyle alan (agresif alıcı) ve satanların hacmi arasındaki dengesizlik bilgili ya da
+  büyük katılımcıların yönünü taşır; bu akış bölünerek birkaç dakika–saat sürer ve fiyatı aynı
+  yönde iter (sipariş akışı kalıcılığı). Strateji, son k dakikanın dengesizliği kendi son
+  gününe göre olağandışıyken (|z| ≥ e) akış yönünde girer; kâr al ve zarar kes ±1 σ·√tutma.
+falsification: >-
+  Maliyetler düşüldükten sonra örneklem dışı performans pozitif değilse ya da kapılardan biri
+  geçilemezse hipotez elenir. Dengesizlik sonraki dakikalarda aynı yönde anlamlı hareket
+  öngörmüyorsa (ya da öngördüğü hareket maliyetten küçükse) akış bilgisi işlem yapılabilir
+  değildir.
+universe_file: research/universe/um_top20.csv   # her ay önceki ayın hacmine göre ilk 20
+data_start: "2020-01-01"
+warmup_days: 60             # günlük getiri serisi 2020-03-01'de başlar (ilk evren ayı)
+dev_end: "2026-03-01"       # geliştirme dönemi sonu (hariç); kilitli dönem buradan başlar
+lockbox_end: "2026-09-01"   # kilitli dönem (6 ay) — yalnız bütün kapıları geçen aday için, bir kez
+costs:
+  fee_bps: 5.0              # taker (piyasa emri, zarar kes), VIP0, BNB indirimi yok
+  maker_bps: 2.0            # limit emir (giriş, kâr al)
+  slip_top2_bps: 1.0        # kayma, yön başına: hacim sırası 1–2
+  slip_rest_bps: 3.0        # sıra 3–5
+  slip_6_10_bps: 5.0        # sıra 6–10
+  slip_11_20_bps: 8.0       # sıra 11–20
+  stop_slip_mult: 2.0       # zarar kes ve zorunlu çıkışta kayma çarpanı
+validation:
+  hold_days: 1              # işlemler bir günden kısa: purge 1 gün
+  lookback_days: 1          # embargo 2 gün
+  cpcv_groups: 6
+  cpcv_k: 2
+  pbo_blocks: 16
+stress_windows:
+  - ["2020-03-01", "2020-04-01", "Mart 2020 (COVID çöküşü)"]
+  - ["2021-05-01", "2021-06-01", "Mayıs 2021 çöküşü"]
+  - ["2022-05-01", "2022-06-01", "Mayıs 2022 (LUNA)"]
+  - ["2022-11-01", "2022-12-01", "Kasım 2022 (FTX)"]
+  - ["2024-08-01", "2024-08-15", "Ağustos 2024 (yen carry)"]
+  - ["2025-10-01", "2025-11-01", "Ekim 2025 likidasyon zinciri"]
+grid:                       # 2 × 2 × 2 × 2 × 3 = 48 deneme, hepsi sayılır
+  k: [5, 15]                # dengesizlik penceresi (dakika)
+  e: [2.0, 3.0]             # eşik: |z| ≥ e
+  hold: [15, 60]            # en uzun tutma (dakika)
+  entry: [market, limit]    # limit: son fiyattan, 5 dk geçerli
+  pool: [5, 10, 20]
+fixed:
+  risk_per_trade: 0.005      # işlem başı risk: sermayenin %0,5'i (zarar kese göre boyut)
+  cap_symbol: 1.0            # coin başına en fazla 1× sermaye
+  cap_gross: 1.5             # toplam brüt kaldıraç tavanı (tasarım §13.4)
+  max_positions: 3           # aynı anda en fazla 3 pozisyon; coin başına 1
+  vol_halflife_min: 1440     # 1 dk oynaklık ve hacim ortalaması: yarı ömür 1 gün
+  warmup_days: 30            # bir coinin ilk 30 günü yalnız ölçüm için (işlem yok)
+  band_sigma: 1.0           # kâr al / zarar kes: ± 1 × σ(1 dk) × √tutma
+  limit_valid: 5
+notes: >-
+  Kullanıcının hedefi: 1/5/15 dakikalık ve saatlik mumlarda hızlı gir-çık yapan bir vadeli bot.
+  Dört hızlı-işlem hipotezi (I1–I4) birlikte, aynı kurallarla ön-kaydedildi; her biri bir kez
+  koşulur. Coin havuzu (her ay ilk 5, 10 ya da 20) kullanıcının "daha çok coin daha kârlı mı?"
+  sorusu üzerine ızgaraya eklendi; seçim yalnız eğitim dilimlerinde yapılır ve DSR ailedeki
+  48 denemeyi sayar. Programdaki toplam deneme sayısı raporda gösterilir; t ≥ 3,4 eşiği çoklu
+  teste karşı bilinçli olarak sıkıdır. Kapılar: CPCV medyan yol > 0 ve ≥ %80 pozitif; DSR ≥ 0,95;
+  PBO ≤ 0,25; Newey–West t ≥ 3,4; parametre platosu; maliyet ×1,5'te ve 1 dakika gecikmeyle
+  SR > 0; coinlerin ≥ 2/3'ünde ve yılların çoğunda pozitif; al-tut kıyasına göre alfa > 0 ve
+  t ≥ 2; likidasyon bayrağı yok; en az 300 işlem (azsa SONUÇSUZ). Kilitli dönem yalnız bütün
+  kapılar geçilirse ve bir kez açılır. ELENDİ çıkan aile başka bir ızgara ya da evrenle yeniden
+  denenmez. Dürüstlük notları: (1) motorun hız testi sırasında, bu dosyalar yazılmadan önce,
+  SOLUSDT üzerinde 7 ayarın geliştirme dönemi işlem başı ortalama net getirisi ekrana yazıldı;
+  ızgaralar bu görüntülemeden önce onaylanan planda sabitlenmişti ve değiştirilmedi. (2) İlk-20
+  evreni, ilk-10'la aynı kurallarla kuruldu; Mart 2020'de listeleme gününü doğru okuyan düzeltme
+  nedeniyle o ay 3 coin içerir (eski ilk-10 dosyasında 10). Dakikalık mum testi: "elendi"
+  kesin, "geçti" adaylık; sonraki adım kayıtlı canlı emir defterinde gerçek spread ve dolum
+  ölçümüdür.
