@@ -34,9 +34,11 @@ from quanta.research.ledger import Ledger  # noqa: E402
 from quanta.research.minute import load_bars  # noqa: E402
 from quanta.research.ml_runner import run_ml  # noqa: E402
 from quanta.research.prereg import Prereg, PreregError, load_prereg  # noqa: E402
+from quanta.research.recent_test import OUTCOMES, run_recent  # noqa: E402
 from quanta.research.report import (  # noqa: E402
     intraday_markdown,
     ml_markdown,
+    recent_markdown,
     trend_markdown,
     write_report,
 )
@@ -491,8 +493,8 @@ def add_model_extras(fa: FakeS3Archive, symbols: dict[str, list[str]]) -> None:
             )
 
 
-async def test_model_run_end_to_end(tmp_path: Path, archive: FakeS3Archive) -> None:
-    pytest.importorskip("lightgbm")
+async def model_data(tmp_path: Path, archive: FakeS3Archive) -> tuple[Path, Path]:
+    """Fake archive data for model M1: universe, minutes, extras, USDC contracts."""
     root, repo = tmp_path / "data", tmp_path / "repo"
     kw: dict[str, Any] = {"listing_url": archive.url + "/listing", "base_url": archive.url}
     ucsv = repo / "research/universe/u.csv"
@@ -529,6 +531,12 @@ async def test_model_run_end_to_end(tmp_path: Path, archive: FakeS3Archive) -> N
         root, usdc_universe(pairs, "2020-02", "2020-04"), tmp_path / "u.csv.gz", datasets=USDC,
         pad_before=0, pad_after=0, metrics_symbols=(), **kw,
     )  # fmt: skip
+    return root, repo
+
+
+async def test_model_run_end_to_end(tmp_path: Path, archive: FakeS3Archive) -> None:
+    pytest.importorskip("lightgbm")
+    root, repo = await model_data(tmp_path, archive)
     pr = Prereg(
         id="HM",
         version=1,
@@ -582,3 +590,54 @@ async def test_model_run_end_to_end(tmp_path: Path, archive: FakeS3Archive) -> N
     if doc["verdict"] != "GECTI":
         with pytest.raises(RuntimeError, match="lockbox stays closed"):
             run_ml(pr, "sha", root, repo, workers=1, final=True)
+
+
+async def test_recent_video_style_run(tmp_path: Path, archive: FakeS3Archive) -> None:
+    pytest.importorskip("lightgbm")
+    root, repo = await model_data(tmp_path, archive)
+    pr = Prereg(
+        id="HV",
+        version=1,
+        title="video style test",
+        mechanism="m",
+        falsification="f",
+        strategy="ml_recent",
+        universe_file="research/universe/u.csv",
+        data_start="2020-02-01",
+        dev_end="2020-04-01",
+        lockbox_end="2020-05-01",
+        grid={"config": ["A", "B"]},
+        fixed={
+            "configs": {"A": {"horizon": 60, "q": 0.05}, "B": {"horizon": 15, "q": 0.05}},
+            "capital_usd": 5000,
+            "notional_mult": 1.0,
+            "max_positions": 6,
+            "top": 2,
+            "usdc_first_month": "2020-02",
+            "usdc_from": "2020-04",
+            "usdc_min_qv_day": 0,
+            "model": {
+                "train_days": 20,
+                "calib_days": 5,
+                "rounds": 10,
+                "min_train_rows": 1000,
+                "lgbm": {"min_data_in_leaf": 100, "num_threads": 2},
+            },
+        },
+        costs={"fee_bps": 4.0, "maker_bps": 0.0, "slip_top2_bps": 1.5, "slip_rest_bps": 4.5},
+    )
+    doc = run_recent(pr, "sha", root, repo, workers=1)
+    assert set(doc["configs"]) == {"A", "B"} and doc["verdict"] in OUTCOMES
+    for c in doc["configs"].values():
+        assert c["outcome"] in OUTCOMES and c["days"] == 30
+        assert c["trades_per_day"] > 0 and c["signals"] > 0
+        monthly = sum(m["usd"] for m in c["monthly"].values())
+        assert monthly == pytest.approx(c["total_usd"])
+        assert set(c["coins_usd"]) == {"AAAUSDT"}  # only the coin with a USDC contract
+        # fixed size: every trade is the capital (5.000 $) → a trade's net return in $
+        assert c["avg_trade_usd"] == pytest.approx(
+            c["total_usd"] / (c["trades_per_day"] * c["days"]), rel=1e-6
+        )
+    assert Ledger(repo).count("HV") == 2
+    md = recent_markdown(doc)
+    assert "Dolar olarak" in md and "Günlük ortalama kâr" in md

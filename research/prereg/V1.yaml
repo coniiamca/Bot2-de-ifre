@@ -1,0 +1,85 @@
+# Ön-kayıt: sonuçlar görülmeden önce sabitlenir. Değiştirmek yeni bir sürüm demektir
+# (version artar) ve her deneme deneme defterine (research/ledger) sayılır.
+id: V1
+version: 1
+title: Video tarzı bot — son 6 ay, 5.000 $, günde çok işlem
+strategy: ml_recent
+mechanism: >-
+  Kullanıcının hedefi: "5000 dolar sermayeyle aynı videodaki gibi günde 20, 30 belki 40 işlemle
+  200, 300, 400 dolar kâr eden bir model… 2021, 22 gibi eski geçmiş değil, şimdi önemli."
+  Model M1'in LightGBM'i (aynı özellikler, her ay son 12 ayla yeniden eğitim) daha az seçici
+  eşiklerle ve video tarzı sabit dolar boyutuyla çalıştırılır: her işlem 5.000 $ (örneğin 1.000 $
+  teminat × 5 kaldıraç), aynı anda en fazla 6 pozisyon. İşlemler gerçek USDC kontrat mumlarında
+  (maker %0, taker %0,04) simüle edilir. Sonuç dolar olarak raporlanır.
+falsification: >-
+  Test yalnız en güncel ve daha önce hiç bakılmamış 6 ayda (2026-03 … 08) bir kez yapılır.
+  Her ayar kendi başına, koşudan önce yazılan sınıflara göre değerlendirilir. "Hedefe ulaştı":
+  günde ortalama ≥ 200 $, en büyük düşüş ≤ 2.500 $ ve günde ≥ 20 işlem. "Kârlı ama hedefin
+  altında": günlük ortalama > 0 ve Newey–West t ≥ 2. Diğer her durum: "Kâr kanıtlanamadı".
+universe_file: research/universe/um_top20.csv   # her ay önceki ayın hacmine göre; ilk 10 kullanılır
+data_start: "2024-12-01"    # ilk test ayının 12 aylık eğitimi ve ısınma için yeterli
+dev_end: "2026-03-01"       # BU TESTTE: test döneminin ilk günü (M1'in hiç açılmamış kilitli dönemi)
+lockbox_end: "2026-09-01"   # BU TESTTE: test döneminin sonu (hariç)
+data_manifests:
+  - research/data/manifest_1m.csv.gz
+  - research/data/manifest_top20_1h.csv.gz
+  - research/data/manifest_m1.csv.gz
+  - research/data/manifest_usdc_1m.csv.gz
+costs:
+  fee_bps: 4.0              # taker: USDC kontratları (zarar kes, süre dolunca dolmayan çıkış)
+  maker_bps: 0.0            # maker: USDC kontratları
+  slip_top2_bps: 1.5
+  slip_rest_bps: 4.5
+  slip_6_10_bps: 7.5
+  slip_11_20_bps: 12.0
+  stop_slip_mult: 2.0
+grid:
+  config: [V1-60, V1-15]    # 2 ayar, ikisi de raporlanır, kazanan seçilmez
+fixed:
+  configs:
+    V1-60: {horizon: 60, q: 0.02}   # 60 dk tutma, tahminlerin en uç %2'si (üst → long, alt → short)
+    V1-15: {horizon: 15, q: 0.01}   # 15 dk tutma, en uç %1'i
+  capital_usd: 5000         # sabit sermaye (bileşik yok)
+  notional_mult: 1.0        # her işlem 5.000 $ büyüklüğünde
+  max_positions: 6          # aynı anda en fazla 6 pozisyon (en fazla 30.000 $, 6× kaldıraç)
+  target_usd_day: 200
+  max_drawdown_usd: 2500
+  min_trades_day: 20
+  loss_day_limits_usd: [150, 1000]   # raporlanır: %3 kuralı ve videodaki 1.000 $ sınırı
+  top: 10
+  entry_valid: 5
+  exit_valid: 5
+  stop_k: 3.0
+  usdc_first_month: "2024-01"
+  usdc_from: "2024-02"
+  usdc_min_qv_day: 5000000
+  usdc_gap_fill: 60
+  model:
+    train_days: 365
+    calib_days: 30
+    gap_days: 1
+    halflife_days: 90
+    rounds: 300
+    ridge_lambda: 0.001
+    min_train_rows: 20000
+    lgbm:
+      learning_rate: 0.05
+      num_leaves: 31
+      min_data_in_leaf: 2000
+      feature_fraction: 0.8
+      bagging_fraction: 0.8
+      bagging_freq: 1
+      lambda_l2: 10.0
+      max_bin: 63
+      num_threads: 4
+      seed: 0
+notes: >-
+  Bu test, kullanıcının "video tarzı" isteğini en güncel veride dürüstçe göstermek içindir.
+  Ayarlar (%2 / %1 eşik, en fazla 6 pozisyon) M1 defterindeki işlem sıklıklarından
+  (60 dk / %1: günde 9 işlem, 15 dk / %1: günde 19,5 işlem, en fazla 3 pozisyonla) günde 20–40
+  işleme ulaşacak şekilde seçildi; test döneminin hiçbir sonucuna bakılmadı. Test dönemi M1'in
+  kilitli dönemiydi; M1 elendiği için hiç açılmadı ve bu testle kullanılmış olur. Günlük zarar
+  kesme kuralı yok (video gibi); −150 $ (sermayenin %3'ü) ve −1.000 $ günleri sayılır. Dolar
+  sonuçları pozisyon büyüklüğüyle doğrusal ölçeklenir (2 kat büyüklük = 2 kat kâr ve zarar).
+  Bu bir kez koşulur. Sonuç ne olursa olsun gerçek paraya geçmek ayrı bir karardır; sıradaki
+  adım canlı piyasada parasız testtir.

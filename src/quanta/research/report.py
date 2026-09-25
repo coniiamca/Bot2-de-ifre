@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -535,6 +536,120 @@ def ml_markdown(doc: dict[str, Any]) -> str:
         f"- Deneme sayısı: bu aile {len(fam['trials'])}, programdaki önceki denemelerle birlikte "
         f"{len(fam['trials']) + fam.get('n_prior', 0)} (etkin {num(fam['n_eff'], 1)}); "
         f"kayıtlı toplam {doc['program_trials']}. DSR bu sayıyla şans payını düşer.",
+        f"- Ön-kayıt sha256 `{doc['prereg_sha'][:12]}`, veri manifesti `{doc['data_sha']}`.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+OUTCOME_TEXT = {
+    "HEDEF": "HEDEFE ULAŞTI",
+    "KARLI": "KÂRLI AMA HEDEFİN ALTINDA",
+    "KANITSIZ": "KÂR KANITLANAMADI",
+}
+
+
+def usd(x: float | None, digits: int = 0) -> str:
+    if x is None or x != x:
+        return "—"
+    sign = "−" if x < 0 else ""
+    return f"{sign}{abs(x):,.{digits}f} $".replace(",", ".")
+
+
+def recent_markdown(doc: dict[str, Any]) -> str:
+    sz, tg, cf = doc["sizing"], doc["targets"], doc["configs"]
+    names = list(cf)
+    lines = [
+        f"# {doc['hypothesis']} — {doc['title']}",
+        "",
+        f"Dönem: {doc['period'].replace('..', ' – ')} (en güncel 6 ay; daha önce hiç bakılmadı) · "
+        f"sermaye {usd(sz['capital_usd'])}, her işlem {usd(sz['trade_usd'])}, aynı anda en fazla "
+        f"{sz['max_positions']} pozisyon · gerçek USDC kontrat mumları · kod `{doc['commit'][:7]}`"
+        + (" · **keşif koşusu (sayılmaz)**" if doc["exploratory"] else ""),
+        "",
+        f"Hedef (ön-kayıtlı): günde ortalama ≥ {usd(tg['usd_day'])}, en büyük düşüş ≤ "
+        f"{usd(tg['max_drawdown_usd'])}, günde ≥ {tg['trades_day']:.0f} işlem.",
+        "",
+        "## Sonuç",
+        "",
+    ]
+    for n in names:
+        c, p = cf[n], cf[n]["params"]
+        lines.append(
+            f"- **{n}** ({p['horizon']} dk tutma, tahminlerin en uç {pct(float(p['q']), 1)}'i): "
+            f"**{OUTCOME_TEXT[c['outcome']]}** — günde ortalama {usd(c['avg_day_usd'])}, "
+            f"günde {num(c['trades_per_day'], 1)} işlem, en büyük düşüş "
+            f"{usd(c['max_drawdown_usd'])}."
+        )
+    rows: list[tuple[str, Callable[[dict[str, Any]], str]]] = [
+        ("Günlük ortalama kâr", lambda c: usd(c["avg_day_usd"])),
+        ("Günlük medyan", lambda c: usd(c["median_day_usd"])),
+        ("Kârlı gün oranı", lambda c: pct(c["positive_days"], 0)),
+        ("En iyi gün", lambda c: usd(c["best_day_usd"])),
+        ("En kötü gün", lambda c: usd(c["worst_day_usd"])),
+        ("Toplam (6 ay)", lambda c: usd(c["total_usd"])),
+        (
+            "En büyük düşüş",
+            lambda c: f"{usd(c['max_drawdown_usd'])} ({pct(c['max_drawdown_pct'], 0)})",
+        ),
+        ("Günde işlem", lambda c: num(c["trades_per_day"], 1)),
+        ("Kazanan işlem oranı", lambda c: pct(c["engine"].get("win_rate"), 0)),
+        ("İşlem başı ortalama net", lambda c: usd(c["avg_trade_usd"], 2)),
+        ("Ödenen komisyon", lambda c: usd(c["fees_usd"])),
+        ("Kayma", lambda c: usd(c["slippage_usd"])),
+        ("Funding", lambda c: usd(-c["funding_usd"])),
+        ("−150 $ ya da daha kötü gün", lambda c: str(c["loss_days"].get("150", "—"))),
+        ("−1.000 $ ya da daha kötü gün", lambda c: str(c["loss_days"].get("1000", "—"))),
+        ("İstatistiksel güven (t)", lambda c: num(c["t_nw"])),
+    ]
+    lines += ["", "## Dolar olarak", "", "| | " + " | ".join(names) + " |"]
+    lines.append("|---|" + "---|" * len(names))
+    for label, fn in rows:
+        lines.append(f"| {label} | " + " | ".join(fn(cf[n]) for n in names) + " |")
+    lines += [
+        "",
+        f"Pozisyonlar 2 kat büyük olsaydı (her işlem {usd(2 * sz['trade_usd'])}) bütün dolar "
+        "rakamları — kâr da, zarar da, düşüş de — aşağı yukarı 2 katı olurdu: "
+        + "; ".join(
+            f"{n}: günde {usd(2 * cf[n]['avg_day_usd'])}, en büyük düşüş "
+            f"{usd(2 * cf[n]['max_drawdown_usd'])}"
+            for n in names
+        )
+        + ".",
+    ]
+    for n in names:
+        lines += ["", f"## Aylar: {n}", "", "| Ay | Kâr/zarar | Günlük ort. | İşlem |"]
+        lines.append("|---|---|---|---|")
+        for m, r in cf[n]["monthly"].items():
+            per_day = r["usd"] / max(r["days"], 1)
+            lines.append(f"| {m} | {usd(r['usd'])} | {usd(per_day)} | {r['trades']} |")
+        coins = cf[n]["coins_usd"]
+        if coins:
+            items = list(coins.items())
+            lines += [
+                "",
+                "Coinler: " + ", ".join(f"{s.removesuffix('USDT')} {usd(v)}" for s, v in items),
+            ]
+        feats = cf[n].get("features") or {}
+        if feats:
+            lines.append(
+                "Model en çok şunlara bakıyor: "
+                + ", ".join(f"{_feature(k)} {pct(v, 0)}" for k, v in feats.items())
+            )
+    lines += [
+        "",
+        "## Yöntem",
+        "",
+        "- Model M1'in LightGBM'i (aynı özellikler), her ay son 12 ayla yeniden eğitildi; eşikler "
+        "modelin görmediği 30 günlük kalibrasyon diliminden. Test ayları hiçbir eğitime girmedi.",
+        "- Giriş: kapanış fiyatına yalnız-maker limit emir (5 dk; fiyat ötesine geçmeden ve hacim "
+        "olmadan dolmaz). Çıkış: süre dolunca limit, 5 dk'da dolmazsa piyasa emri. Zarar kes "
+        "3·σ·√h (stop-market). Ücret: USDC kontratları, maker %0, taker %0,04; kayma dahil.",
+        "- Günlük zarar kesme kuralı yok (video gibi); kaç günün −150 $ (sermayenin %3'ü) ve "
+        "−1.000 $ sınırını aşacağı tabloda.",
+        "- Bileşik getiri yok: sermaye her gün 5.000 $ sayılır, kâr/zarar dolar olarak toplanır.",
+        f"- Sonuç sınıfları koşudan önce yazıldı; iki ayar ayrı ayrı değerlendirilir. Deneme "
+        f"defterindeki toplam: {doc['program_trials']}.",
         f"- Ön-kayıt sha256 `{doc['prereg_sha'][:12]}`, veri manifesti `{doc['data_sha']}`.",
         "",
     ]

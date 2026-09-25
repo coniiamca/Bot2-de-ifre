@@ -676,10 +676,12 @@ def research_run(
     from quanta.research.intraday_strategies import STRATEGIES
     from quanta.research.ml_runner import run_ml
     from quanta.research.prereg import load_prereg, repo_root
+    from quanta.research.recent_test import run_recent
     from quanta.research.report import (
         crowding_markdown,
         intraday_markdown,
         ml_markdown,
+        recent_markdown,
         trend_markdown,
         write_report,
     )
@@ -695,6 +697,8 @@ def research_run(
     render: Callable[[dict[str, Any]], str]
     if prereg.strategy == "ml":
         runner, render = run_ml, ml_markdown
+    elif prereg.strategy == "ml_recent":
+        runner, render = run_recent, recent_markdown
     elif prereg.strategy in STRATEGIES:
         runner, render = run_intraday, intraday_markdown
     elif prereg.symbols:
