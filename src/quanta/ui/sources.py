@@ -35,11 +35,20 @@ def load_quality(data_dir: Path, days: int = 14) -> list[dict[str, Any]]:
 
 
 def load_access(path: Path) -> dict[str, Any] | None:
+    return _load_json(path)
+
+
+def load_update(data_dir: Path) -> dict[str, Any] | None:
+    """State written by deploy/auto-update.sh (``<data>/update.json``), if enabled."""
+    return _load_json(data_dir / "update.json")
+
+
+def _load_json(path: Path) -> dict[str, Any] | None:
     try:
         data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    return data
+    return data if isinstance(data, dict) else None
 
 
 class VolumeCache:

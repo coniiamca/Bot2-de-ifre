@@ -43,7 +43,7 @@ Hedef: mevcut bir Linux sunucusunda (Frankfurt) recorder + durum sayfası + gün
 ### Docker'sız kurulum (`--native`)
 Sunucuda Docker durdurulmuşsa veya başka işler içinse kullanılır. Örnek: Docker başlarsa mevcut konteynerler de kalkıp diski doldurur.
 ```bash
-sudo bash bootstrap.sh --native --lite --min-free-gb 20
+sudo bash bootstrap.sh --native --lite --min-free-gb 20 --auto-update on
 ```
 - **Docker'a hiç dokunulmaz.** Ön kontrol de varsayılan modda durdurulmuş bir Docker'ı başlatmayı reddeder; yine de başlatmak için `--start-docker` verilmelidir.
 - **Python ortamı:** `/opt/quanta/.venv`. `uv` ile ve kilit dosyasındaki sürümlerle kurulur. Sistemde Python 3.12 yoksa `uv` ayrı bir kopyasını `/opt/quanta-python` altına indirir.
@@ -80,6 +80,23 @@ sudo bash bootstrap.sh --native --lite --min-free-gb 20
 sudo bash /opt/quanta/deploy/bootstrap.sh
 ```
 Betiği tekrar çalıştırmak güvenlidir ve güncelleme de budur: kodu çeker, imajı yeniden derler, değişen konteynerleri yeniden başlatır. Recorder'ın yeniden başlaması birkaç saniyelik bir kayıt kesintisi yaratır; bu kesinti bant içi `ws_lifecycle` kayıtlarıyla işaretlenir.
+
+### Otomatik güncelleme
+```bash
+sudo bash /opt/quanta/deploy/bootstrap.sh --auto-update on     # aç (bir kez; hatırlanır)
+sudo bash /opt/quanta/deploy/bootstrap.sh --auto-update off    # kapat
+journalctl -u quanta-update -n 50                               # son kontroller
+```
+Açıkken güncellemeler elle yapılmaz. Sunucu saatte bir GitHub'a bakar; sunucuya dışarıdan bağlanan bir şey yoktur.
+- **Yalnız testleri geçen sürüm kurulur.** Yeni commit, GitHub'daki tüm CI kontrolleri yeşil bitmişse kurulur.
+  - Testler sürüyorsa bir sonraki saate kalır.
+  - Kırmızıysa o commit hiç kurulmaz.
+- **Başarısız kurulumda geri dönüş.** Yeni sürümün kurulumu, durum sayfası ve servisler ayağa kalkana kadar bekler. Kalkmazsa önceki sürüm otomatik geri yüklenir; o sürüm bir daha denenmez.
+- **Her güncellemede kısa bir kesinti olur.** Kayıt birkaç saniye durup yeniden başlar; bu, bant içi `ws_lifecycle` kayıtlarıyla işaretlenir.
+- **Durum sayfasında görünür.** Alt satırda sürüm ve son kontrol yazar. Başarısız güncellemede "Otomatik güncelleme başarısız oldu; önceki sürüme dönüldü" uyarısı çıkar.
+- **Elle çalıştırmanın kilidi.** Elle `bootstrap.sh` çalıştırmak her zaman mümkündür; aynı anda iki kurulum çalışmasın diye kilit vardır.
+- **Otomatik güncelleme değiştirmez:** config (`/etc/quanta/recorder.yaml`), Tailscale girişi ve deploy key. Bunlar insan gerektirir. Depo private yapılınca CI sonucunu okumak için `/etc/quanta/secrets/github_token` (salt-okunur token) gerekir; yoksa güncelleme bekler (`ci_unknown`).
+- **Güvenlik:** depoya gönderilen, testleri geçen kod sunucuda kendiliğinden çalışır. Veri kaydı aşamasında kabul edildi (ADR-011). **Faz 4'ten, yani sunucuya borsa API anahtarları gelmeden önce**, güncellemeler insan onaylı bir sürüm kanalına bağlanacak.
 
 ### Yapılandırma değişikliği
 ```bash

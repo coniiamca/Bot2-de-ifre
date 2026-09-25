@@ -234,8 +234,51 @@ jobs:
           systemctl is-active quanta-recorder quanta-ui quanta-lake
           test "$(systemctl is-active docker || true)" != active
           sudo bash deploy/bootstrap.sh --check-access
+      - name: Auto-update deploys only CI-green commits and rolls back broken ones
+        run: |
+          set -x
+          sudo QUANTA_REPO_URL="file://$GITHUB_WORKSPACE" QUANTA_BRANCH="$QUANTA_BRANCH" \
+            bash deploy/bootstrap.sh --yes --auto-update on
+          systemctl is-enabled quanta-update.timer
+          sudo grep -qx 'QUANTA_AUTO_UPDATE=on' /etc/quanta/compose.env
+          sudo grep -qx 'QUANTA_TAILSCALE=off' /etc/quanta/compose.env   # remembered
+          # a fake GitHub API answering check-run queries
+          api="$RUNNER_TEMP/api"; repo=coniiamca/Bot2-de-ifre; mkdir -p "$api"
+          (cd "$api" && nohup python3 -m http.server 8799 --bind 127.0.0.1 >/dev/null 2>&1 &)
+          sleep 1
+          checks() { mkdir -p "$api/repos/$repo/commits/$1"; printf '%s' "$2" > "$api/repos/$repo/commits/$1/check-runs"; }
+          upd() { sudo QUANTA_GITHUB_API=http://127.0.0.1:8799 bash /opt/quanta/deploy/auto-update.sh; }
+          result() { python3 -c 'import json; print(json.load(open("/var/lib/quanta/data/update.json"))["result"])'; }
+          deployed() { git -C /opt/quanta rev-parse HEAD; }
+          green='{"check_runs":[{"status":"completed","conclusion":"success"}]}'
+          git config user.name ci; git config user.email ci@example.invalid
+
+          upd; test "$(result)" = up_to_date
+
+          git commit -q --allow-empty -m "ci: update A"; A=$(git rev-parse HEAD)
+          checks "$A" '{"check_runs":[{"status":"in_progress","conclusion":null}]}'
+          upd; test "$(result)" = waiting_ci; test "$(deployed)" != "$A"
+          checks "$A" "$green"
+          upd; test "$(result)" = updated; test "$(deployed)" = "$A"
+          systemctl is-active quanta-recorder quanta-ui quanta-lake
+
+          # breaks the status page on start; CI "green" → deployed, fails, rolled back
+          sed -i '1i raise SystemExit("broken on purpose")' src/quanta/ui/app.py
+          git commit -qam "ci: broken B"; B=$(git rev-parse HEAD)
+          checks "$B" "$green"
+          upd; test "$(result)" = failed_rolled_back; test "$(deployed)" = "$A"
+          systemctl is-active quanta-recorder quanta-ui quanta-lake
+          for _ in $(seq 1 20); do curl -fsS http://127.0.0.1:8080/api/status > st.json && break; sleep 2; done
+          python3 -c 'import json; d=json.load(open("st.json")); assert any(i["code"]=="update_failed" for i in d["verdict"]["issues"]), d["verdict"]'
+
+          upd; test "$(result)" = skipped_failed; test "$(deployed)" = "$A"
+
+          git revert --no-edit HEAD -q; C=$(git rev-parse HEAD)
+          checks "$C" '{"check_runs":[{"status":"completed","conclusion":"failure"}]}'
+          upd; test "$(result)" = ci_failed; test "$(deployed)" = "$A"
       - name: Diagnostics
         if: failure()
         run: |
           sudo journalctl -u quanta-recorder -u quanta-ui -u quanta-lake --no-pager -n 150 || true
           sudo cat /var/log/quanta-bootstrap.log || true
+          sudo cat /var/log/quanta-update.log || true

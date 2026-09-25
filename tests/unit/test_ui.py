@@ -140,3 +140,29 @@ def test_quality_and_access_issues(tmp_path: Path) -> None:
 def test_stream_labels() -> None:
     assert stream_label("deribit:main") == "Tüm kanallar"
     assert stream_label("bybit_linear:book0") == "Order book"
+
+
+def test_update_state_issues(tmp_path: Path) -> None:
+    from quanta.ui.sources import load_update
+
+    assert load_update(tmp_path) is None
+    state = {
+        "checked_at": "2026-09-25T02:00:00Z",
+        "current": "a" * 40,
+        "latest": "b" * 40,
+        "result": "failed_rolled_back",
+        "failed_sha": "b" * 40,
+    }
+    (tmp_path / "update.json").write_text(json.dumps(state))
+    update = load_update(tmp_path)
+    hist = History()
+
+    def codes(u: dict | None) -> dict[str, str]:  # type: ignore[type-arg]
+        return {i.code: i.level for i in evaluate(hist, 0.0, 0.0, CFG, update=u).issues}
+
+    assert codes(update)["update_failed"] == "warning"
+    issues = evaluate(hist, 0.0, 0.0, CFG, update=update).issues
+    assert "bbbbbbb" in next(i.title for i in issues if i.code == "update_failed")
+    assert codes({**state, "result": "rollback_failed"})["update_failed"] == "critical"
+    for ok in ("up_to_date", "updated", "waiting_ci", "ci_failed", "skipped_failed"):
+        assert "update_failed" not in codes({**state, "result": ok})

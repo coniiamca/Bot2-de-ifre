@@ -22,7 +22,7 @@ from quanta.core.log import get_logger
 from quanta.ui.health import VENUE_NAMES, HealthConfig, evaluate, stream_label, venue_name
 from quanta.ui.history import History
 from quanta.ui.metrics_reader import bucket_deltas, histogram_quantile, parse
-from quanta.ui.sources import VolumeCache, load_access, load_quality
+from quanta.ui.sources import VolumeCache, load_access, load_quality, load_update
 
 log = get_logger(__name__)
 STATE_KEY: web.AppKey[UiState] = web.AppKey("state")
@@ -77,7 +77,10 @@ class UiState:
         quality = load_quality(self.cfg.data_dir)
         access_file = self.cfg.access_file or self.cfg.data_dir / "access.json"
         access = load_access(access_file)
-        verdict = evaluate(self.history, now, self.last_ok_ts, self.cfg.health, quality, access)
+        update = load_update(self.cfg.data_dir)
+        verdict = evaluate(
+            self.history, now, self.last_ok_ts, self.cfg.health, quality, access, update
+        )
         snap = self.history.latest
         venues: list[dict[str, Any]] = []
         system: dict[str, Any] = {}
@@ -169,6 +172,7 @@ class UiState:
             "venues": venues,
             "system": system,
             "access": access,
+            "update": update,
             "quality": quality,
             "volume": self.volume.get(),
         }

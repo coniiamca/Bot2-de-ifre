@@ -9,6 +9,7 @@
 #   sudo bash bootstrap.sh --native         # install / update without Docker (systemd)
 #   bash bootstrap.sh --check-only          # report only, changes nothing, no root needed
 #   sudo bash bootstrap.sh --check-access   # re-run the exchange access check only
+#   sudo bash bootstrap.sh --auto-update on # hourly, CI-gated updates with rollback
 #
 # What it does:
 #   1. preflight: OS, CPU/RAM/disk, clock sync, listening ports
@@ -46,6 +47,7 @@ LOG_FILE=/var/log/quanta-bootstrap.log
 UV_CACHE=/var/cache/quanta-uv
 UV_PYTHON_DIR=/opt/quanta-python      # only used when the OS has no Python 3.12
 UNITS=(quanta-recorder quanta-ui quanta-lake)
+LOCK_FILE=/run/quanta-bootstrap.lock
 CONTAINER_UID=10001
 UI_LOCAL="http://127.0.0.1:8080"
 MIN_CPUS=2
@@ -55,13 +57,16 @@ MIN_DISK_GB=100
 MODE=install
 DATA_DIR=""
 ASSUME_YES=0
-WITH_TAILSCALE=1
+WITH_TAILSCALE=""         # 1 | 0 | "" (remembered)
 WITH_FIREWALL=0
 FORCE_DEPLOY_KEY=0
 LITE=0
 MIN_FREE_GB=""
 NATIVE=""                 # "" = not given (a previous install's choice is remembered)
 START_DOCKER=0
+AUTO_UPDATE=""            # on | off | "" (remembered)
+UNATTENDED=0              # run by quanta-update.timer: never wait for a human
+REF=""                    # deploy this commit instead of the branch head
 
 # -- output helpers -------------------------------------------------------------------------
 if [[ -t 1 ]]; then
@@ -113,6 +118,8 @@ Kullanım: sudo bash bootstrap.sh [seçenekler]
                       dokunmaz). Sunucuda Docker durdurulmuşsa veya başka işler içinse bunu kullan
   --start-docker      Docker kurulu ama durdurulmuşsa yine de başlat (restart politikası olan
                       mevcut konteynerler de başlar!)
+  --auto-update on|off  Otomatik güncelleme: saatte bir GitHub'a bakar; yeni sürümü yalnız
+                      CI testleri yeşilse kurar, servisler kalkmazsa önceki sürüme döner
   --lite              Küçük/paylaşılan sunucu: daha az sembol kaydeder (config/recorder.lite.yaml;
                       L2 yalnız BTC+ETH, 20 GB disk koruması). Yalnız yeni config'e uygulanır
   --min-free-gb N     Disk koruması: boş alan N GB'ın altına inince kayıt durur (sunucudaki
@@ -135,6 +142,9 @@ while (($#)); do
     --deploy-key) FORCE_DEPLOY_KEY=1 ;;
     --native) NATIVE=1 ;;
     --start-docker) START_DOCKER=1 ;;
+    --auto-update) AUTO_UPDATE="${2:?--auto-update on|off ister}"; shift ;;
+    --unattended) UNATTENDED=1; ASSUME_YES=1 ;;
+    --ref) REF="${2:?--ref bir commit ister}"; shift ;;
     --lite) LITE=1 ;;
     --min-free-gb) MIN_FREE_GB="${2:?--min-free-gb bir sayı ister}"; shift ;;
     --firewall) WITH_FIREWALL=1 ;;
@@ -152,7 +162,14 @@ if [[ -r "$ENV_FILE" ]]; then
   [[ -n "$DATA_DIR" ]] || DATA_DIR="$(sed -n 's/^QUANTA_DATA=//p' "$ENV_FILE" | tail -n1)"
   PREV_MODE="$(sed -n 's/^QUANTA_MODE=//p' "$ENV_FILE" | tail -n1)"
   PREV_MODE="${PREV_MODE:-docker}"
+  [[ -n "$AUTO_UPDATE" ]] || AUTO_UPDATE="$(sed -n 's/^QUANTA_AUTO_UPDATE=//p' "$ENV_FILE" | tail -n1)"
+  if [[ -z "$WITH_TAILSCALE" && "$(sed -n 's/^QUANTA_TAILSCALE=//p' "$ENV_FILE" | tail -n1)" == off ]]; then
+    WITH_TAILSCALE=0
+  fi
 fi
+WITH_TAILSCALE="${WITH_TAILSCALE:-1}"
+AUTO_UPDATE="${AUTO_UPDATE:-off}"
+[[ "$AUTO_UPDATE" == on || "$AUTO_UPDATE" == off ]] || die "--auto-update on ya da off olmalı: $AUTO_UPDATE"
 if [[ -z "$NATIVE" ]]; then
   if [[ "$PREV_MODE" == native ]]; then NATIVE=1; else NATIVE=0; fi
 fi
@@ -283,7 +300,7 @@ apt_install() { apt_get install -y -q --no-install-recommends "$@" >/dev/null; }
 install_packages() {
   step "2/9 Temel paketler"
   apt_get update -q >/dev/null
-  local pkgs=(ca-certificates curl gnupg git openssh-client iproute2 chrony)
+  local pkgs=(ca-certificates curl gnupg git openssh-client iproute2 chrony python3)
   ((WITH_FIREWALL)) && pkgs+=(ufw)
   apt_install "${pkgs[@]}"
   ok "${pkgs[*]}"
@@ -388,6 +405,10 @@ setup_tailscale() {
     ok "Tailnet'e bağlı: $(ts_dns_name)"
     return
   fi
+  if ((UNATTENDED)); then
+    warn "Tailscale bağlı değil (otomatik güncelleme giriş beklemez). Sonra: sudo tailscale up"
+    return
+  fi
   say "  Aşağıdaki bağlantıyı tarayıcıda açıp Tailscale hesabınla giriş yap (bu sunucu tailnet'ine eklenecek):"
   if ((ASSUME_YES)) || ! have_tty; then
     # Unattended (e.g. run by an agent in the background): the login link is printed to the
@@ -464,6 +485,10 @@ OLD_HEAD=""
 fetch_repo() {
   step "6/9 Kod (${REPO_URL:-$REPO_SLUG} @ $BRANCH)"
   if [[ -d "$INSTALL_DIR/.git" ]]; then OLD_HEAD="$(git -C "$INSTALL_DIR" rev-parse HEAD)"; fi
+  # the updater checks out the new commit itself (so the new installer runs) and tells us
+  # what was running before, so services are restarted
+  OLD_HEAD="${QUANTA_PREV_HEAD:-$OLD_HEAD}"
+  local target="${REF:-origin/$BRANCH}"
   local https="https://github.com/$REPO_SLUG.git" ssh="git@github.com:$REPO_SLUG.git"
   if [[ -n "$REPO_URL" ]]; then
     if [[ -d "$INSTALL_DIR/.git" ]]; then
@@ -472,7 +497,7 @@ fetch_repo() {
     else
       git clone -q --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
     fi
-    git -C "$INSTALL_DIR" checkout -q -B "$BRANCH" "origin/$BRANCH"
+    git -C "$INSTALL_DIR" checkout -q -B "$BRANCH" "$target"
     ok "$(git -C "$INSTALL_DIR" log -1 --format='%h %s' | cut -c1-80)"
     return
   fi
@@ -493,7 +518,7 @@ fetch_repo() {
     if [[ -n "$(git -C "$INSTALL_DIR" status --porcelain --untracked-files=no)" ]]; then
       die "$INSTALL_DIR içinde yerel değişiklikler var; kurulum dizininde düzenleme yapma (config: $CONFIG_FILE). 'git -C $INSTALL_DIR status' ile bak."
     fi
-    git -C "$INSTALL_DIR" checkout -q -B "$BRANCH" "origin/$BRANCH"
+    git -C "$INSTALL_DIR" checkout -q -B "$BRANCH" "$target"
     ok "Güncel: $(git -C "$INSTALL_DIR" log -1 --format='%h %s' | cut -c1-80)"
     return
   fi
@@ -509,6 +534,7 @@ fetch_repo() {
       "ssh -i $DEPLOY_KEY -o IdentitiesOnly=yes -o UserKnownHostsFile=$GITHUB_KNOWN_HOSTS -o StrictHostKeyChecking=yes"
     ok "Private depo deploy key ile klonlandı"
   fi
+  if [[ -n "$REF" ]]; then git -C "$INSTALL_DIR" checkout -q -B "$BRANCH" "$REF"; fi
   ok "$(git -C "$INSTALL_DIR" log -1 --format='%h %s' | cut -c1-80)"
 }
 
@@ -538,7 +564,10 @@ write_config() {
   fi
   local new mode=docker
   ((NATIVE)) && mode=native
-  new="$(printf 'QUANTA_MODE=%s\nQUANTA_CONFIG=%s\nQUANTA_DATA=%s\nQUANTA_SECRETS=%s\n' "$mode" "$CONFIG_FILE" "$DATA_DIR" "$SECRETS_DIR")"
+  local ts=on
+  ((WITH_TAILSCALE)) || ts=off
+  new="$(printf 'QUANTA_MODE=%s\nQUANTA_CONFIG=%s\nQUANTA_DATA=%s\nQUANTA_SECRETS=%s\nQUANTA_REPO=%s\nQUANTA_BRANCH=%s\nQUANTA_AUTO_UPDATE=%s\nQUANTA_TAILSCALE=%s\n' \
+    "$mode" "$CONFIG_FILE" "$DATA_DIR" "$SECRETS_DIR" "$REPO_SLUG" "$BRANCH" "$AUTO_UPDATE" "$ts")"
   printf '# written by deploy/bootstrap.sh — install mode and paths (quanta-compose reads it)\n%s\n' "$new" >"$ENV_FILE"
   if ((NATIVE)); then
     local user
@@ -726,6 +755,51 @@ start_stack() {
   ok "Çalışıyor: recorder, ui, lake-daily (sunucu açılışında otomatik başlar)"
 }
 
+# -- automatic updates -----------------------------------------------------------------------
+setup_auto_update() {
+  step "Otomatik güncelleme"
+  local svc=/etc/systemd/system/quanta-update.service tmr=/etc/systemd/system/quanta-update.timer
+  if [[ "$AUTO_UPDATE" == off ]]; then
+    if [[ -e "$tmr" ]]; then
+      systemctl disable --now quanta-update.timer >/dev/null 2>&1 || true
+      rm -f "$svc" "$tmr"
+      systemctl daemon-reload
+      ok "Kapatıldı"
+    else
+      say "  · Kapalı. Açmak için: sudo bash $INSTALL_DIR/deploy/bootstrap.sh --auto-update on"
+    fi
+    return
+  fi
+  cat >"$svc" <<UNIT
+# written by deploy/bootstrap.sh --auto-update on
+[Unit]
+Description=quanta automatic update (only CI-green commits, rollback on failure)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash $INSTALL_DIR/deploy/auto-update.sh
+TimeoutStartSec=45min
+UNIT
+  cat >"$tmr" <<UNIT
+# written by deploy/bootstrap.sh --auto-update on
+[Unit]
+Description=quanta automatic update check (hourly)
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable --now quanta-update.timer >/dev/null 2>&1
+  ok "Açık: saatte bir kontrol; yalnız CI'ı yeşil sürümler, başarısızsa geri dönüş (günlük: journalctl -u quanta-update)"
+}
+
 # -- 9. tailscale serve ---------------------------------------------------------------------
 UI_URL=""
 serve_ui() {
@@ -742,6 +816,9 @@ serve_ui() {
     port="$(sed -n 's|.*:\([0-9][0-9]*\)":{"Handlers":{"/":{"Proxy":"http://127\.0\.0\.1:8080".*|\1|p' <<<"$flat")"
     port="${port:-443}"
     ok "Zaten yapılandırılmış (https:$port)"
+  elif ((UNATTENDED)); then
+    warn "tailscale serve yapılandırılmamış (otomatik güncelleme bunu kurmaz). Elle: sudo bash $INSTALL_DIR/deploy/bootstrap.sh"
+    return
   else
     # something else is already served on this node: leave 443 to it
     if [[ -n "$flat" && "$flat" != "{}" && "$flat" != null ]]; then port=8443; fi
@@ -781,6 +858,11 @@ summary() {
   say "    sudo bash $INSTALL_DIR/deploy/bootstrap.sh --check-access   erişim kontrolünü yenile"
   say "  Yapılandırma: $CONFIG_FILE  → değiştirdikten sonra: $(restart_hint)"
   say "  Veri: $DATA_DIR    Günlük: $LOG_FILE"
+  if [[ "$AUTO_UPDATE" == on ]]; then
+    say "  Otomatik güncelleme: açık (kapatmak için: sudo bash $INSTALL_DIR/deploy/bootstrap.sh --auto-update off)"
+  else
+    say "  Otomatik güncelleme: kapalı (açmak için: sudo bash $INSTALL_DIR/deploy/bootstrap.sh --auto-update on)"
+  fi
   ((WARNINGS)) && say "  ${Y}$WARNINGS uyarı var; yukarıya bak.${N}"
   return 0
 }
@@ -808,6 +890,10 @@ case "$MODE" in
 esac
 
 [[ $EUID -eq 0 ]] || die "root gerekli: sudo bash $0   (yalnız kontrol için: bash $0 --check-only)"
+if [[ -z "${QUANTA_LOCK_HELD:-}" ]]; then
+  exec 9>"$LOCK_FILE"
+  flock -n 9 || die "Başka bir kurulum veya otomatik güncelleme çalışıyor; biraz sonra tekrar dene."
+fi
 touch "$LOG_FILE" && chmod 0600 "$LOG_FILE"
 exec > >(tee -a "$LOG_FILE") 2>&1
 say "quanta bootstrap — $(date -u '+%Y-%m-%d %H:%M:%S UTC') — $(hostname)"
@@ -821,5 +907,6 @@ setup_dirs
 fetch_repo
 write_config
 start_stack
+setup_auto_update
 serve_ui
 summary

@@ -123,7 +123,7 @@
     <h2>Kaydedilen veri (sıkıştırılmış)</h2>
     <div class="card table-wrap" id="volume"></div>
   </div>
-  <footer>Salt okunur · 10 saniyede bir yenilenir · <a id="runbook" href="#" target="_blank" rel="noopener">Runbook</a></footer>
+  <footer>Salt okunur · 10 saniyede bir yenilenir · <span id="version"></span><a id="runbook" href="#" target="_blank" rel="noopener">Runbook</a></footer>
 </main>
 <script>
 "use strict";
@@ -263,6 +263,14 @@ function render(d) {
   $("updated").textContent = "Son güncelleme " + new Date(d.generated_at).toLocaleTimeString("tr-TR") +
     (d.scrape_ok ? "" : " · kayıt servisinden veri alınamıyor");
   $("runbook").href = d.runbook_url;
+  const up = d.update;
+  const UPDATE_RESULT = { up_to_date: "güncel", updated: "güncellendi", waiting_ci: "yeni sürümün testleri bekleniyor",
+    ci_failed: "testleri geçmeyen sürüm atlandı", ci_unknown: "test sonucu okunamadı", skipped_failed: "başarısız sürüm atlandı",
+    failed_rolled_back: "son güncelleme başarısız, geri dönüldü", rollback_failed: "geri dönüş başarısız" };
+  $("version").textContent = up && up.current
+    ? "Sürüm " + up.current.slice(0, 7) + " · otomatik güncelleme: " + (UPDATE_RESULT[up.result] || up.result) +
+      (up.checked_at ? " (son kontrol " + new Date(up.checked_at).toLocaleString("tr-TR") + ")" : "") + " · "
+    : "";
   const v = d.verdict, cls = LEVEL[v.level].cls;
   $("verdict").className = "card verdict " + v.level;
   $("verdict-icon").innerHTML = ICONS[cls];

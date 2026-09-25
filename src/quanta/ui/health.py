@@ -86,6 +86,7 @@ def evaluate(
     cfg: HealthConfig,
     quality: list[dict[str, Any]] | None = None,
     access: dict[str, Any] | None = None,
+    update: dict[str, Any] | None = None,
 ) -> Verdict:
     issues: list[Issue] = []
     snap = hist.latest
@@ -106,6 +107,7 @@ def evaluate(
         issues += _system_issues(hist, snap, cfg)
     issues += _quality_issues(quality or [])
     issues += _access_issues(access)
+    issues += _update_issues(update)
     level: Level = "ok"
     if any(i.level == "critical" for i in issues):
         level = "critical"
@@ -335,6 +337,34 @@ def _quality_issues(quality: list[dict[str, Any]]) -> list[Issue]:
         for v, q in sorted(latest.get("venues", {}).items())
         if q.get("flag") == "bad"
     ]
+
+
+def _update_issues(update: dict[str, Any] | None) -> list[Issue]:
+    result = (update or {}).get("result")
+    latest = str((update or {}).get("latest", ""))[:7]
+    if result == "failed_rolled_back":
+        return [
+            Issue(
+                "warning",
+                "update_failed",
+                f"Otomatik güncelleme başarısız oldu ({latest}); önceki sürüme dönüldü",
+                "Kayıt önceki sürümle çalışıyor. Bu sürüm tekrar denenmeyecek; düzeltilmiş "
+                "yeni bir sürüm gelince otomatik kurulur.",
+                "otomatik-güncelleme",
+            )
+        ]
+    if result == "rollback_failed":
+        return [
+            Issue(
+                "critical",
+                "update_failed",
+                f"Otomatik güncelleme ({latest}) ve geri dönüş başarısız",
+                "Sunucuda: sudo bash /opt/quanta/deploy/bootstrap.sh ve "
+                "journalctl -u quanta-update çıktısına bak.",
+                "otomatik-güncelleme",
+            )
+        ]
+    return []
 
 
 def _access_issues(access: dict[str, Any] | None) -> list[Issue]:
