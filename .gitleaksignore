@@ -1,6 +1,7 @@
-# False positives in already-pushed history (history is never rewritten). Both lines now
-# carry an inline "gitleaks:allow".
-# - signing.py: a type annotation (`private_key: Ed25519PrivateKey`), not a key
+# False positives in already-pushed history (history is never rewritten).
+# - signing.py: a dataclass field whose type is the Ed25519 key class, not a key
 # - test_signing.py: the example secret published in Binance's "SIGNED Endpoint Examples"
+# - .gitleaksignore:3: an earlier version of this comment quoted that field
 82b3c787084a996fb5f0b37579d58a181d729653:src/quanta/venues/binance_usdm/signing.py:generic-api-key:53
 82b3c787084a996fb5f0b37579d58a181d729653:tests/unit/test_signing.py:generic-api-key:32
+4e10f177301f0571c55419f85bff32fe1dec2517:.gitleaksignore:generic-api-key:3
