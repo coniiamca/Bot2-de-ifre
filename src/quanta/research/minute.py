@@ -73,9 +73,16 @@ def month_of(t: Ints) -> NDArray[np.str_]:
 
 
 def load_bars(
-    root: Path, universe: list[tuple[str, int, str]], symbol: str, start: str, end: str
+    root: Path,
+    universe: list[tuple[str, int, str]],
+    symbol: str,
+    start: str,
+    end: str,
+    window: tuple[str, str] | None = None,
 ) -> Bars | None:
-    """Bars of ``symbol`` in [start, end) (YYYY-MM-DD), or None when there are none."""
+    """Bars of ``symbol`` in [start, end) (YYYY-MM-DD), or None when there are none. With
+    ``window`` (YYYY-MM, inclusive) only those monthly files are read — the ones the minute
+    fetch downloaded for this universe — so other data in the lake cannot change a result."""
     lo, hi = _ts(start), _ts(end)
     cols = ["open_time", "open", "high", "low", "close", "volume", "quote_volume"]
     cols.append("taker_buy_volume")
@@ -83,6 +90,8 @@ def load_bars(
     for f in _files(root, "klines_1m", symbol):
         month = f.parent.name.split("=", 1)[1]
         if month + "-31" < start[:7] + "-00" or month + "-01" >= end:
+            continue
+        if window is not None and not window[0] <= month <= window[1]:
             continue
         tables.append(pq.read_table(f, columns=cols))
     if not tables:

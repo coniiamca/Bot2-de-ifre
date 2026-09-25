@@ -22,6 +22,7 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from quanta.research.fetch import symbol_windows
 from quanta.research.panel import DAY_NS, HOUR_NS, Market, asof_align, kline_close_feature
 
 MIN_NS = 60 * 10**9
@@ -33,9 +34,21 @@ def _ts(ms_or_date: str) -> int:
     return int(datetime.fromisoformat(ms_or_date).replace(tzinfo=UTC).timestamp()) * 10**9
 
 
-def _read(root: Path, name: str, symbol: str, columns: list[str]) -> pa.Table | None:
+def _read(
+    root: Path,
+    name: str,
+    symbol: str,
+    columns: list[str],
+    window: tuple[str, str] | None = None,
+) -> pa.Table | None:
+    """All partitions of ``symbol``, or only months within ``window`` (YYYY-MM, inclusive):
+    the files the dataset fetch downloaded for this universe, so that other data in the lake
+    (e.g. a wider universe fetched later) cannot change a result."""
     base = root / "lake" / "binance_vision_um" / name / f"symbol={symbol}"
     files = sorted(base.glob("*/part-0.parquet"))
+    if window is not None:
+        lo, hi = window
+        files = [f for f in files if lo <= f.parent.name.split("=", 1)[1][:7] <= hi]
     if not files:
         return None
     tables = [pq.read_table(f, columns=columns) for f in files]
@@ -56,11 +69,14 @@ def load_market(
     start: str,
     end: str,
     metrics: bool = True,
+    windows: dict[str, tuple[str, str]] | None = None,
 ) -> Market:
     """Hourly panel from ``start`` (inclusive, YYYY-MM-DD) to ``end`` (exclusive)."""
     g0, g1 = _ts(start), _ts(end)
     grid = np.arange(g0, g1, HOUR_NS, dtype=np.int64)
     symbols = sorted({s for _, _, s in universe})
+    if windows is None:
+        windows = symbol_windows(universe)  # the same months fetch_dataset downloads
     t_len, n = grid.size, len(symbols)
     col = {s: i for i, s in enumerate(symbols)}
 
@@ -80,6 +96,7 @@ def load_market(
             "klines_1h",
             sym,
             ["open_time", "open", "high", "low", "close", "volume", "quote_volume", "count"],
+            windows.get(sym),
         )
         if k is not None:
             ot = _ns(k.column("open_time"))
@@ -96,13 +113,17 @@ def load_market(
             tradable[i, j] = _f(k.column("count"))[ok] > 0
             v, a = kline_close_feature(grid, ot, _f(k.column("close")))
             feats["close"][:, j], avail["close"][:, j] = v, a
-        p = _read(root, "premiumIndexKlines_1h", sym, ["open_time", "close"])
+        p = _read(root, "premiumIndexKlines_1h", sym, ["open_time", "close"], windows.get(sym))
         if p is not None:
             ot = _ns(p.column("open_time"))
             v, a = asof_align(ot, ot + HOUR_NS, _f(p.column("close")), grid)
             feats["premium"][:, j], avail["premium"][:, j] = v, a
         fr = _read(
-            root, "fundingRate", sym, ["calc_time", "funding_interval_hours", "last_funding_rate"]
+            root,
+            "fundingRate",
+            sym,
+            ["calc_time", "funding_interval_hours", "last_funding_rate"],
+            windows.get(sym),
         )
         if fr is not None:
             ft = (_ns(fr.column("calc_time")) + MIN_NS // 2) // MIN_NS * MIN_NS

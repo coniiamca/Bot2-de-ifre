@@ -22,6 +22,7 @@ from numpy.typing import NDArray
 from quanta.core.log import get_logger
 from quanta.research.costs import CostModel
 from quanta.research.data import load_market
+from quanta.research.fetch import symbol_windows
 from quanta.research.gates import (
     Gate,
     alpha_vs,
@@ -103,7 +104,8 @@ def split_grid(prereg: Prereg) -> tuple[list[dict[str, Any]], list[int], list[tu
 def _symbol_job(args: tuple[Any, ...]) -> tuple[str, dict[Key, Trades]]:
     root, universe, symbol, start, end, strategy, combos, pools, fixed, variants = args
     out: dict[Key, Trades] = {}
-    bars = load_bars(root, universe, symbol, start, end)
+    # the months the minute fetch downloaded for this universe (1 before, 0 after)
+    bars = load_bars(root, universe, symbol, start, end, symbol_windows(universe, 1, 0).get(symbol))
     if bars is None or not (bars.rank > 0).any():
         return symbol, out
     prep = prepare(bars, fixed)
@@ -264,7 +266,14 @@ def run_intraday(
         sens[label] = annual_sr(daily_pnl(tr, w, first_day, end_day))
     # benchmark: equal-risk buy-and-hold of the same coin pool (hourly, as in H6)
     pool_universe = [u for u in universe if u[1] <= best_pool]
-    m = load_market(root, pool_universe, prereg.data_start, prereg.dev_end, metrics=False)
+    m = load_market(
+        root,
+        pool_universe,
+        prereg.data_start,
+        prereg.dev_end,
+        metrics=False,
+        windows=symbol_windows(universe),  # hourly data fetched for the whole universe
+    )
     bdays, bench_d, _ = _run_trial(
         m, TrendParams(168, 24, "sign", long_only=True), CostModel(), first_day
     )

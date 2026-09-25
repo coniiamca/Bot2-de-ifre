@@ -19,6 +19,7 @@ from numpy.typing import NDArray
 
 from quanta.core.log import get_logger
 from quanta.research.backtest import Result, simulate
+from quanta.research.burst import add_burst_features
 from quanta.research.costs import CostModel
 from quanta.research.data import load_market
 from quanta.research.gates import (
@@ -34,7 +35,7 @@ from quanta.research.gates import (
 from quanta.research.ledger import Ledger, trial_id
 from quanta.research.panel import DAY_NS, Market
 from quanta.research.prereg import Prereg, git_state
-from quanta.research.strategies import TrendParams, trend_weights
+from quanta.research.strategies import TrendParams, burst_weights, trend_weights
 from quanta.research.universe import read_universe
 
 log = get_logger(__name__)
@@ -59,9 +60,28 @@ def _iso(day: int) -> str:
     return date.fromordinal(date(1970, 1, 1).toordinal() + int(day)).isoformat()
 
 
-def data_sha(repo: Path) -> str:
-    p = repo / DATA_MANIFEST
-    return hashlib.sha256(p.read_bytes()).hexdigest()[:16] if p.exists() else "none"
+def data_sha(repo: Path, manifests: list[str] | None = None) -> str:
+    if not manifests:
+        p = repo / DATA_MANIFEST
+        return hashlib.sha256(p.read_bytes()).hexdigest()[:16] if p.exists() else "none"
+    h = hashlib.sha256()
+    for m in manifests:
+        f = repo / m
+        h.update(f.read_bytes() if f.exists() else b"none")
+    return h.hexdigest()[:16]
+
+
+def _weights(prereg: Prereg) -> Callable[[Market, TrendParams], Floats]:
+    return burst_weights if prereg.strategy == "burst_imbalance" else trend_weights
+
+
+def _market(prereg: Prereg, root: Path, universe: list[tuple[str, int, str]], end: str) -> Market:
+    m = load_market(root, universe, prereg.data_start, end, metrics=False)
+    if prereg.strategy == "burst_imbalance":
+        windows = tuple(sorted({int(h) for h in prereg.grid["lookback_h"]}))
+        add_burst_features(m, root, universe, prereg.data_start, end, windows)
+    m.check_point_in_time()
+    return m
 
 
 def _trend_name(p: dict[str, Any]) -> str:
@@ -83,9 +103,14 @@ def _neighbours(combos: list[dict[str, Any]], grid: dict[str, list[Any]], best: 
 
 
 def _run_trial(
-    m: Market, p: TrendParams, costs: CostModel, first_day: int, **kw: Any
+    m: Market,
+    p: TrendParams,
+    costs: CostModel,
+    first_day: int,
+    weights: Callable[[Market, TrendParams], Floats] = trend_weights,
+    **kw: Any,
 ) -> tuple[NDArray[np.int64], Floats, Result]:
-    res = simulate(trend_weights(m, p), m, costs, **kw)
+    res = simulate(weights(m, p), m, costs, **kw)
     days, daily = res.daily(m.grid)
     keep = days >= first_day
     return days[keep], daily[keep], res
@@ -99,6 +124,19 @@ def _yearly(days: NDArray[np.int64], daily: Floats) -> dict[str, float]:
 def _window(days: NDArray[np.int64], daily: Floats, lo: str, hi: str) -> float | None:
     sel = (days >= _day(lo)) & (days < _day(hi))
     return float(np.prod(1.0 + daily[sel]) - 1.0) if sel.any() else None
+
+
+def _sub(days: NDArray[np.int64], daily: Floats, lo: str, hi: str) -> dict[str, float] | None:
+    sel = (days >= _day(lo)) & (days < _day(hi))
+    if not sel.any():
+        return None
+    r = daily[sel]
+    return {
+        "return": float(np.prod(1.0 + r) - 1.0),
+        "cagr": cagr(r),
+        "sr_annual": annual_sr(r),
+        "days": int(sel.sum()),
+    }
 
 
 def _asset_contrib(m: Market, res: Result) -> dict[str, float]:
@@ -156,19 +194,19 @@ def run_trend(
     universe = read_universe(repo / prereg.universe_file)
     costs = CostModel(prereg.costs.fee_bps, prereg.costs.slip_top2_bps, prereg.costs.slip_rest_bps)
     v = prereg.validation
-    m = load_market(root, universe, prereg.data_start, prereg.dev_end, metrics=False)
-    m.check_point_in_time()
+    m = _market(prereg, root, universe, prereg.dev_end)
+    wf = _weights(prereg)
     first_day = _day(prereg.data_start) + prereg.warmup_days
     combos = prereg.combos()
     trials: list[Trial] = []
     for c in combos:
         p = TrendParams(**c, **prereg.fixed)
-        days, daily, res = _run_trial(m, p, costs, first_day)
+        days, daily, res = _run_trial(m, p, costs, first_day, wf)
         trials.append(Trial(_trend_name(c), c, days, daily, res))
         log.info("trial_done", trial=trials[-1].name, sr=round(annual_sr(daily), 2))
     commit, dirty = git_state(repo)
     exploratory = exploratory or dirty
-    dsha = data_sha(repo)
+    dsha = data_sha(repo, prereg.data_manifests)
     period = f"{prereg.data_start}..{prereg.dev_end}"
     ledger = Ledger(repo)
     prior, prior_summary = _prior_returns(prereg, ledger, period, dsha, trials[0].days)
@@ -180,10 +218,12 @@ def run_trend(
     bdays, bench, _ = _run_trial(m, bench_p, costs, first_day)
     alpha = alpha_vs(best.daily, bench, v.hold_days)
     sens = {
-        "maliyet ×1,5": annual_sr(_run_trial(m, bp, costs.scaled(1.5), first_day)[1]),
-        "maliyet ×2": annual_sr(_run_trial(m, bp, costs.scaled(2.0), first_day)[1]),
-        "1 bar gecikme": annual_sr(_run_trial(m, bp, costs, first_day, exec_lag=1)[1]),
-        "saatlik VWAP ile işlem": annual_sr(_run_trial(m, bp, costs, first_day, price="vwap")[1]),
+        "maliyet ×1,5": annual_sr(_run_trial(m, bp, costs.scaled(1.5), first_day, wf)[1]),
+        "maliyet ×2": annual_sr(_run_trial(m, bp, costs.scaled(2.0), first_day, wf)[1]),
+        "1 bar gecikme": annual_sr(_run_trial(m, bp, costs, first_day, wf, exec_lag=1)[1]),
+        "saatlik VWAP ile işlem": annual_sr(
+            _run_trial(m, bp, costs, first_day, wf, price="vwap")[1]
+        ),
     }
     contrib = _asset_contrib(m, best.result)
     yearly = _yearly(best.days, best.daily)
@@ -195,6 +235,7 @@ def run_trend(
         }
         for lo, hi, name in prereg.stress_windows
     }
+    subperiods = {name: _sub(best.days, best.daily, lo, hi) for lo, hi, name in prereg.subperiods}
     gates: list[Gate] = [
         *fs.gates,
         plateau(fs.sr_annual, fs.best, _neighbours(combos, prereg.grid, fs.best)),
@@ -261,6 +302,8 @@ def run_trend(
         "verdict": "GECTI" if passed else "ELENDI",
         "symbols": len(m.symbols),
         "universe_top": max(rank for _, rank, _ in universe),
+        "universe_label": prereg.universe_label,
+        "subperiods": subperiods,
         "family": fs.as_dict(),
         "prior": prior_summary,
         "gates": [asdict(g) for g in gates],
@@ -294,8 +337,8 @@ def run_trend(
         if not passed:
             raise RuntimeError("development gates failed: the lockbox stays closed")
         ledger.open_lockbox(base | {"best": best.name})
-        full = load_market(root, universe, prereg.data_start, prereg.lockbox_end, metrics=False)
-        days, daily, _ = _run_trial(full, bp, costs, first_day)
+        full = _market(prereg, root, universe, prereg.lockbox_end)
+        days, daily, _ = _run_trial(full, bp, costs, first_day, wf)
         lock = days >= _day(prereg.dev_end)
         lsr = annual_sr(daily[lock])
         p5 = float(np.percentile(fs.cpcv_path_sr_annual, 5))

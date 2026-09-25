@@ -63,6 +63,10 @@ class Prereg(Strict):
     stress_windows: list[tuple[str, str, str]] = Field(default_factory=list)
     # earlier hypotheses of the same family: their recorded trials count in DSR / N_eff
     prior_trials: list[str] = Field(default_factory=list)
+    # input manifests that identify the data (default: research/data/manifest.csv.gz)
+    data_manifests: list[str] = Field(default_factory=list)
+    universe_label: str = ""  # how the report describes the coin list
+    subperiods: list[tuple[str, str, str]] = Field(default_factory=list)  # reported separately
     notes: str = ""
 
     def combos(self) -> list[dict[str, Any]]:

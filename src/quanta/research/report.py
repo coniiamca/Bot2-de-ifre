@@ -45,8 +45,12 @@ def trend_markdown(doc: dict[str, Any]) -> str:
         f"**Karar: {VERDICT[doc['verdict']]}**",
         "",
         f"Kapılar: {passed}/{len(doc['gates'])} geçti · dönem {doc['period'].replace('..', ' – ')} "
-        f"(kilitli son 6 ay hariç) · {doc['symbols']} coin (her ay o anın hacimce ilk "
-        f"{doc.get('universe_top', 10)} coini) · "
+        f"(kilitli son 6 ay hariç) · {doc['symbols']} coin ("
+        + (
+            doc.get("universe_label")
+            or f"her ay o anın hacimce ilk {doc.get('universe_top', 10)} coini"
+        )
+        + ") · "
         f"{len(fam['trials'])} ön-kayıtlı deneme · kod `{doc['commit'][:7]}`"
         + (" · **keşif koşusu (kapılara sayılmaz)**" if doc["exploratory"] else ""),
         "",
@@ -88,6 +92,20 @@ def trend_markdown(doc: dict[str, Any]) -> str:
         lines += ["", "## Stres dönemleri", "", "| Dönem | Strateji | Al-tut |", "|---|---|---|"]
         for k, v in doc["stress"].items():
             lines.append(f"| {k} | {pct(v['strateji'])} | {pct(v['al-tut'])} |")
+    if doc.get("subperiods"):
+        lines += [
+            "",
+            "## Alt dönemler (en iyi ayar)",
+            "",
+            "| Dönem | Gün | Toplam getiri | Yıllık getiri | Sharpe |",
+            "|---|---|---|---|---|",
+        ]
+        for k, v in doc["subperiods"].items():
+            if v:
+                lines.append(
+                    f"| {k} | {v['days']} | {pct(v['return'])} | {pct(v['cagr'])} | "
+                    f"{num(v['sr_annual'])} |"
+                )
     lines += ["", "## Tüm denemeler (yıllık net Sharpe)", "", "| Deneme | Sharpe |", "|---|---|"]
     for name, sr in zip(fam["trials"], fam["sr_annual"], strict=True):
         lines.append(f"| {name}{' ← en iyi' if name == b['name'] else ''} | {num(sr)} |")
@@ -133,8 +151,12 @@ def trend_markdown(doc: dict[str, Any]) -> str:
         "",
         "- Saatlik barlar; karar saat başında, işlem o saatin açılış fiyatından. Komisyon 5 bps "
         "(VIP0 taker) + kayma (BTC/ETH 1 bps, diğerleri 3 bps); funding gerçek oranlarla.",
-        "- Coin listesi her ay bir önceki ayın hacmine göre seçilir; sonradan kaldırılan coinler "
-        "dahildir (hayatta kalma yanlılığı yok).",
+        (
+            f"- Coin listesi: {doc['universe_label']}."
+            if doc.get("universe_label")
+            else "- Coin listesi her ay bir önceki ayın hacmine göre seçilir; sonradan kaldırılan "
+            "coinler dahildir (hayatta kalma yanlılığı yok)."
+        ),
         f"- Deneme sayısı: aile {len(fam['trials']) + fam.get('n_prior', 0)} "
         f"(etkin {num(fam['n_eff'], 1)}); programdaki toplam kayıtlı deneme "
         f"{doc['program_trials']}. DSR bu sayıyla şans payını düşer.",

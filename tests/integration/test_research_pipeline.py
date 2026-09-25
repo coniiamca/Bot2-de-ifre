@@ -389,6 +389,30 @@ async def test_intraday_run_end_to_end(tmp_path: Path, archive: FakeS3Archive) -
     md = intraday_markdown(doc)
     assert "Coin havuzu" in md and "Karar:" in md
 
+    # H5 path: quarter-hour opening imbalance from the minute bars, hourly weights
+    h5 = Prereg(
+        id="HQ",
+        version=1,
+        title="burst test",
+        mechanism="m",
+        falsification="f",
+        strategy="burst_imbalance",
+        universe_file="research/universe/u.csv",
+        universe_label="test coins",
+        data_start="2020-02-01",
+        warmup_days=29,
+        dev_end="2020-05-01",
+        lockbox_end="2020-06-01",
+        grid={"lookback_h": [1, 4], "rebalance_h": [4], "signal": ["sign"]},
+        fixed={"min_history_h": 48, "vol_halflife_h": 24},
+        subperiods=[("2020-03-01", "2020-04-01", "March"), ("2020-04-01", "2020-05-01", "April")],
+    )
+    hq = run_trend(h5, "sha", root, repo)
+    assert hq["verdict"] in ("GECTI", "ELENDI") and len(hq["family"]["trials"]) == 2
+    assert set(hq["subperiods"]) == {"March", "April"} and hq["universe_label"] == "test coins"
+    text = trend_markdown(hq)
+    assert "Alt dönemler" in text and "test coins" in text
+
 
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)

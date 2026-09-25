@@ -3,7 +3,8 @@ in, target weights (T × N, fraction of equity) out. They read ``market.features
 never execution-side prices of the current bar.
 
 H6 — time-series momentum (trend following) on hourly bars, volatility-targeted with equal
-risk per asset; the benchmark is the same machinery always long.
+risk per asset; the benchmark is the same machinery always long. H5 — the quarter-hour opening
+imbalance (research.burst) through the same weighting machinery.
 """
 
 from __future__ import annotations
@@ -52,7 +53,7 @@ def ewma_vol(logret: Floats, halflife_h: int) -> Floats:
 
 def trend_weights(m: Market, p: TrendParams) -> Floats:
     close = m.features["close"]  # close of the last finished bar, known at grid[t]
-    t_len, n = m.shape
+    n = m.shape[1]
     logc = np.log(close)
     logret = np.vstack([np.full((1, n), np.nan), np.diff(logc, axis=0)])
     vol = ewma_vol(logret, p.vol_halflife_h)
@@ -65,6 +66,14 @@ def trend_weights(m: Market, p: TrendParams) -> Floats:
         sig = np.sign(mom)
     else:
         sig = np.clip(mom / (vol * math.sqrt(p.lookback_h)), -2.0, 2.0) / 2.0
+    return signal_weights(m, sig, vol, p)
+
+
+def signal_weights(m: Market, sig: Floats, vol: Floats, p: TrendParams) -> Floats:
+    """Signal in [−1, 1] per cell → volatility-targeted weights with equal risk per asset,
+    per-asset and gross caps, the rebalance schedule and the no-trade band."""
+    close = m.features["close"]
+    t_len, n = m.shape
     # history: at least min_history_h consecutive finite closes
     finite = np.isfinite(close).astype(np.int64)
     run = np.zeros_like(finite)
@@ -90,3 +99,18 @@ def trend_weights(m: Market, p: TrendParams) -> Floats:
         cur = np.where(eligible[t], cur, 0.0)
         out[t] = cur
     return out
+
+
+def hourly_vol(m: Market, p: TrendParams) -> Floats:
+    close = m.features["close"]
+    logc = np.log(close)
+    logret = np.vstack([np.full((1, m.shape[1]), np.nan), np.diff(logc, axis=0)])
+    return ewma_vol(logret, p.vol_halflife_h)
+
+
+def burst_weights(m: Market, p: TrendParams) -> Floats:
+    """H5: sign / scaled z-score of the quarter-hour opening imbalance averaged over the last
+    ``lookback_h`` hours (feature ``qh_imb_{lookback_h}``)."""
+    z = m.features[f"qh_imb_{p.lookback_h}"]
+    sig = np.sign(z) if p.signal == "sign" else np.clip(z, -2.0, 2.0) / 2.0
+    return signal_weights(m, sig, hourly_vol(m, p), p)
