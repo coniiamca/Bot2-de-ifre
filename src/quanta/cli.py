@@ -701,6 +701,10 @@ def research_run(
         runner, render = run_ml, ml_markdown
     elif prereg.strategy == "ml_recent":
         runner, render = run_recent, recent_markdown
+    elif prereg.strategy == "scalper":
+        from quanta.research.scalper import run_scalper, scalper_markdown
+
+        runner, render = run_scalper, scalper_markdown
     elif prereg.strategy in STRATEGIES:
         runner, render = run_intraday, intraday_markdown
     elif prereg.symbols:

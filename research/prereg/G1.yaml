@@ -1,0 +1,79 @@
+# Ön-kayıt: sonuçlar görülmeden önce sabitlenir. Değiştirmek yeni bir sürüm demektir
+# (version artar) ve her deneme deneme defterine (research/ledger) sayılır.
+id: G1
+version: 1
+title: "Durgun piyasa scalper: USDC'de sıfır komisyonlu limit emirlerle sürekli küçük kâr"
+strategy: scalper
+mechanism: >-
+  Kullanıcının isteği (2026-10-11): "Riski büyüt; 10x ile sürekli işlem açsın, ufak ufak kâr
+  etsin; en mantıklı stratejiyi kurgula." Model M1'in yön sinyali zayıf (R1, R2). "Sürekli küçük
+  kâr" profiline uyan ve USDC'deki sıfır maker ücretinden doğrudan yararlanan strateji, durgun
+  piyasada fiyatın küçük salınımlarını iki taraflı limit emirle toplamaktır: kapanışın biraz altına
+  alış, biraz üstüne satış; dolan taraf, fiyat geri dönünce küçük bir kârla (maker, ücretsiz)
+  kapanır; zarar kes daha uzakta. Kâr ancak fiyat bu ölçekte gerçekten geri dönüyorsa (kısa vadeli
+  ortalamaya dönüş) oluşur. Rastgele yürüyüşte beklenti sıfırın altındadır: pasif emir, fiyat
+  onu aşıp geçtiğinde dolar (sentetik öz-testte ölçüldü). Durgun piyasa filtresi yalnız yönsüz ve
+  sakin saatlerde işlem açar.
+falsification: >-
+  Geliştirme dönemi (2024-07 … 2026-02, 20 ay) sekiz ayarın hepsini koşar; seçim kuralı koşudan
+  önce sabit: en az 300 işlem yapanlar içinde en yüksek yıllık Sharpe. Seçilen tek ayar test
+  döneminde (2026-03 … 2026-09) bir kez koşulur. Sınıflar: "Hedefe ulaştı": günde ortalama ≥ 10 $,
+  en büyük düşüş ≤ 750 $ ve günde ≥ 5 işlem (5.000 $ sermaye, işlem başı risk %1). "Kârlı ama
+  hedefin altında": günlük ortalama > 0 ve Newey–West t ≥ 2. Diğer her durum: "Kâr kanıtlanamadı".
+  Test dönemi kâr kanıtlayamazsa strateji bota konmaz.
+universe_file: ""
+data_start: "2024-07-01"    # geliştirme döneminin ilk günü
+dev_end: "2026-03-01"       # test döneminin ilk günü
+lockbox_end: "2026-10-01"   # test döneminin sonu (hariç)
+data_manifests:
+  - research/data/manifest_r1_usdc_1m.csv.gz
+costs:                      # R1 ile aynı: USDC maker %0, taker %0,04, kayma hacim sırasına göre
+  fee_bps: 4.0
+  maker_bps: 0.0
+  slip_top2_bps: 1.5
+  slip_rest_bps: 4.5
+  slip_6_10_bps: 7.5
+  slip_11_20_bps: 12.0
+  stop_slip_mult: 2.0
+grid:
+  config: [G1-1, G1-2, G1-3, G1-4, G1-5, G1-6, G1-7, G1-8]
+fixed:
+  configs:
+    G1-1: {a: 0.5, tp: 0.5, quiet: true}
+    G1-2: {a: 0.5, tp: 0.5, quiet: false}
+    G1-3: {a: 0.5, tp: 1.0, quiet: true}
+    G1-4: {a: 0.5, tp: 1.0, quiet: false}
+    G1-5: {a: 1.0, tp: 0.5, quiet: true}
+    G1-6: {a: 1.0, tp: 0.5, quiet: false}
+    G1-7: {a: 1.0, tp: 1.0, quiet: true}
+    G1-8: {a: 1.0, tp: 1.0, quiet: false}
+  params:                   # bütün ayarlarda aynı
+    stop: 3.0               # zarar kes giriş fiyatından 3·d uzakta
+    hold: 30                # 30 dk sonra süre çıkışı (maker limit 5 dk, sonra piyasa)
+    er_max: 0.3             # durgun: son 60 dk verimlilik oranı < 0,3
+    rv_max: 1.5             # durgun: son 60 dk oynaklığı < 1,5 × normal
+    valid: 5                # giriş limitleri 5 dk bekler
+    exit_valid: 5
+  min_qv_day: 20000000      # USDC kontratı önceki ay günde ≥ 20 milyon $ işlem görmüş olmalı
+  top: 10                   # her ay en hacimli 10 uygun USDC kontratı
+  capital_usd: 5000
+  risk_per_trade: 0.01      # kullanıcı riski büyütmek istedi: işlem başı %1 (R1'in 2 katı)
+  cap_symbol: 2.0           # coin başına ≤ 2× bakiye
+  cap_gross: 5.0            # toplam ≤ 5× bakiye (10× kaldıraçta teminatın yarısı)
+  max_positions: 5
+  min_trades: 300
+  target_usd_day: 10
+  max_drawdown_usd: 750
+  min_trades_day: 5
+  loss_day_limits_usd: [150, 1000]
+notes: >-
+  Koşudan önce bilinenler: (1) Sentetik öz-test (tests/unit/test_research_scalper.py): gömülü
+  dakika ölçeğinde ortalamaya dönüşte işlem başı +%0,21 ve %87 kazanan; rastgele yürüyüşte
+  maliyetsiz bile işlem başı −%0,01 … −%0,05. (2) Yapısal "sürekli küçük kâr" seçeneği funding
+  taşıma (spot long + vadeli short): son 12 ayda en iyi USDC kontratlarında yıllık yalnız %3–5
+  (LINK 5,1, BTC 3,6, BNB 3,4), SOL/ZEC/WLD/TRUMP'ta negatif. (3) Risk merdiveni R1'den:
+  işlem başı %0,5 / %1 / %2 risk → 7 ayda ≈ +200 / +400 / +800 $, en büyük düşüş −588 / −1.176 /
+  −2.353 $; "her işlemde bakiyenin 10 katı" ≈ %18,6 risk → düşüş ≈ −21.900 $ (hesap biter).
+  I1 (aşırı hareket sonrası dönüş) VIP0 ücretlerle elenmişti; bu test farklıdır (her durgun anda
+  iki taraflı, maker ücretsiz, USDC verisi) ama aynı aileden sayılabilir: deneme sayısı defterde.
+  Bu bir kez koşulur.
