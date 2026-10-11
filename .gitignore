@@ -25,6 +25,7 @@ credentials*
 
 # Data — raw captures and lake live outside git
 data/
+bot-data/
 var/
 research-data/
 !research/data/

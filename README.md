@@ -4,12 +4,28 @@ Araştırma odaklı, üretim seviyesinde **vadeli kripto (perpetual futures) tra
 
 > Bu bir "indikatör botu" değil. Hedef: gerçek piyasa davranışını doğru ölçen, hipotezleri bilimsel biçimde test eden, execution maliyetlerini hesaba katan ve production'da güvenilir çalışan bir platform. Araştırmanın vardığı sonuçlar ve reddedilen yaklaşımlar için bkz. **[araştırma raporu](docs/research/00-arastirma-raporu.md)**.
 
+## Lokal işlem botu (`quanta bot`)
+Kendi bilgisayarınızda (Windows / macOS / Linux) Binance **USDC kontratlarında** işlem yapan bot:
+model M1'in sinyali, sıfır komisyonlu limit (maker) giriş ve kâr al, borsada zarar kes, 60 dk süre
+çıkışı, risk bazlı boyut (işlem başı bakiyenin %0,5'i), izole 10× kaldıraç, günlük zarar sınırı.
+Varsayılan **kağıt mod** (gerçek piyasa, sanal bakiye); demo ve gerçek mod ayrı onayla.
+```bash
+uv sync --extra research
+uv run quanta bot egit        # bu ayın modeli (her ay başında)
+uv run quanta bot kontrol     # erişim, model, anahtar, bakiye, komisyon
+uv run quanta bot calistir    # Ctrl+C ile durur
+uv run quanta bot durum       # kapanan işlemlerin özeti
+```
+**Beklenti:** son 7 ayın testi ([R1](docs/research/sonuclar/R1.md)) 5.000 $'da +200…229 $ (günde ≈ 1 $),
+en büyük düşüş ≈ −600 $, kâr istatistiksel olarak kanıtlanamadı. Kılavuz: [docs/runbooks/bot.md](docs/runbooks/bot.md).
+
 ## Belgeler
 - [Araştırma raporu](docs/research/00-arastirma-raporu.md): bulgular, keşifler, reddedilen/önerilen yaklaşımlar, bilinmeyenler, kaynakça
 - [Mimari ve yol haritası](docs/design/01-mimari-ve-yol-haritasi.md): gereksinimler, mimari, veri/ML/nedensellik/backtest/execution/risk/test/gözlem/güvenlik stratejileri, fazlar, Definition of Done
 - [ADR'ler](docs/adr/README.md): mimari kararlar ve gerekçeleri
 - [Veri edinim planı ($250)](docs/research/01-veri-satin-alma-plani.md): ücretsiz kaynaklar, ölçülen boyutlar, hedefli alım
 - [İlk hipotezler](docs/research/02-ilk-hipotezler.md) ve [sonuçları](docs/research/sonuclar/): H6 (trend), H2 (kaldıraç kalabalığı)
+- [Bot kılavuzu](docs/runbooks/bot.md): lokal kurulum, modlar, beklenti, korumalar, sorun giderme
 - [Recorder runbook](docs/runbooks/recorder.md): sunucuya tek komutla kurulum, durum sayfası, günlük doğrulama, sorun prosedürleri
 
 ## Durum
@@ -46,6 +62,9 @@ Araştırma odaklı, üretim seviyesinde **vadeli kripto (perpetual futures) tra
 - Hızlı işlem ([özet](docs/research/03-hizli-islem.md)): 1 dakikalık mumlarda dört hipotez (I1–I4, 5/10/20 coin) ELENDİ — maliyet öncesi yön bilgisi ≈ 0, maliyet işlem başı %0,08–0,15
 - Model M1 ([özet](docs/research/04-model-m1.md)): mumlardan öğrenen model + USDC kontratlarında sıfır komisyonlu limit emir. Şimdiye kadarki en güçlü sonuç (net yıllık Sharpe 2,2, t 4,65, 15 kapının 13'ü) ama şans düzeltmesi (DSR) ve likidasyon kapısı geçilemedi → ELENDİ; etki yıllar içinde zayıflıyor (2025+ Sharpe ≈ 0,8)
 - Video tarzı test V1 ([sonuç](docs/research/sonuclar/V1.md)): 5.000 $, her işlem 5.000 $, günde 17–23 işlem, yalnız son 6 ay (2026-03 … 08, gerçek USDC verisi). İki ayar da zararda: günde ortalama −4 $ ve −41 $; en büyük düşüş −4.931 $ ve −7.903 $ → KÂR KANITLANAMADI
+- R1 ([sonuç](docs/research/sonuclar/R1.md)): M1'in en iyi ayarı son 7 ayda (2026-03 … 09, Eylül hiç görülmemiş), gerçek USDC, işlem başı risk %0,5, kâr al'lı ve kâr al'sız: 5.000 $'da +229 $ / +200 $, en büyük düşüş ≈ −600 $, t 0,46 → KÂR KANITLANAMADI (artıda ama şanstan ayırt edilemiyor)
+
+**Lokal işlem botu (Faz 4, dilim 2)** kodu tamam: `quanta bot` — kağıt / demo / gerçek mod, USDC kontratları, yalnız-maker giriş ve kâr al, borsada zarar kes, süre çıkışı, risk bazlı boyut, Windows/macOS/Linux. Bkz. [bot kılavuzu](docs/runbooks/bot.md).
 
 **Demo emir altyapısı (Faz 4, dilim 1)** kodu tamam: Binance **demo** hesabında emir açma-kapama, borsada zarar kes, kill switch, günlük zarar sınırı, bayat veri / bağlantı kopması / beklenmeyen fiyat / mükerrer emir korumaları, acil kapatma, test çevrimleri ve tatbikatlar. Anahtar ekleme: [runbook → Demo işlem](docs/runbooks/recorder.md#demo-işlem-binance-demo-hesabı-gerçek-para-yok) (`sudo quanta-demo-anahtar`).
 
@@ -85,6 +104,7 @@ src/quanta/
   tools/           verify-aggtrades, book-audit, access (3 venue), volume
   ui/              durum sayfası: metrics okuyucu, sağlık kuralları, tek HTML sayfa
   research/        panel (point-in-time), backtest, istatistik kapıları, evren, ön-kayıt, defter, rapor
+  bot/             lokal işlem botu: model eğitimi, canlı özellikler, strateji, kağıt/borsa brokerı, CLI
 research/          ön-kayıtlar (prereg/), deneme defteri (ledger/), evren ve veri manifestleri
 deploy/            bootstrap.sh (sunucuya kurulum)
 infra/             Dockerfile, compose, Prometheus kuralları + testleri, Alertmanager, Grafana

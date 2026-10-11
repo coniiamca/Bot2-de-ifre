@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 
+from quanta.bot.cli import bot_app
 from quanta.core.config import load_yaml_config
 from quanta.core.errors import ConfigError
 from quanta.core.log import configure_logging
@@ -33,6 +34,7 @@ research_app = typer.Typer(help="Research and backtests (needs the 'research' ex
 app.add_typer(research_app, name="research")
 trader_app = typer.Typer(help="Order execution on Binance's demo account (Faz 4)")
 app.add_typer(trader_app, name="trader")
+app.add_typer(bot_app, name="bot")
 
 
 def _run(coro: object) -> object:

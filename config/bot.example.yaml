@@ -1,0 +1,55 @@
+# quanta bot — lokal işlem botu ayarları
+# Kopyalayın:  config/bot.local.yaml  (git'e girmez). Dosya yoksa bot bu varsayılanlarla,
+# KAĞIT modda çalışır. Ayrıntılar: docs/runbooks/bot.md
+
+# paper = kağıt: gerçek piyasa verisi, sanal bakiye, API anahtarı gerekmez (BURADAN BAŞLAYIN)
+# demo  = Binance demo hesabı (demo.binance.com anahtarıyla; gerçek para yok)
+# live  = GERÇEK PARA. Ayrıca komutta --gercek-para gerekir: quanta bot calistir --gercek-para
+mode: paper
+
+data_dir: bot-data            # model, arşiv verisi, işlem defteri, durum (git'e girmez)
+quote: USDC                   # USDC kontratları: limit (maker) emirde komisyon %0
+
+keys:                         # yalnız demo / live: `quanta bot anahtar` ile kaydedin
+  type: hmac
+  api_key_file: bot-data/secrets/api_key
+  secret_file: bot-data/secrets/api_secret
+
+strategy:
+  stop_k: 3.0                 # zarar kes: 3·σ·√60 uzakta (σ: coinin 1 dk oynaklığı). BNB'de ≈ %1,5–2
+  tp_k: 1.5                   # kâr al: 1,5·σ·√60 (maker limit, ücretsiz). 0 = yalnız 60 dk süre çıkışı
+  entry_valid_min: 5          # giriş limit emri 5 dk bekler, dolmazsa iptal (kovalamaz)
+  exit_valid_min: 5           # süre dolunca çıkış limiti 5 dk bekler, sonra piyasa emri
+  symbols: []                 # boş = modelin uygun bulduğu bütün USDC kontratları; örn. [BNBUSDC, ETHUSDC]
+  model_grace_days: 3         # ay değişince eski model en fazla 3 gün daha işlem açar
+
+sizing:
+  risk_per_trade: 0.005       # zarar kese takılan bir işlem bakiyenin %0,5'ini kaybettirir
+                              # (5.000 $ → ≈ 25 $). Araştırmada test edilen değer budur.
+  cap_symbol: 1.0             # bir coindeki pozisyon ≤ 1× bakiye
+  cap_gross: 1.5              # bütün pozisyonlar toplam ≤ 1,5× bakiye
+  max_positions: 3
+  leverage: 10                # borsadaki kaldıraç ayarı. Pozisyon büyüklüğünü DEĞİŞTİRMEZ (o riskten
+                              # gelir); yalnız ayrılan teminatı küçültür. İzole marjinde bir pozisyonun
+                              # en kötü kaybı kendi teminatıyla sınırlı kalır.
+  margin_type: ISOLATED       # ISOLATED | CROSSED (Multi-Assets modundaysanız CROSSED)
+
+paper:
+  start_balance: 5000         # kağıt modda sanal USDC
+  maker_fee: 0.0
+  taker_fee: 0.0004
+
+limits:                       # korumalar (demo / live'da borsa tarafında da uygulanır)
+  max_order_notional_usdt: 5000   # tek emrin en büyük değeri (USDC)
+  max_symbol_exposure: 1.0
+  max_gross_exposure: 1.5
+  max_positions: 3
+  max_new_positions_per_hour: 12
+  daily_loss_reduce: 0.02     # günde −%2 → yalnız azaltma (yeni işlem yok)
+  daily_loss_halt: 0.03       # günde −%3 → her şeyi kapat, dur (siz devam ettirene kadar)
+  drawdown_halt: 0.10         # zirveden −%10 → dur
+
+max_maker_fee: 0.0            # hesabın maker ücreti bunun üstündeyse (promosyon biterse) yeni işlem yok
+close_on_exit: true           # Ctrl+C ile durdurunca botun pozisyonlarını kapat
+history_days: 10              # açılışta yüklenen 1 dk geçmiş (oynaklık ısınması)
+log_level: WARNING
