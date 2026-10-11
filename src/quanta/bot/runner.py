@@ -234,6 +234,7 @@ class Bot:
             self.cfg.strategy,
             self.cfg.sizing,
             rules,
+            self.cfg.limits.max_order_notional_usdt,
         )
         if isinstance(plan, str):
             return plan

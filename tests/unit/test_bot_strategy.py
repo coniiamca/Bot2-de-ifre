@@ -40,7 +40,8 @@ def sig(side: int = 1, sigma: float = SIGMA) -> Signal:
 
 
 def test_size_follows_the_risk_budget() -> None:
-    p = size(sig(), 600.0, 5000.0, {}, 60, StrategyConfig(tp_k=0), SizingConfig(), RULES)
+    sz = SizingConfig(risk_per_trade=0.005)
+    p = size(sig(), 600.0, 5000.0, {}, 60, StrategyConfig(tp_k=0), sz, RULES)
     assert isinstance(p, Plan)
     dist = stop_distance(SIGMA, 60, 3.0)
     assert p.stop_dist == pytest.approx(dist)
@@ -75,7 +76,7 @@ def test_refusals() -> None:
     wild = size(sig(sigma=0.0026), 600.0, 5000.0, {}, 60, st, sz, RULES)
     assert "likidasyon" in str(wild)
     # a tiny balance cannot reach the minimum notional (5 USDC)
-    assert "küçük" in str(size(sig(), 600.0, 20.0, {}, 60, st, sz, RULES))
+    assert "küçük" in str(size(sig(), 600.0, 5.0, {}, 60, st, sz, RULES))
     assert isinstance(size(sig(sigma=float("nan")), 600.0, 5000.0, {}, 60, st, sz, RULES), str)
 
 
@@ -94,7 +95,7 @@ def test_prices_sit_on_the_safe_side() -> None:
 def test_symbol_names_and_defaults() -> None:
     assert usdc_symbol("1000PEPEUSDT") == "1000PEPEUSDC"
     cfg = BotConfig()
-    assert cfg.mode == "paper" and cfg.sizing.leverage == 10 and cfg.sizing.risk_per_trade == 0.005
+    assert cfg.mode == "paper" and cfg.sizing.leverage == 10 and cfg.sizing.risk_per_trade == 0.01
     assert cfg.limits.daily_loss_halt == 0.03
 
 
@@ -105,3 +106,9 @@ def test_config_refuses_inconsistent_limits() -> None:
         SizingConfig(risk_per_trade=0.05)
     with pytest.raises(ValueError, match="leverage"):
         SizingConfig(leverage=50)
+
+
+def test_the_order_cap_cuts_the_size_instead_of_refusing() -> None:
+    big = size(sig(), 600.0, 20_000.0, {}, 60, StrategyConfig(), SizingConfig(), RULES, 5000.0)
+    assert isinstance(big, Plan) and big.notional <= 5000.0
+    assert big.risk_usd < 0.01 * 20_000  # less than the full risk budget

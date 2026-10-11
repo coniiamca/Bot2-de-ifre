@@ -59,7 +59,7 @@ class StrategyConfig(StrictModel):
 
 
 class SizingConfig(StrictModel):
-    risk_per_trade: float = 0.005  # a stopped-out trade loses this share of the balance
+    risk_per_trade: float = 0.01  # a stopped-out trade loses this share of the balance
     cap_symbol: float = 1.0  # position value per coin ≤ this × balance
     cap_gross: float = 1.5  # all positions together ≤ this × balance
     max_positions: int = 3

@@ -94,8 +94,10 @@ def size(
     st: StrategyConfig,
     sz: SizingConfig,
     rules: SymbolRules,
+    max_notional: float = math.inf,
 ) -> Plan | str:
-    """The order for a signal, or why there is none."""
+    """The order for a signal, or why there is none. ``max_notional``: the risk limits' largest
+    single order (a larger risk budget is cut to it rather than refused)."""
     if equity <= 0 or price <= 0 or not math.isfinite(sig.sigma) or sig.sigma <= 0:
         return "bakiye ya da fiyat yok"
     if sig.symbol in open_notional:
@@ -110,7 +112,7 @@ def size(
     notional = sz.risk_per_trade * equity / dist
     notional = min(notional, sz.cap_symbol * equity)
     room = sz.cap_gross * equity - sum(open_notional.values())
-    notional = min(notional, room)
+    notional = min(notional, room, max_notional * 0.99)
     qty = rules.qty(notional / price)
     why = rules.check(qty, price) if qty > 0 else "boyut sıfır"
     if why is not None:

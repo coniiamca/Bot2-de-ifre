@@ -24,8 +24,12 @@ strategy:
   model_grace_days: 3         # ay değişince eski model en fazla 3 gün daha işlem açar
 
 sizing:
-  risk_per_trade: 0.005       # zarar kese takılan bir işlem bakiyenin %0,5'ini kaybettirir
-                              # (5.000 $ → ≈ 25 $). Araştırmada test edilen değer budur.
+  risk_per_trade: 0.01        # zarar kese takılan bir işlem bakiyenin %1'ini kaybettirir (5.000 $ → ≈ 50 $)
+                              # Son 7 ayın testi (R1), 5.000 $ ile — kâr da düşüş de riskle aynı oranda büyür:
+                              #   0.005 → 7 ayda ≈ +200 $, en büyük düşüş ≈ −590 $ (%−12)
+                              #   0.01  → 7 ayda ≈ +400 $, en büyük düşüş ≈ −1.180 $ (%−24)
+                              #   0.02  → 7 ayda ≈ +800 $, en büyük düşüş ≈ −2.350 $ (%−47)  (izin verilen en yüksek)
+                              # "Her işlemde bakiyenin 10 katı" ≈ 0.186 olurdu: düşüş ≈ −21.900 $ → hesap biter.
   cap_symbol: 1.0             # bir coindeki pozisyon ≤ 1× bakiye
   cap_gross: 1.5              # bütün pozisyonlar toplam ≤ 1,5× bakiye
   max_positions: 3

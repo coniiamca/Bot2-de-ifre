@@ -9,7 +9,7 @@ Bot, araştırmada maliyetlerden sonra ayakta kalan tek sinyali kullanır: model
 ([belge](../research/04-model-m1.md)). Bu ayarı son 7 ayda (2026-03 … 2026-09) gerçek USDC
 verisiyle, botun aynı kurallarıyla test ettik ([R1 sonucu](../research/sonuclar/R1.md)):
 
-| 5.000 $ bakiye, işlem başı risk %0,5 | Sonuç |
+| 5.000 $ bakiye, işlem başı risk %0,5 (varsayılanın yarısı) | Sonuç |
 |---|---|
 | 7 ayın toplamı | **+200 … +229 $** (günde ≈ 1 $) |
 | En büyük düşüş | **−588 … −606 $** (%−11) |
@@ -31,7 +31,29 @@ sonra birkaç büyük kayıp hepsini geri alır. Bot bunun yerine coinin oynakl�
 - **Zarar kes:** 3·σ·√60 (σ: coinin 1 dakikalık oynaklığı). BNB'de genelde %1,5–2.
 - **Kâr al:** 1,5·σ·√60 (zarar kesin yarısı). Maker limit emir → komisyon 0.
 - **Süre:** 60 dakika sonra kapanır (önce limit emir, 5 dakikada dolmazsa piyasa emri).
-- **Boyut:** zarar kese takılan bir işlem bakiyenin **%0,5'ini** kaybettirir (5.000 $ → ≈ 25 $).
+- **Boyut:** zarar kese takılan bir işlem bakiyenin **%1'ini** kaybettirir (5.000 $ → ≈ 50 $).
+
+### Riski büyütmek ne yapar?
+
+Kâr da düşüş de işlem başı riskle aynı oranda büyür; kazanma şansı değişmez. Son 7 ayın testi
+(5.000 $, kâr al'lı ayar):
+
+| `risk_per_trade` | 7 ayda | Günde | En kötü gün | En büyük düşüş |
+|---|---|---|---|---|
+| 0,005 | ≈ +200 $ | ≈ 1 $ | −74 $ | −588 $ (%−12) |
+| **0,01 (varsayılan)** | ≈ +400 $ | ≈ 2 $ | −148 $ | −1.176 $ (%−24) |
+| 0,02 (en yüksek) | ≈ +800 $ | ≈ 4 $ | −295 $ | −2.353 $ (%−47) |
+| "bakiyenin 10 katı pozisyon" (≈ 0,186) | — | — | −2.747 $ | −21.879 $ → **hesap biter** |
+
+Bot %2'nin üstüne izin vermez. Kâr kanıtlanmadığı için (t 0,47) yüksek risk, beklentiyi değil
+yalnız dalgalanmayı büyütür.
+
+### "Sürekli ufak kâr" stratejisi neden yok?
+
+Test edildi ([G1](../research/sonuclar/G1.md)): durgun saatlerde fiyatın altına ve üstüne sıfır
+komisyonlu limit emir, küçük kâr al. İşlemlerin %58–80'i kazanıyor ama 8 ayarın hepsi zararda;
+son 7 ayda günde ortalama −152 $ (5.000 $ hesap haftalar içinde biterdi). Pasif emir, fiyat onu
+aşıp geçtiğinde dolar; küçük kazançları büyük kayıplar geri alıyor.
 
 ### Kaldıraç (10×) ne işe yarıyor?
 
@@ -81,11 +103,11 @@ Ekranda gördükleriniz (örnek; rakamlar uydurmadır):
 ```
 quanta bot · KAĞIT (sanal para) · model 2026-10
   kontratlar: BNBUSDC, BTCUSDC, DOGEUSDC, ETHUSDC, NEARUSDC, SOLUSDC, UNIUSDC, XRPUSDC, ZECUSDC
-  işlem başı risk %0.50 · en fazla 3 pozisyon · kaldıraç 10× (ISOLATED) · zarar kes 3.0·σ·√h · kâr al 1.5·σ·√h · tutma 60 dk
+  işlem başı risk %1.00 · en fazla 3 pozisyon · kaldıraç 10× (ISOLATED) · zarar kes 3.0·σ·√h · kâr al 1.5·σ·√h · tutma 60 dk
 14:05 | KAĞIT | bakiye 5.000,00 USDC | bugün +0,00 | işlem: yok
-2026-10-12 14:10:00: BNBUSDC ↑ LONG limit 2.41 @ 618.40 (≈1,490 USDC, risk ≈24.90)
-AÇILDI BNBUSDC LONG 2.41 @ 618.4 · zarar kes 606.86 · kâr al 624.17
-KAPANDI BNBUSDC LONG kâr al: +13,91 USDC (R 0.56)
+2026-10-12 14:10:00: BNBUSDC ↑ LONG limit 4.83 @ 618.40 (≈2.987 USDC, risk ≈49,90)
+AÇILDI BNBUSDC LONG 4.83 @ 618.4 · zarar kes 606.86 · kâr al 624.17
+KAPANDI BNBUSDC LONG kâr al: +27,86 USDC (R 0.56)
 ```
 
 - Kararlar her 5 dakikada bir verilir; çoğu zaman "sinyal yok"tur. Günde birkaç işlem normaldir.
