@@ -559,11 +559,21 @@ def usd(x: float | None, digits: int = 0) -> str:
 def recent_markdown(doc: dict[str, Any]) -> str:
     sz, tg, cf = doc["sizing"], doc["targets"], doc["configs"]
     names = list(cf)
+    n_months = int(doc.get("months", 6))
+    risk = sz.get("risk_per_trade")
+    if risk:
+        size_text = (
+            f"işlem başı risk sermayenin {pct(float(risk), 1)}'i (boyut zarar kese göre), coin "
+            f"başına ≤ {num(sz['trade_usd'] / sz['capital_usd'], 1)}×, toplam ≤ "
+            f"{num(float(sz['cap_gross']), 1)}×"
+        )
+    else:
+        size_text = f"her işlem {usd(sz['trade_usd'])}"
     lines = [
         f"# {doc['hypothesis']} — {doc['title']}",
         "",
-        f"Dönem: {doc['period'].replace('..', ' – ')} (en güncel 6 ay; daha önce hiç bakılmadı) · "
-        f"sermaye {usd(sz['capital_usd'])}, her işlem {usd(sz['trade_usd'])}, aynı anda en fazla "
+        f"Dönem: {doc['period'].replace('..', ' – ')} (en güncel {n_months} ay) · "
+        f"sermaye {usd(sz['capital_usd'])}, {size_text}, aynı anda en fazla "
         f"{sz['max_positions']} pozisyon · gerçek USDC kontrat mumları · kod `{doc['commit'][:7]}`"
         + (" · **keşif koşusu (sayılmaz)**" if doc["exploratory"] else ""),
         "",
@@ -575,8 +585,10 @@ def recent_markdown(doc: dict[str, Any]) -> str:
     ]
     for n in names:
         c, p = cf[n], cf[n]["params"]
+        tp = f", kâr al {num(float(p['tp_k']), 1)}·σ·√h" if float(p.get("tp_k", 0)) > 0 else ""
+        q_txt = pct(float(p["q"]), 2)
         lines.append(
-            f"- **{n}** ({p['horizon']} dk tutma, tahminlerin en uç {pct(float(p['q']), 1)}'i): "
+            f"- **{n}** ({p['horizon']} dk tutma, tahminlerin en uç {q_txt}'i{tp}): "
             f"**{OUTCOME_TEXT[c['outcome']]}** — günde ortalama {usd(c['avg_day_usd'])}, "
             f"günde {num(c['trades_per_day'], 1)} işlem, en büyük düşüş "
             f"{usd(c['max_drawdown_usd'])}."
@@ -587,7 +599,7 @@ def recent_markdown(doc: dict[str, Any]) -> str:
         ("Kârlı gün oranı", lambda c: pct(c["positive_days"], 0)),
         ("En iyi gün", lambda c: usd(c["best_day_usd"])),
         ("En kötü gün", lambda c: usd(c["worst_day_usd"])),
-        ("Toplam (6 ay)", lambda c: usd(c["total_usd"])),
+        (f"Toplam ({n_months} ay)", lambda c: usd(c["total_usd"])),
         (
             "En büyük düşüş",
             lambda c: f"{usd(c['max_drawdown_usd'])} ({pct(c['max_drawdown_pct'], 0)})",
@@ -602,13 +614,18 @@ def recent_markdown(doc: dict[str, Any]) -> str:
         ("−1.000 $ ya da daha kötü gün", lambda c: str(c["loss_days"].get("1000", "—"))),
         ("İstatistiksel güven (t)", lambda c: num(c["t_nw"])),
     ]
+    double = (
+        f"işlem başı risk {pct(2 * float(risk), 1)}"
+        if risk
+        else f"her işlem {usd(2 * sz['trade_usd'])}"
+    )
     lines += ["", "## Dolar olarak", "", "| | " + " | ".join(names) + " |"]
     lines.append("|---|" + "---|" * len(names))
     for label, fn in rows:
         lines.append(f"| {label} | " + " | ".join(fn(cf[n]) for n in names) + " |")
     lines += [
         "",
-        f"Pozisyonlar 2 kat büyük olsaydı (her işlem {usd(2 * sz['trade_usd'])}) bütün dolar "
+        f"Pozisyonlar 2 kat büyük olsaydı ({double}) bütün dolar "
         "rakamları — kâr da, zarar da, düşüş de — aşağı yukarı 2 katı olurdu: "
         + "; ".join(
             f"{n}: günde {usd(2 * cf[n]['avg_day_usd'])}, en büyük düşüş "
@@ -644,11 +661,13 @@ def recent_markdown(doc: dict[str, Any]) -> str:
         "modelin görmediği 30 günlük kalibrasyon diliminden. Test ayları hiçbir eğitime girmedi.",
         "- Giriş: kapanış fiyatına yalnız-maker limit emir (5 dk; fiyat ötesine geçmeden ve hacim "
         "olmadan dolmaz). Çıkış: süre dolunca limit, 5 dk'da dolmazsa piyasa emri. Zarar kes "
-        "3·σ·√h (stop-market). Ücret: USDC kontratları, maker %0, taker %0,04; kayma dahil.",
-        "- Günlük zarar kesme kuralı yok (video gibi); kaç günün −150 $ (sermayenin %3'ü) ve "
-        "−1.000 $ sınırını aşacağı tabloda.",
-        "- Bileşik getiri yok: sermaye her gün 5.000 $ sayılır, kâr/zarar dolar olarak toplanır.",
-        f"- Sonuç sınıfları koşudan önce yazıldı; iki ayar ayrı ayrı değerlendirilir. Deneme "
+        "3·σ·√h (stop-market). Kâr al (ayarda varsa): yalnız-maker limit, fiyat ötesine "
+        "geçince dolar, giriş mumunda sayılmaz; aynı mumda zarar kes de varsa zarar kes sayılır. "
+        "Ücret: USDC kontratları, maker %0, taker %0,04; kayma dahil.",
+        "- Günlük zarar kesme kuralı yok; kaç günün −150 $ ve −1.000 $ sınırını aşacağı tabloda.",
+        f"- Bileşik getiri yok: sermaye her gün {usd(sz['capital_usd'])} sayılır, kâr/zarar "
+        "dolar olarak toplanır.",
+        f"- Sonuç sınıfları koşudan önce yazıldı; her ayar ayrı değerlendirilir. Deneme "
         f"defterindeki toplam: {doc['program_trials']}.",
         f"- Ön-kayıt sha256 `{doc['prereg_sha'][:12]}`, veri manifesti `{doc['data_sha']}`.",
         "",

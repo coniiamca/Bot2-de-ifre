@@ -1,0 +1,92 @@
+# Ön-kayıt: sonuçlar görülmeden önce sabitlenir. Değiştirmek yeni bir sürüm demektir
+# (version artar) ve her deneme deneme defterine (research/ledger) sayılır.
+id: R1
+version: 1
+title: M1'in en iyi ayarı bugünkü piyasada — son 7 ay, gerçek USDC
+strategy: ml_recent
+mechanism: >-
+  Kullanıcının hedefi (2026-10-11): "Binance'te USDC kontratlarında, limit emirde sıfır komisyonla,
+  yönü hızlı belirleyip kaldıraçla girip zarar kes / kâr al ile küçük küçük kazanan, lokalde
+  çalışan bir bot." Bot için elimizdeki en iyi yön sinyali M1'in en iyi ayarıdır (60 dk tutma,
+  tahminlerin en uç %0,25'i, LightGBM): 2021–2026/02 arası maliyet sonrası Sharpe 2,2, ama şans
+  düzeltmesi ve likidasyon kapısında elendi, 2025+ Sharpe 0,8'e düştü. Bu ayar bugünkü piyasada
+  (2026-03 … 2026-09) hiç koşulmadı: V1 aynı modeli daha gevşek eşiklerle (%1–2) ve sabit boyutla
+  denedi. Bot bu sinyalle kurulacaksa önce son aylarda ne yaptığı görülmeli. İkinci ayar
+  kullanıcının istediği kâr al emrini ekler: 1,5·σ·√h uzaklıkta yalnız-maker limit (USDC'de
+  ücretsiz); zarar kes 3·σ·√h olduğundan kazanç/risk oranı 1:2'dir.
+falsification: >-
+  Test en güncel 7 ayda (2026-03 … 2026-09) bir kez yapılır; 2026-09 hiçbir testte görülmedi,
+  2026-03 … 08 yalnız V1'in başka eşikleriyle görüldü. Model her ay son 12 ayla yeniden eğitilir;
+  test ayları eğitime girmez. Her ayar kendi başına, koşudan önce yazılan sınıflara göre
+  değerlendirilir. "Hedefe ulaştı": günde ortalama ≥ 5 $ (5.000 $ sermayede), en büyük düşüş
+  ≤ 750 $ ve günde ≥ 1 işlem. "Kârlı ama hedefin altında": günlük ortalama > 0 ve Newey–West
+  t ≥ 2. Diğer her durum: "Kâr kanıtlanamadı". 7 ay kısa bir dönemdir: gerçek yıllık Sharpe 1
+  olan bir strateji bile burada t ≈ 0,8 verir; bu test yalnız büyük bir kenarı doğrulayabilir,
+  negatif sonuç ise bugünkü piyasada kenarın olmadığına işarettir.
+universe_file: research/universe/um_top20.csv   # her ay önceki ayın hacmine göre; ilk 10 kullanılır
+data_start: "2024-12-01"    # ilk test ayının 12 aylık eğitimi ve ısınma için yeterli
+dev_end: "2026-03-01"       # BU TESTTE: test döneminin ilk günü
+lockbox_end: "2026-10-01"   # BU TESTTE: test döneminin sonu (hariç)
+data_manifests:
+  - research/data/manifest_r1_1m.csv.gz
+  - research/data/manifest_r1_m1.csv.gz
+  - research/data/manifest_r1_usdc_1m.csv.gz
+costs:                      # M1 ve V1 ile aynı
+  fee_bps: 4.0              # taker: USDC kontratları (zarar kes, süre dolunca dolmayan çıkış)
+  maker_bps: 0.0            # maker: USDC kontratları (giriş, kâr al, süre dolunca çıkış)
+  slip_top2_bps: 1.5
+  slip_rest_bps: 4.5
+  slip_6_10_bps: 7.5
+  slip_11_20_bps: 12.0
+  stop_slip_mult: 2.0
+grid:
+  config: [R1-60, R1-60-TP]   # 2 ayar, ikisi de raporlanır, kazanan seçilmez
+fixed:
+  configs:
+    R1-60: {horizon: 60, q: 0.0025}              # M1'in en iyi ayarı, değişmeden
+    R1-60-TP: {horizon: 60, q: 0.0025, tp_k: 1.5}  # + kâr al 1,5·σ·√h (maker limit)
+  capital_usd: 5000         # sabit sermaye (bileşik yok); kullanıcının daha önce verdiği tutar
+  risk_per_trade: 0.005     # M1 gibi: işlem başı risk sermayenin %0,5'i (boyut zarar kese göre)
+  cap_symbol: 1.0           # coin başına en fazla 1× sermaye
+  cap_gross: 1.5            # toplam en fazla 1,5×
+  max_positions: 3          # aynı anda en fazla 3 pozisyon; coin başına 1
+  target_usd_day: 5
+  max_drawdown_usd: 750
+  min_trades_day: 1
+  loss_day_limits_usd: [150, 1000]
+  top: 10
+  entry_valid: 5
+  exit_valid: 5
+  stop_k: 3.0
+  usdc_first_month: "2024-01"
+  usdc_from: "2024-02"
+  usdc_min_qv_day: 5000000
+  usdc_gap_fill: 60
+  model:
+    train_days: 365
+    calib_days: 30
+    gap_days: 1
+    halflife_days: 90
+    rounds: 300
+    ridge_lambda: 0.001
+    min_train_rows: 20000
+    lgbm:
+      learning_rate: 0.05
+      num_leaves: 31
+      min_data_in_leaf: 2000
+      feature_fraction: 0.8
+      bagging_fraction: 0.8
+      bagging_freq: 1
+      lambda_l2: 10.0
+      max_bin: 63
+      num_threads: 4
+      seed: 0
+notes: >-
+  Ayarlar M1'in ön-kaydından aynen alındı; yalnız kâr al ayarı yeni. 1,5·σ·√h, kullanıcının
+  "küçük kâr, daha büyük zarar kes" fikrinin ölçülü hali olarak koşudan önce seçildi (kullanıcının
+  örneğindeki 20 $ kâr / 100 $ zarar oranı %83'ten yüksek isabet ister). Kaldıraç sonucu
+  değiştirmez: pozisyon büyüklüğü riskten gelir; borsadaki 10× kaldıraç yalnız ayrılan teminatı
+  küçültür (izole marjinde bir pozisyonun en kötü kaybını teminatıyla sınırlar). Evren dosyasına
+  2026-09 ve 2026-10 ayları aynı yöntemle eklendi (önceki aylar değişmedi). Sonuç ne olursa olsun
+  bot gerçek paraya kendiliğinden geçmez: varsayılan kağıt modudur, gerçek para kullanıcının
+  ayrı kararıdır. Bu bir kez koşulur.

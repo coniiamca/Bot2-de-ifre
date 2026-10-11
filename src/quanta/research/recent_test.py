@@ -10,7 +10,7 @@ configuration is selected.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +20,7 @@ from numpy.typing import NDArray
 from quanta.core.log import get_logger
 from quanta.research.gates import max_drawdown
 from quanta.research.intraday import Portfolio, Trades, combine, daily_pnl
-from quanta.research.intraday_runner import _stats, costs_of
+from quanta.research.intraday_runner import _stats, costs_of, portfolio_of
 from quanta.research.ledger import Ledger, trial_id
 from quanta.research.minute import MIN_NS, month_of
 from quanta.research.ml import entries, walk_forward
@@ -53,8 +53,21 @@ class Sizing:
     capital_usd: float
     notional_mult: float  # each trade's size as a multiple of the capital
     max_positions: int
+    risk_per_trade: float | None = None  # set: M1's risk-based sizing instead of fixed size
 
-    def portfolio(self) -> Portfolio:
+    @staticmethod
+    def of(fixed: dict[str, Any]) -> Sizing:
+        risk = fixed.get("risk_per_trade")
+        return Sizing(
+            float(fixed.get("capital_usd", 5000.0)),
+            float(fixed.get("notional_mult", fixed.get("cap_symbol", 1.0))),
+            int(fixed.get("max_positions", 6)),
+            float(risk) if risk is not None else None,
+        )
+
+    def portfolio(self, fixed: dict[str, Any] | None = None) -> Portfolio:
+        if self.risk_per_trade is not None:
+            return portfolio_of(fixed or {"risk_per_trade": self.risk_per_trade})  # as in M1
         # a huge risk budget makes the per-symbol cap bind: every trade gets notional_mult
         return Portfolio(
             risk_per_trade=1e9,
@@ -139,11 +152,7 @@ def run_recent(
     period is the most recent, previously unseen data. ``final`` has no meaning here."""
     fixed = prereg.fixed
     st = Settings.of(fixed)
-    sizing = Sizing(
-        float(fixed.get("capital_usd", 5000.0)),
-        float(fixed.get("notional_mult", 1.0)),
-        int(fixed.get("max_positions", 6)),
-    )
+    sizing = Sizing.of(fixed)
     configs: dict[str, dict[str, Any]] = fixed["configs"]
     names = [str(c) for c in prereg.grid["config"]]
     universe = read_universe(repo / prereg.universe_file)
@@ -170,19 +179,22 @@ def run_recent(
         rows, side = entries(frame, fc, q, tradable, months)
         orders[name] = split_orders(frame, rows, side, h)
         importance[name] = dict(sorted(fc.importance.items(), key=lambda kv: -kv[1])[:8])
-    trades = simulate(
-        root,
-        universe,
-        symbols,
-        prereg.dev_end,
-        prereg.lockbox_end,
-        orders,
-        {"base": (costs, 0, "maker")},
-        st,
-        usdc=True,
-        workers=workers,
-    )
-    pf = sizing.portfolio()
+    trades: dict[tuple[str, str], Trades] = {}
+    for tp_k in sorted({float(configs[n].get("tp_k", 0.0)) for n in names}):
+        group = {n: orders[n] for n in names if float(configs[n].get("tp_k", 0.0)) == tp_k}
+        trades |= simulate(
+            root,
+            universe,
+            symbols,
+            prereg.dev_end,
+            prereg.lockbox_end,
+            group,
+            {"base": (costs, 0, "maker")},
+            replace(st, tp_k=tp_k),
+            usdc=True,
+            workers=workers,
+        )
+    pf = sizing.portfolio(fixed)
     limits = [float(x) for x in fixed.get("loss_day_limits_usd", [150, 1000])]
     commit, dirty = git_state(repo)
     exploratory = exploratory or dirty
@@ -243,7 +255,10 @@ def run_recent(
             "capital_usd": sizing.capital_usd,
             "trade_usd": sizing.capital_usd * sizing.notional_mult,
             "max_positions": sizing.max_positions,
+            "risk_per_trade": sizing.risk_per_trade,
+            "cap_gross": pf.cap_gross,
         },
+        "months": len(test_months),
         "targets": {
             "usd_day": float(fixed.get("target_usd_day", 200.0)),
             "max_drawdown_usd": float(fixed.get("max_drawdown_usd", 2500.0)),

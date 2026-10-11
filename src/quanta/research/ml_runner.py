@@ -111,6 +111,7 @@ class Settings:
     recent_start: str
     prior_trial_count: int
     spec: dict[str, Any]
+    tp_k: float = 0.0  # > 0: maker take-profit at tp_k · σ · √h (0 = none, as in M1)
 
     @staticmethod
     def of(fixed: dict[str, Any]) -> Settings:
@@ -128,6 +129,7 @@ class Settings:
             recent_start=str(fixed.get("recent_start", "2025-01-01")),
             prior_trial_count=int(fixed.get("prior_trial_count", 0)),
             spec=dict(fixed.get("model", {})),
+            tp_k=float(fixed.get("tp_k", 0.0)),
         )
 
     def model(self, kind: str, horizon: int) -> ModelSpec:
@@ -255,7 +257,8 @@ def usdc_eligibility(
 def _signals(bars: Bars, order: Order, st: Settings, mode: str) -> Signals:
     """Signals of one symbol: entry at the decision bar's close of ``bars`` (USDT, or the
     USDC contract in the reality check), stop at ``stop_k`` · σ · √h of that price, where σ
-    is the forecast's (USDT) volatility."""
+    is the forecast's (USDT) volatility; with ``tp_k`` > 0 also a take-profit limit at
+    ``tp_k`` · σ · √h on the other side."""
     t_dec, side, sigma, h = order
     bar_t = t_dec - MIN_NS
     i = np.searchsorted(bars.t, bar_t)
@@ -264,12 +267,17 @@ def _signals(bars: Bars, order: Order, st: Settings, mode: str) -> Signals:
     px = bars.c[i]
     stop = px * (1.0 - side * st.stop_k * sigma * math.sqrt(h))
     limit = np.full(i.size, np.nan) if mode == "market" else px
+    target = (
+        px * (1.0 + side * st.tp_k * sigma * math.sqrt(h))
+        if st.tp_k > 0
+        else np.full(i.size, np.nan)
+    )
     return Signals.build(
         i,
         side,
         limit,
         stop,
-        np.full(i.size, np.nan),
+        target,
         h,
         st.entry_valid,
         post_only=mode != "market",

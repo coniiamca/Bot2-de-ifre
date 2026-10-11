@@ -51,3 +51,19 @@ def test_outcome_classes() -> None:
     assert outcome(good | {"max_drawdown_usd": -3000}, fixed) == "KARLI"
     assert outcome(good | {"avg_day_usd": 20, "t_nw": 1.2}, fixed) == "KANITSIZ"
     assert outcome(good | {"avg_day_usd": -5}, fixed) == "KANITSIZ"
+
+
+def test_risk_sizing_follows_the_stop_distance() -> None:
+    fixed = {"risk_per_trade": 0.005, "cap_symbol": 1.0, "cap_gross": 1.5, "max_positions": 3}
+    sz = Sizing.of(fixed | {"capital_usd": 5000.0})
+    assert sz.risk_per_trade == 0.005
+    pf = sz.portfolio(fixed)
+    assert (pf.risk_per_trade, pf.cap_symbol, pf.cap_gross, pf.max_positions) == (
+        0.005,
+        1.0,
+        1.5,
+        3,
+    )
+    # risk 0.5 % with a 2 % stop (the helper's) → a quarter of the capital, under the 1× cap
+    _, w = combine(trades(1, 0.01), pf)
+    assert w[0] == pytest.approx(0.25)
