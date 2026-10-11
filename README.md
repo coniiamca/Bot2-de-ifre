@@ -63,6 +63,8 @@ en büyük düşüş ≈ −600 $, kâr istatistiksel olarak kanıtlanamadı. K�
 - Model M1 ([özet](docs/research/04-model-m1.md)): mumlardan öğrenen model + USDC kontratlarında sıfır komisyonlu limit emir. Şimdiye kadarki en güçlü sonuç (net yıllık Sharpe 2,2, t 4,65, 15 kapının 13'ü) ama şans düzeltmesi (DSR) ve likidasyon kapısı geçilemedi → ELENDİ; etki yıllar içinde zayıflıyor (2025+ Sharpe ≈ 0,8)
 - Video tarzı test V1 ([sonuç](docs/research/sonuclar/V1.md)): 5.000 $, her işlem 5.000 $, günde 17–23 işlem, yalnız son 6 ay (2026-03 … 08, gerçek USDC verisi). İki ayar da zararda: günde ortalama −4 $ ve −41 $; en büyük düşüş −4.931 $ ve −7.903 $ → KÂR KANITLANAMADI
 - R1 ([sonuç](docs/research/sonuclar/R1.md)): M1'in en iyi ayarı son 7 ayda (2026-03 … 09, Eylül hiç görülmemiş), gerçek USDC, işlem başı risk %0,5, kâr al'lı ve kâr al'sız: 5.000 $'da +229 $ / +200 $, en büyük düşüş ≈ −600 $, t 0,46 → KÂR KANITLANAMADI (artıda ama şanstan ayırt edilemiyor)
+- R2 ([sonuç](docs/research/sonuclar/R2.md)): limit emri piyasa emri gibi kovalamak — kusursuz ve bedava yürütmede bile 5.000 $'da günde ≈ 1,5 $; gerçek maliyetle zarar → KÂR KANITLANAMADI
+- G1 ([sonuç](docs/research/sonuclar/G1.md)): durgun piyasa scalper (iki taraflı maker limit, küçük kâr al, %58–80 kazanan işlem) — 8 ayarın hepsi zararda, testte günde −152 $ (t −7,4) → ELENDİ
 
 **Lokal işlem botu (Faz 4, dilim 2)** kodu tamam: `quanta bot` — kağıt / demo / gerçek mod, USDC kontratları, yalnız-maker giriş ve kâr al, borsada zarar kes, süre çıkışı, risk bazlı boyut, Windows/macOS/Linux. Bkz. [bot kılavuzu](docs/runbooks/bot.md).
 

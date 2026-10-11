@@ -137,3 +137,26 @@ coin ve yıl tutarlılığı, alfa, likidasyon. Hızlı işleme özel iki kapı 
   sabitlenmişti ve değiştirilmedi.
 - Her hipotez bir kez koşuldu. Elenen bir aile başka bir ayar veya coin listesiyle yeniden
   denenmez.
+
+## G1: durgun piyasa scalper (USDC, sıfır maker ücreti, 2026-10)
+
+Kullanıcının isteği: "Riski büyüt; 10x ile sürekli işlem açsın, ufak ufak kâr etsin." Bu profile
+uyan ve USDC'deki sıfır maker ücretinden doğrudan yararlanan strateji test edildi: durgun saatlerde
+(son 1 saat yönsüz ve sakin) kapanışın altına ve üstüne iki taraflı yalnız-maker limit; dolan
+taraf küçük bir maker kâr al ile (ücretsiz) çıkar, zarar kes 3 kat uzakta, 30 dk süre. Sekiz
+ayar 20 aylık geliştirme döneminde, seçilen biri son 7 ayda bir kez. İşlem başı risk %1, coin
+başına ≤ 2×, toplam ≤ 5×. Ön-kayıt `research/prereg/G1.yaml`, sonuç [`sonuclar/G1.md`](sonuclar/G1.md).
+
+**Sonuç: KÂR KANITLANAMADI — açıkça zararda.**
+
+- Geliştirmede sekiz ayarın hepsi derin zararda (yıllık Sharpe −10 … −27), filtreli ya da
+  filtresiz. Kazanan işlem oranı %58–80: "ufak ufak kâr" hissi tam olarak var.
+- Testte (2026-03 … 09) seçilen ayar: günde 100 işlem, kazanan %59, günde ortalama **−152 $**,
+  7 ayda −32.480 $; 5.000 $'lık hesap ilk haftalarda biterdi (t −7,4).
+- İşlem başı (pozisyona oranla): maliyet öncesi **−%0,011**, maliyet %0,016, net −%0,027.
+  Ortalama kazanç +%0,30, ortalama kayıp −%0,50.
+- Neden: pasif emir, fiyat onu aşıp geçtiğinde dolar; bu ölçekte fiyat geri dönmüyor, devam
+  ediyor (sentetik öz-testteki rastgele yürüyüş sonucu gibi). Sıfır maker ücreti bunu kurtarmıyor;
+  zarar kes ve süre çıkışlarının taker ücreti ve kayması (7 ayda ≈ 19.900 $) zararı büyütüyor.
+- Ders: yüksek kazanma oranı kârlılık değildir; küçük kazançlar, seyrek ama büyük kayıplarla
+  geri alınıyor. Risk büyütmek yalnız hızlandırır.
