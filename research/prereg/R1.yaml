@@ -31,6 +31,7 @@ data_manifests:
   - research/data/manifest_r1_1m.csv.gz
   - research/data/manifest_r1_m1.csv.gz
   - research/data/manifest_r1_usdc_1m.csv.gz
+  - research/data/manifest_r1_funding.csv.gz
 costs:                      # M1 ve V1 ile aynı
   fee_bps: 4.0              # taker: USDC kontratları (zarar kes, süre dolunca dolmayan çıkış)
   maker_bps: 0.0            # maker: USDC kontratları (giriş, kâr al, süre dolunca çıkış)
@@ -89,4 +90,6 @@ notes: >-
   küçültür (izole marjinde bir pozisyonun en kötü kaybını teminatıyla sınırlar). Evren dosyasına
   2026-09 ve 2026-10 ayları aynı yöntemle eklendi (önceki aylar değişmedi). Sonuç ne olursa olsun
   bot gerçek paraya kendiliğinden geçmez: varsayılan kağıt modudur, gerçek para kullanıcının
-  ayrı kararıdır. Bu bir kez koşulur.
+  ayrı kararıdır. Bu bir kez koşulur. Düzeltme (koşudan önce, hiçbir sonuç görülmeden): ilk
+  sürümün veri listesinde USDT funding geçmişi yoktu (funding özellikleri boş kalırdı); M1 ve
+  V1'deki gibi eklendi.
