@@ -1,0 +1,85 @@
+# Ön-kayıt: sonuçlar görülmeden önce sabitlenir. Değiştirmek yeni bir sürüm demektir
+# (version artar) ve her deneme deneme defterine (research/ledger) sayılır.
+id: B1
+version: 1
+title: "Eşit kâr al / zarar kes ile günde 15–20 işlem: 1.000 $ teminat × 10, ±%1"
+strategy: ml_recent
+mechanism: >-
+  Kullanıcının isteği (2026-10-11): "1.000 $ pozisyona girdi, 1.100 olunca kapatsın, 900'e düşerse
+  stop olsun; long da short da; günde 15–20 işlemle günde 200–300 $ kâr; rakamlar daha mantıklı
+  kurgulansın." Mantıklı hali: 1.000 $ teminat × 10 kaldıraç = 10.000 $'lık pozisyon; kâr al ve
+  zarar kes fiyatın ±%1'i (pozisyonda ±100 $, teminatta ±%10 = kullanıcının 1.100 / 900'ü).
+  Yön (long/short) eldeki en iyi sinyalden: model M1'in LightGBM'i, 60 dk ufuk, günde 15–20 işlem
+  verecek seçicilikte (tahminlerin en uç %2'si; V1'de bu ayarla günde 17 işlem). İkinci ayar
+  daha dar: ±%0,5. Giriş yalnız-maker limit (ücretsiz), kâr al maker (ücretsiz), zarar kes
+  stop-market (taker), 60 dk'da süre çıkışı. Eşit kâr al / zarar keste kâr ancak kazanma oranı
+  maliyetleri karşılayacak kadar %50'nin üstündeyse oluşur.
+falsification: >-
+  Test en güncel 7 ayda (2026-03 … 2026-09) bir kez yapılır; model her ay son 12 ayla yeniden
+  eğitilir. Sınıflar koşudan önce: "Hedefe ulaştı": günde ortalama ≥ 200 $, en büyük düşüş
+  ≤ 2.500 $ ve günde ≥ 15 işlem. "Kârlı ama hedefin altında": günlük ortalama > 0 ve
+  Newey–West t ≥ 2. Diğer her durum: "Kâr kanıtlanamadı". Koşudan önce hesaplanan çıta: ±%1'de
+  günde 17 işlemle 250 $ için kazanma oranı ≈ %57,5 + maliyet (≈ %59–60) gerekir; başa baş için
+  ≈ %53–55. Modelin önceki testlerde kazanma oranı %48–51.
+universe_file: research/universe/um_top20.csv
+data_start: "2024-12-01"
+dev_end: "2026-03-01"       # BU TESTTE: test döneminin ilk günü
+lockbox_end: "2026-10-01"   # BU TESTTE: test döneminin sonu (hariç)
+data_manifests:
+  - research/data/manifest_r1_1m.csv.gz
+  - research/data/manifest_r1_m1.csv.gz
+  - research/data/manifest_r1_usdc_1m.csv.gz
+  - research/data/manifest_r1_funding.csv.gz
+costs:                      # R1 ile aynı
+  fee_bps: 4.0
+  maker_bps: 0.0
+  slip_top2_bps: 1.5
+  slip_rest_bps: 4.5
+  slip_6_10_bps: 7.5
+  slip_11_20_bps: 12.0
+  stop_slip_mult: 2.0
+grid:
+  config: [B1-1, B1-05]     # 2 ayar, ikisi de raporlanır
+fixed:
+  configs:
+    B1-1: {horizon: 60, q: 0.02, bracket_pct: 0.01}     # ±%1 (pozisyonda ±100 $)
+    B1-05: {horizon: 60, q: 0.02, bracket_pct: 0.005}   # ±%0,5 (pozisyonda ±50 $)
+  capital_usd: 5000         # kullanıcının daha önce verdiği tutar; sonuçlar doğrusal ölçeklenir
+  notional_mult: 2.0        # her işlem 10.000 $ = 1.000 $ teminat × 10 kaldıraç
+  max_positions: 4          # en fazla 4 × 1.000 $ teminat (bakiyenin %80'i)
+  target_usd_day: 200
+  max_drawdown_usd: 2500
+  min_trades_day: 15
+  loss_day_limits_usd: [150, 1000]
+  top: 10
+  entry_valid: 5
+  exit_valid: 5
+  stop_k: 3.0               # kullanılmaz: bracket_pct zarar kesi belirler
+  usdc_first_month: "2024-01"
+  usdc_from: "2024-02"
+  usdc_min_qv_day: 5000000
+  usdc_gap_fill: 60
+  model:
+    train_days: 365
+    calib_days: 30
+    gap_days: 1
+    halflife_days: 90
+    rounds: 300
+    ridge_lambda: 0.001
+    min_train_rows: 20000
+    lgbm:
+      learning_rate: 0.05
+      num_leaves: 31
+      min_data_in_leaf: 2000
+      feature_fraction: 0.8
+      bagging_fraction: 0.8
+      bagging_freq: 1
+      lambda_l2: 10.0
+      max_bin: 63
+      num_threads: 4
+      seed: 0
+notes: >-
+  Bu, kullanıcının tarif ettiği yapının birebir testidir; rakamlar (1.000 $ teminat, 10×, ±%1)
+  kullanıcının örneğinden, seçicilik günde 15–20 işlem hedefinden. Benzer bir test V1'de (sabit
+  5.000 $ pozisyon, günde 17–23 işlem, kâr al yok) günde −4 $ ve −41 $ verdi. Bu bir kez koşulur;
+  sonuç ne olursa olsun bot ayarı ayrı bir karardır.

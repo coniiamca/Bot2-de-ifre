@@ -72,7 +72,27 @@ def test_risk_sizing_follows_the_stop_distance() -> None:
 def test_execution_of_a_setting() -> None:
     from quanta.research.recent_test import execution
 
-    assert execution({"horizon": 60, "q": 0.0025}) == (0.0, "maker", False)
-    assert execution({"tp_k": 1.5, "entry": "market", "zero_cost": True}) == (1.5, "market", True)
+    assert execution({"horizon": 60, "q": 0.0025}) == (0.0, "maker", False, 0.0)
+    assert execution({"tp_k": 1.5, "entry": "market", "zero_cost": True}) == (
+        1.5,
+        "market",
+        True,
+        0.0,
+    )
+    assert execution({"bracket_pct": 0.01})[3] == 0.01
     with pytest.raises(ValueError, match="entry"):
         execution({"entry": "chase"})
+
+
+def test_a_fixed_symmetric_bracket() -> None:
+    from quanta.research.minute import MIN_NS
+    from quanta.research.ml_runner import Settings, _signals
+    from quanta.research.synthetic import make_minute_bars
+
+    b = make_minute_bars(n_days=2, seed=1)
+    st = Settings.of({"bracket_pct": 0.01, "tp_k": 1.5})
+    t = b.t[[100, 200]] + MIN_NS
+    sig = _signals(b, (t, np.array([1, -1], np.int8), np.full(2, 1e-3), 60), st, "maker")
+    px = b.c[[100, 200]]
+    assert np.allclose(sig.sl, [px[0] * 0.99, px[1] * 1.01])
+    assert np.allclose(sig.tp, [px[0] * 1.01, px[1] * 0.99])

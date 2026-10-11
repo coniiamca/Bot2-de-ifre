@@ -112,6 +112,7 @@ class Settings:
     prior_trial_count: int
     spec: dict[str, Any]
     tp_k: float = 0.0  # > 0: maker take-profit at tp_k · σ · √h (0 = none, as in M1)
+    bracket_pct: float = 0.0  # > 0: take-profit AND stop this fraction away (overrides the k's)
 
     @staticmethod
     def of(fixed: dict[str, Any]) -> Settings:
@@ -130,6 +131,7 @@ class Settings:
             prior_trial_count=int(fixed.get("prior_trial_count", 0)),
             spec=dict(fixed.get("model", {})),
             tp_k=float(fixed.get("tp_k", 0.0)),
+            bracket_pct=float(fixed.get("bracket_pct", 0.0)),
         )
 
     def model(self, kind: str, horizon: int) -> ModelSpec:
@@ -258,7 +260,8 @@ def _signals(bars: Bars, order: Order, st: Settings, mode: str) -> Signals:
     """Signals of one symbol: entry at the decision bar's close of ``bars`` (USDT, or the
     USDC contract in the reality check), stop at ``stop_k`` · σ · √h of that price, where σ
     is the forecast's (USDT) volatility; with ``tp_k`` > 0 also a take-profit limit at
-    ``tp_k`` · σ · √h on the other side."""
+    ``tp_k`` · σ · √h on the other side. ``bracket_pct`` > 0: a fixed symmetric bracket, the
+    take-profit and the stop both that fraction of the price away."""
     t_dec, side, sigma, h = order
     bar_t = t_dec - MIN_NS
     i = np.searchsorted(bars.t, bar_t)
@@ -272,6 +275,9 @@ def _signals(bars: Bars, order: Order, st: Settings, mode: str) -> Signals:
         if st.tp_k > 0
         else np.full(i.size, np.nan)
     )
+    if st.bracket_pct > 0:
+        stop = px * (1.0 - side * st.bracket_pct)
+        target = px * (1.0 + side * st.bracket_pct)
     return Signals.build(
         i,
         side,

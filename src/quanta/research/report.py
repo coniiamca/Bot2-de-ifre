@@ -586,6 +586,8 @@ def recent_markdown(doc: dict[str, Any]) -> str:
     for n in names:
         c, p = cf[n], cf[n]["params"]
         tp = f", kâr al {num(float(p['tp_k']), 1)}·σ·√h" if float(p.get("tp_k", 0)) > 0 else ""
+        if float(p.get("bracket_pct", 0)) > 0:
+            tp = f", kâr al ve zarar kes %{float(p['bracket_pct']) * 100:.1f} (eşit)"
         if p.get("entry") == "market":
             tp += ", giriş hemen (piyasa emri gibi)"
         if p.get("zero_cost"):

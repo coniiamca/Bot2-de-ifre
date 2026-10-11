@@ -123,12 +123,18 @@ def dollar_stats(
     }
 
 
-def execution(cfg: dict[str, Any]) -> tuple[float, str, bool]:
-    """(take-profit k, entry mode maker | market, zero fees and slippage) of a setting."""
+def execution(cfg: dict[str, Any]) -> tuple[float, str, bool, float]:
+    """(take-profit k, entry mode maker | market, zero fees and slippage, fixed symmetric
+    bracket) of a setting."""
     mode = str(cfg.get("entry", "maker"))
     if mode not in ("maker", "market"):
         raise ValueError(f"entry must be maker or market, not {mode!r}")
-    return float(cfg.get("tp_k", 0.0)), mode, bool(cfg.get("zero_cost", False))
+    return (
+        float(cfg.get("tp_k", 0.0)),
+        mode,
+        bool(cfg.get("zero_cost", False)),
+        float(cfg.get("bracket_pct", 0.0)),
+    )
 
 
 def outcome(s: dict[str, Any], fixed: dict[str, Any]) -> str:
@@ -189,7 +195,7 @@ def run_recent(
         importance[name] = dict(sorted(fc.importance.items(), key=lambda kv: -kv[1])[:8])
     trades: dict[tuple[str, str], Trades] = {}
     for key in sorted({execution(configs[n]) for n in names}):
-        tp_k, mode, zero = key
+        tp_k, mode, zero, bracket = key
         group = {n: orders[n] for n in names if execution(configs[n]) == key}
         c = costs.but(taker_bps=0.0, maker_bps=0.0, slip_bps=(0.0,) * 4) if zero else costs
         trades |= simulate(
@@ -200,7 +206,7 @@ def run_recent(
             prereg.lockbox_end,
             group,
             {"base": (c, 0, mode)},
-            replace(st, tp_k=tp_k),
+            replace(st, tp_k=tp_k, bracket_pct=bracket),
             usdc=True,
             workers=workers,
         )
