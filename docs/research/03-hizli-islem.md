@@ -160,3 +160,28 @@ başına ≤ 2×, toplam ≤ 5×. Ön-kayıt `research/prereg/G1.yaml`, sonuç [
   zarar kes ve süre çıkışlarının taker ücreti ve kayması (7 ayda ≈ 19.900 $) zararı büyütüyor.
 - Ders: yüksek kazanma oranı kârlılık değildir; küçük kazançlar, seyrek ama büyük kayıplarla
   geri alınıyor. Risk büyütmek yalnız hızlandırır.
+
+## T1: klasik indikatörler (RSI, Bollinger, EMA, MACD, Supertrend; 2026-10)
+
+Kullanıcının isteği: "İndikatörler kullan." En çok kullanılan altı kural, 5 ve 15 dakikalık
+mumlarda, USDC kontratlarında; bütün kurallarda aynı çıkış (kâr al = zarar kes = 1,5·ATR, 12 mum
+süre), her işlem 10.000 $ (1.000 $ teminat × 10). On iki ayar 20 aylık geliştirme döneminde,
+seçilen biri son 7 ayda bir kez. Ön-kayıt `research/prereg/T1.yaml`, sonuç
+[`sonuclar/T1.md`](sonuclar/T1.md).
+
+| Kural | 5 dk: günde işlem / günlük | 15 dk: günde işlem / günlük |
+|---|---|---|
+| RSI 30/70 | 47 / −404 $ | 16 / −146 $ |
+| Bollinger (20, 2) | 105 / −926 $ | 35 / −332 $ |
+| EMA 9/21 kesişimi | 83 / −669 $ | 27 / −175 $ |
+| MACD kesişimi | 114 / −887 $ | 37 / −270 $ |
+| Supertrend (10, 3) | 58 / −487 $ | 17 / −136 $ |
+| EMA200 + RSI geri çekilme | 12 / −69 $ | 4 / −52 $ |
+
+(Geliştirme dönemi 2024-07 … 2026-02, 5.000 $ hesap.)
+
+**Sonuç: KÂR KANITLANAMADI.** On iki ayarın hepsi zararda; kazanan işlem oranı hepsinde %47–50,
+yani yön isabeti yazı-tura. En az kaybettiren (EMA200 + RSI, 15 dk) test döneminde günde −4 $,
+günde 3,9 işlem, en büyük düşüş −3.533 $ (%−56). Günde 15–20 işlem yapan ayarlar (RSI 15 dk,
+Supertrend 15 dk) günde ≈ −140 $ kaybettiriyor: işlem başı ≈ 4–5 $ maliyet (zarar kes taker
+ücreti + kayma) ve sıfıra yakın isabet.
