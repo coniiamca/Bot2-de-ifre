@@ -123,6 +123,14 @@ def dollar_stats(
     }
 
 
+def execution(cfg: dict[str, Any]) -> tuple[float, str, bool]:
+    """(take-profit k, entry mode maker | market, zero fees and slippage) of a setting."""
+    mode = str(cfg.get("entry", "maker"))
+    if mode not in ("maker", "market"):
+        raise ValueError(f"entry must be maker or market, not {mode!r}")
+    return float(cfg.get("tp_k", 0.0)), mode, bool(cfg.get("zero_cost", False))
+
+
 def outcome(s: dict[str, Any], fixed: dict[str, Any]) -> str:
     target = float(fixed.get("target_usd_day", 200.0))
     max_dd = float(fixed.get("max_drawdown_usd", 2500.0))
@@ -180,8 +188,10 @@ def run_recent(
         orders[name] = split_orders(frame, rows, side, h)
         importance[name] = dict(sorted(fc.importance.items(), key=lambda kv: -kv[1])[:8])
     trades: dict[tuple[str, str], Trades] = {}
-    for tp_k in sorted({float(configs[n].get("tp_k", 0.0)) for n in names}):
-        group = {n: orders[n] for n in names if float(configs[n].get("tp_k", 0.0)) == tp_k}
+    for key in sorted({execution(configs[n]) for n in names}):
+        tp_k, mode, zero = key
+        group = {n: orders[n] for n in names if execution(configs[n]) == key}
+        c = costs.but(taker_bps=0.0, maker_bps=0.0, slip_bps=(0.0,) * 4) if zero else costs
         trades |= simulate(
             root,
             universe,
@@ -189,7 +199,7 @@ def run_recent(
             prereg.dev_end,
             prereg.lockbox_end,
             group,
-            {"base": (costs, 0, "maker")},
+            {"base": (c, 0, mode)},
             replace(st, tp_k=tp_k),
             usdc=True,
             workers=workers,

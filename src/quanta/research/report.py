@@ -586,6 +586,10 @@ def recent_markdown(doc: dict[str, Any]) -> str:
     for n in names:
         c, p = cf[n], cf[n]["params"]
         tp = f", kâr al {num(float(p['tp_k']), 1)}·σ·√h" if float(p.get("tp_k", 0)) > 0 else ""
+        if p.get("entry") == "market":
+            tp += ", giriş hemen (piyasa emri gibi)"
+        if p.get("zero_cost"):
+            tp += ", komisyon ve kayma SIFIR"
         q_txt = pct(float(p["q"]), 2)
         lines.append(
             f"- **{n}** ({p['horizon']} dk tutma, tahminlerin en uç {q_txt}'i{tp}): "

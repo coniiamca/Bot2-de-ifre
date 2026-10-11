@@ -67,3 +67,12 @@ def test_risk_sizing_follows_the_stop_distance() -> None:
     # risk 0.5 % with a 2 % stop (the helper's) → a quarter of the capital, under the 1× cap
     _, w = combine(trades(1, 0.01), pf)
     assert w[0] == pytest.approx(0.25)
+
+
+def test_execution_of_a_setting() -> None:
+    from quanta.research.recent_test import execution
+
+    assert execution({"horizon": 60, "q": 0.0025}) == (0.0, "maker", False)
+    assert execution({"tp_k": 1.5, "entry": "market", "zero_cost": True}) == (1.5, "market", True)
+    with pytest.raises(ValueError, match="entry"):
+        execution({"entry": "chase"})

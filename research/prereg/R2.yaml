@@ -1,0 +1,89 @@
+# Ön-kayıt: sonuçlar görülmeden önce sabitlenir. Değiştirmek yeni bir sürüm demektir
+# (version artar) ve her deneme deneme defterine (research/ledger) sayılır.
+id: R2
+version: 1
+title: "Limit emri piyasa emri gibi kullanmak: hep dolan giriş, en iyi halinde ücretsiz"
+strategy: ml_recent
+mechanism: >-
+  Kullanıcının önerisi (2026-10-11): "Limit emirde komisyon sıfır; milisaniyeler içinde en yakın
+  fiyata limit emir koyup (kovalayıp) piyasa emri gibi çalışsın. Günde 300 $ kâr hedefi." Botun
+  bugünkü girişi en iyi alışa yalnız-maker limittir; 5 dakikada dolmazsa işlem yok (R1'de
+  sinyallerin bir kısmı böyle kaçtı). Kovalayan limit emir en iyi halinde iki şeyi birden verir:
+  her sinyal hemen dolar (piyasa emri gibi) ve komisyon ödenmez. Gerçekte kovalayan maker emir
+  ancak fiyat aleyhe dönünce dolar ve evden bağlantıyla (Türkiye → Tokyo ≈ 0,2–0,3 sn) milisaniye
+  yarışını kazanamaz. Bu test o gerçekçi kayıpları bilerek yok sayar ve fikrin en iyimser üst
+  sınırını ölçer. Ayar R1-60-TP (botun şimdiki ayarı) ile aynıdır, yalnız yürütme değişir.
+falsification: >-
+  Test R1 ile aynı dönemde (2026-03 … 2026-09) ve aynı model tahminleriyle bir kez yapılır.
+  İki ayar: (1) R2-PIYASA: giriş sinyalden sonraki dakikanın açılışında piyasa emriyle (hep dolar),
+  gerçek maliyetler (taker %0,04 + kayma); (2) R2-IDEAL: aynı giriş ama komisyon ve kayma her
+  bacakta SIFIR (zarar kes ve zorunlu çıkış dahil) — kullanıcının fikrinin kusursuz uygulanmış
+  hali, ulaşılamaz üst sınır. Sınıflar koşudan önce: "Hedefe ulaştı": günde ortalama ≥ 300 $
+  (kullanıcının hedefi), en büyük düşüş ≤ 750 $, günde ≥ 1 işlem. "Kârlı ama hedefin altında":
+  günlük ortalama > 0 ve Newey–West t ≥ 2. Diğer her durum: "Kâr kanıtlanamadı". R2-IDEAL bile
+  hedefin çok altında kalırsa, hedefe yürütme iyileştirmesiyle ulaşılamayacağı gösterilmiş olur.
+universe_file: research/universe/um_top20.csv
+data_start: "2024-12-01"
+dev_end: "2026-03-01"       # BU TESTTE: test döneminin ilk günü (R1 ile aynı)
+lockbox_end: "2026-10-01"   # BU TESTTE: test döneminin sonu (hariç)
+data_manifests:
+  - research/data/manifest_r1_1m.csv.gz
+  - research/data/manifest_r1_m1.csv.gz
+  - research/data/manifest_r1_usdc_1m.csv.gz
+  - research/data/manifest_r1_funding.csv.gz
+costs:                      # R1 ile aynı (R2-IDEAL bunları sıfırlar)
+  fee_bps: 4.0
+  maker_bps: 0.0
+  slip_top2_bps: 1.5
+  slip_rest_bps: 4.5
+  slip_6_10_bps: 7.5
+  slip_11_20_bps: 12.0
+  stop_slip_mult: 2.0
+grid:
+  config: [R2-PIYASA, R2-IDEAL]   # 2 ayar, ikisi de raporlanır
+fixed:
+  configs:
+    R2-PIYASA: {horizon: 60, q: 0.0025, tp_k: 1.5, entry: market}
+    R2-IDEAL: {horizon: 60, q: 0.0025, tp_k: 1.5, entry: market, zero_cost: true}
+  capital_usd: 5000
+  risk_per_trade: 0.005
+  cap_symbol: 1.0
+  cap_gross: 1.5
+  max_positions: 3
+  target_usd_day: 300       # kullanıcının hedefi
+  max_drawdown_usd: 750
+  min_trades_day: 1
+  loss_day_limits_usd: [150, 1000]
+  top: 10
+  entry_valid: 5
+  exit_valid: 5
+  stop_k: 3.0
+  usdc_first_month: "2024-01"
+  usdc_from: "2024-02"
+  usdc_min_qv_day: 5000000
+  usdc_gap_fill: 60
+  model:
+    train_days: 365
+    calib_days: 30
+    gap_days: 1
+    halflife_days: 90
+    rounds: 300
+    ridge_lambda: 0.001
+    min_train_rows: 20000
+    lgbm:
+      learning_rate: 0.05
+      num_leaves: 31
+      min_data_in_leaf: 2000
+      feature_fraction: 0.8
+      bagging_fraction: 0.8
+      bagging_freq: 1
+      lambda_l2: 10.0
+      max_bin: 63
+      num_threads: 4
+      seed: 0
+notes: >-
+  Bilinen önceki kanıt (koşudan önce yazıldı): M1'in 2021–2026 duyarlılığında piyasa emriyle giriş
+  yıllık Sharpe'ı 2,2'den 0,98'e düşürdü; R1'de 7 ayda ödenen komisyon ≈ 42 $, kayma ≈ 66–73 $.
+  Dolar sonuçları pozisyon büyüklüğüyle doğrusal ölçeklenir: rapordaki kâr da düşüş de işlem başı
+  riskle aynı oranda büyür. Bu bir kez koşulur; sonuç ne olursa olsun bot ayarı değişmez, ayrı
+  bir karar olur.
