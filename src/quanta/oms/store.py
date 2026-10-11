@@ -2,22 +2,48 @@
 small key/value state (kill switch, daily equity). WAL mode with ``synchronous=FULL``: a row
 is on disk before the call returns, so an intent is recorded *before* its order is sent.
 
-One writer per database, enforced with an exclusive ``flock`` on ``<db>.lock``; every start
-increments an epoch that is part of every clientOrderId (ids never repeat across restarts).
+One writer per database, enforced with an exclusive lock on ``<db>.lock`` (``flock``; on
+Windows ``msvcrt.locking``); every start increments an epoch that is part of every
+clientOrderId (ids never repeat across restarts).
 """
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import sqlite3
+import sys
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 from quanta.oms.state import OPEN, TERMINAL, OrderStatus, advance
+
+
+def _lock(fh: IO[str]) -> None:
+    """Exclusive, non-blocking; raises OSError when another process holds it."""
+    if sys.platform == "win32":
+        import msvcrt
+
+        msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _unlock(fh: IO[str]) -> None:
+    if sys.platform == "win32":
+        import msvcrt
+
+        fh.seek(0)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(fh, fcntl.LOCK_UN)
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -131,7 +157,7 @@ class Store:
         self.path = path
         self._lock_fh = open(f"{path}.lock", "w")  # noqa: SIM115 — held for the lifetime
         try:
-            fcntl.flock(self._lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _lock(self._lock_fh)
         except OSError as exc:
             self._lock_fh.close()
             raise WriterLockError(f"another trader already uses {path}") from exc
@@ -146,7 +172,7 @@ class Store:
 
     def close(self) -> None:
         self.db.close()
-        fcntl.flock(self._lock_fh, fcntl.LOCK_UN)
+        _unlock(self._lock_fh)
         self._lock_fh.close()
 
     # -- key/value -----------------------------------------------------------------------

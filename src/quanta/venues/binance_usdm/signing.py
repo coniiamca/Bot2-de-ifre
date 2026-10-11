@@ -76,7 +76,9 @@ def _fmt(v: Any) -> str:
 def _read_secret(path: Path) -> str:
     if not path.exists():
         raise ConfigError(f"key file {path} does not exist")
-    mode = path.stat().st_mode & 0o077
+    # Windows has no POSIX permission bits (every file reads as 0o666): the user's profile
+    # folder is the protection there
+    mode = path.stat().st_mode & 0o077 if os.name != "nt" else 0
     if mode:
         raise ConfigError(f"key file {path} is readable by others (chmod 400 it)")
     value = path.read_text().strip()

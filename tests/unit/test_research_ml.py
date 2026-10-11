@@ -113,3 +113,21 @@ def test_entries_follow_the_month_thresholds_and_the_tradable_rows() -> None:
     assert np.all(fc.pred[idx][april & (side < 0)] < lo)
     share = idx.size / np.isfinite(fc.pred[tradable]).sum()
     assert 0.03 < share < 0.2  # about 2 × 5 % of the rows
+
+
+def test_fit_month_keeps_the_walk_forward_model() -> None:
+    from quanta.research.ml import fit_month
+
+    f = frame(3)
+    rows = np.ones(len(f), dtype=bool)
+    fc = walk_forward(f, H, spec("lgbm"), ["2021-05"], rows, (0.01,))
+    fm = fit_month(f, H, spec("lgbm"), "2021-05", rows, (0.01,))
+    assert fm.thresholds[0.01] == pytest.approx(fc.thresholds["2021-05"][0.01])
+    import lightgbm as lgb
+
+    booster = lgb.Booster(model_str=fm.model_text)
+    te = np.flatnonzero(f.t >= month_start("2021-05"))
+    p = np.asarray(booster.predict(f.x[te]), dtype=np.float32)
+    assert np.allclose(p, fc.pred[te], atol=1e-6)
+    with pytest.raises(ValueError, match="LightGBM"):
+        fit_month(f, H, spec("ridge"), "2021-05", rows, (0.01,))

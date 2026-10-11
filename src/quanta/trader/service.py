@@ -284,8 +284,7 @@ class Trader:
             raise RuntimeError(f"symbols not listed: {missing}")
         await self.rest.set_one_way()
         for sym in self.cfg.symbols:
-            await self.rest.set_isolated(sym)
-            await self.rest.set_leverage(sym, self.cfg.leverage)
+            await self.configure_symbol(sym)
         await self.refresh_account()
         await self.oms.resolve_unknown()
         await self.reconcile()
@@ -293,9 +292,18 @@ class Trader:
         self.ready_ns = self.clock.now_ns()
         self.store.journal(self.ready_ns, "ready", level=self.kill.level.name)
 
+    def equity_from(self, acct: dict[str, Any]) -> float:
+        """Account equity used by the limits (the bot overrides this for USDC margin)."""
+        return float(acct.get("totalMarginBalance") or acct.get("totalWalletBalance") or 0)
+
+    async def configure_symbol(self, symbol: str) -> None:
+        """Account settings per symbol before trading (isolated margin, the leverage)."""
+        await self.rest.set_isolated(symbol)
+        await self.rest.set_leverage(symbol, self.cfg.leverage)
+
     async def refresh_account(self) -> None:
         acct = await self.rest.account()
-        self.equity = float(acct.get("totalMarginBalance") or acct.get("totalWalletBalance") or 0)
+        self.equity = self.equity_from(acct)
         level, why = self.daily.update(self.clock.now_ns(), self.equity)
         if level is Level.FLATTENING and self.kill.sticky < Level.HALTED:
             await self.flatten(why, "daily_loss")

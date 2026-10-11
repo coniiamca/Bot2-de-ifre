@@ -106,7 +106,8 @@ def check(intent: Intent, ctx: Context, mkt: MarketView, lim: RiskLimits) -> str
     ref = float(intent.price or intent.trigger or 0)
     if ref:
         dev = abs(ref / mkt.mark - 1.0)
-        band = lim.price_band * (5 if intent.algo else 1)  # stops sit further away
+        # stops and reduce-only targets sit further away from the mark than entries
+        band = lim.price_band * (5 if intent.algo or intent.reduce_only else 1)
         if dev > band:
             return f"beklenmeyen fiyat: {ref} mark'tan %{dev * 100:.2f} uzak"
     if opening and intent.order_type in ("MARKET", "LIMIT"):

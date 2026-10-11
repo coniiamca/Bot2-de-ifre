@@ -205,3 +205,57 @@ def entries(
         side[sel & (fc.pred < lo)] = -1
     rows = np.flatnonzero(side != 0).astype(np.int64)
     return rows, side[rows]
+
+
+@dataclass(slots=True)
+class FittedMonth:
+    """One month's LightGBM model for live use (``quanta bot egit``): the same slices,
+    weights and thresholds as :func:`walk_forward` for that month."""
+
+    model_text: str  # LightGBM model as text (booster.model_to_string())
+    thresholds: dict[float, tuple[float, float]]  # q → (low, high)
+    importance: dict[str, float]
+    train_rows: int
+    calib_rows: int
+    slices_ns: tuple[int, int, int, int, int, int]
+
+
+def fit_month(
+    frame: Frame,
+    horizon: int,
+    spec: ModelSpec,
+    month: str,
+    train_rows: NDArray[np.bool_],
+    qs: tuple[float, ...],
+) -> FittedMonth:
+    """Fit the model that :func:`walk_forward` would use to trade ``month`` and keep it."""
+    import lightgbm as lgb
+
+    if spec.kind != "lgbm":
+        raise ValueError("only LightGBM models are kept for live use")
+    if spec.label_span_min * MIN_NS >= spec.gap_days * DAY_NS:
+        raise ValueError("the gap between slices must exceed the label span")
+    y_all = frame.y[horizon]
+    usable = train_rows & np.isfinite(y_all)
+    t = frame.t
+    r0, r1, c0, c1, s0, s1 = slices(month, spec)
+    tr = np.flatnonzero(usable & (t >= r0) & (t < r1))
+    ca = np.flatnonzero(usable & (t >= c0) & (t < c1))
+    if tr.size < spec.min_train_rows or ca.size == 0:
+        raise ValueError(
+            f"not enough data for {month}: {tr.size} training and {ca.size} calibration rows"
+        )
+    w = 0.5 ** ((r1 - t[tr]) / (spec.halflife_days * DAY_NS))
+    ds = lgb.Dataset(frame.x[tr], label=y_all[tr], weight=w, free_raw_data=True)
+    booster = lgb.train(spec.params, ds, num_boost_round=spec.rounds)
+    p_cal = np.asarray(booster.predict(frame.x[ca]), dtype=np.float32)
+    gain = np.asarray(booster.feature_importance("gain"), dtype=np.float64)
+    gain = gain / max(float(gain.sum()), 1e-12)
+    return FittedMonth(
+        booster.model_to_string(),
+        {q: (float(np.quantile(p_cal, q)), float(np.quantile(p_cal, 1.0 - q))) for q in qs},
+        {frame.names[k]: float(gain[k]) for k in range(len(frame.names))},
+        int(tr.size),
+        int(ca.size),
+        (r0, r1, c0, c1, s0, s1),
+    )

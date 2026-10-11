@@ -255,19 +255,32 @@ class BinanceTradeRest:
     async def position_risk(self, symbol: str | None = None) -> Any:
         return await self.request("GET", "/fapi/v3/positionRisk", {"symbol": symbol})
 
+    async def commission_rate(self, symbol: str) -> Any:
+        """This account's maker/taker fee for ``symbol`` (fractions, e.g. "0.000400")."""
+        return await self.request("GET", "/fapi/v1/commissionRate", {"symbol": symbol}, weight=20)
+
     async def set_leverage(self, symbol: str, leverage: int) -> Any:
         return await self.request(
             "POST", "/fapi/v1/leverage", {"symbol": symbol, "leverage": leverage}
         )
 
     async def set_isolated(self, symbol: str) -> None:
+        await self.set_margin_type(symbol, "ISOLATED")
+
+    async def set_margin_type(self, symbol: str, margin_type: str) -> None:
+        """ISOLATED | CROSSED (already set is fine)."""
         try:
             await self.request(
-                "POST", "/fapi/v1/marginType", {"symbol": symbol, "marginType": "ISOLATED"}
+                "POST", "/fapi/v1/marginType", {"symbol": symbol, "marginType": margin_type}
             )
         except TradeError as e:
             if e.code != MARGIN_ALREADY_SET:
                 raise
+
+    async def multi_assets_mode(self) -> bool:
+        """True when the account is in Multi-Assets mode (cross margin only)."""
+        data = await self.request("GET", "/fapi/v1/multiAssetsMargin", weight=30)
+        return bool(data.get("multiAssetsMargin"))
 
     async def set_one_way(self) -> None:
         try:

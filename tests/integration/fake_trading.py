@@ -112,6 +112,10 @@ class FakeTrading:
     margin_type: dict[str, str] = field(default_factory=dict)
     dual_side: bool = True  # the trader must switch it to one-way
     streams_paused: bool = False
+    quote: str = "USDT"  # the wallet asset of the account response
+    multi_assets: bool = False
+    maker_fee: str = "0.000200"
+    taker_fee: str = "0.000500"
     port: int = 0
 
     def __post_init__(self) -> None:
@@ -144,6 +148,8 @@ class FakeTrading:
         r.add_post("/fapi/v1/leverage", self._leverage)
         r.add_post("/fapi/v1/marginType", self._margin_type)
         r.add_post("/fapi/v1/positionSide/dual", self._dual)
+        r.add_get("/fapi/v1/multiAssetsMargin", self._multi_assets)
+        r.add_get("/fapi/v1/commissionRate", self._commission)
         r.add_route("*", "/fapi/v1/listenKey", self._listen_key)
         r.add_get("/private/ws", self._private_ws)
         r.add_get("/public/stream", self._public_ws)
@@ -744,7 +750,7 @@ class FakeTrading:
                 "availableBalance": _s(self.balance),
                 "assets": [
                     {
-                        "asset": "USDT",
+                        "asset": self.quote,
                         "walletBalance": _s(self.balance),
                         "unrealizedProfit": _s(upnl),
                         "marginBalance": _s(self.balance + upnl),
@@ -779,6 +785,20 @@ class FakeTrading:
                 for s in syms
                 if self.positions[s].amount
             ]
+        )
+
+    async def _multi_assets(self, request: web.Request) -> web.Response:
+        await self._params(request)
+        return web.json_response({"multiAssetsMargin": self.multi_assets})
+
+    async def _commission(self, request: web.Request) -> web.Response:
+        p = await self._params(request)
+        return web.json_response(
+            {
+                "symbol": p["symbol"],
+                "makerCommissionRate": self.maker_fee,
+                "takerCommissionRate": self.taker_fee,
+            }
         )
 
     async def _leverage(self, request: web.Request) -> web.Response:
