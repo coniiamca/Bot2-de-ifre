@@ -705,6 +705,10 @@ def research_run(
         from quanta.research.scalper import run_scalper, scalper_markdown
 
         runner, render = run_scalper, scalper_markdown
+    elif prereg.strategy == "indicators":
+        from quanta.research.indicators import indicators_markdown, run_indicators
+
+        runner, render = run_indicators, indicators_markdown
     elif prereg.strategy in STRATEGIES:
         runner, render = run_intraday, intraday_markdown
     elif prereg.symbols:

@@ -30,7 +30,7 @@ from __future__ import annotations
 import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -46,12 +46,12 @@ from quanta.research.intraday import (
     ewma,
     run_trades,
 )
-from quanta.research.intraday_runner import _stats, costs_of, portfolio_of
+from quanta.research.intraday_runner import _stats, costs_of
 from quanta.research.ledger import Ledger, trial_id
 from quanta.research.minute import Bars, fill_gaps, load_bars
 from quanta.research.ml_runner import _pool, _usdc_volume_job, data_sha
 from quanta.research.prereg import Prereg, git_state
-from quanta.research.recent_test import dollar_stats, outcome
+from quanta.research.recent_test import Sizing, dollar_stats, outcome
 from quanta.research.report import OUTCOME_TEXT, num, pct, usd
 from quanta.research.runner import _day, _iso
 from quanta.research.universe import month_range
@@ -80,6 +80,21 @@ class ScalperParams:
         merged = {**fixed.get("params", {}), **cfg}
         names = ScalperParams.__dataclass_fields__
         return ScalperParams(**{k: v for k, v in merged.items() if k in names})
+
+    def signals(self, bars: Bars) -> Signals:
+        return scalper_signals(bars, self)
+
+    def label(self) -> str:
+        quiet = "durgun filtre" if self.quiet else "filtre yok"
+        return f"a {num(self.a, 1)}, kâr al {num(self.tp, 1)}·d, {quiet}"
+
+
+class Setting(Protocol):
+    """A strategy setting the selection run can simulate and describe."""
+
+    def signals(self, bars: Bars) -> Signals: ...
+
+    def label(self) -> str: ...
 
 
 def _shift(month: str, n: int) -> str:
@@ -190,7 +205,7 @@ def _sim_job(args: tuple[Any, ...]) -> tuple[str, dict[str, Trades]]:
     bars = fill_gaps(bars, 60)
     out = {}
     for name, p in settings.items():
-        out[name] = run_trades(bars, scalper_signals(bars, p), costs)
+        out[name] = run_trades(bars, p.signals(bars), costs)
     return symbol, out
 
 
@@ -199,7 +214,7 @@ def simulate(
     rows: list[tuple[str, int, str]],
     start: str,
     end: str,
-    settings: dict[str, ScalperParams],
+    settings: dict[str, Setting],
     costs: Any,
     workers: int,
 ) -> tuple[dict[str, Trades], list[str]]:
@@ -249,15 +264,36 @@ def run_scalper(
     exploratory: bool = False,
     workers: int | None = None,
 ) -> dict[str, Any]:
-    """``data_start`` … ``dev_end``: development (every setting, one chosen by the fixed rule);
-    ``dev_end`` … ``lockbox_end``: the chosen setting once. ``final`` has no meaning here."""
+    configs: dict[str, dict[str, Any]] = prereg.fixed["configs"]
+    settings: dict[str, Setting] = {
+        str(n): ScalperParams.of(configs[str(n)], prereg.fixed) for n in prereg.grid["config"]
+    }
+    return run_selection(
+        prereg, prereg_sha, root, repo, settings, exploratory=exploratory, workers=workers
+    )
+
+
+def run_selection(
+    prereg: Prereg,
+    prereg_sha: str,
+    root: Path,
+    repo: Path,
+    settings: dict[str, Setting],
+    *,
+    exploratory: bool = False,
+    workers: int | None = None,
+) -> dict[str, Any]:
+    """``data_start`` … ``dev_end``: development (every setting, one chosen by the fixed rule:
+    the best annual Sharpe among those with ≥ ``min_trades``); ``dev_end`` … ``lockbox_end``:
+    the chosen setting once. Sizing: fixed size (``notional_mult``) or risk-based
+    (``risk_per_trade``), as the recent test."""
     fx = prereg.fixed
     wk = workers if workers is not None else 4
     configs: dict[str, dict[str, Any]] = fx["configs"]
-    names = [str(c) for c in prereg.grid["config"]]
-    settings = {n: ScalperParams.of(configs[n], fx) for n in names}
+    names = list(settings)
     costs = costs_of(prereg)
-    pf = portfolio_of(fx)
+    sizing = Sizing.of(fx)
+    pf = sizing.portfolio(fx)
     capital = float(fx.get("capital_usd", 5000.0))
     limits = [float(x) for x in fx.get("loss_day_limits_usd", [150, 1000])]
     min_trades = int(fx.get("min_trades", 300))
@@ -287,7 +323,8 @@ def run_scalper(
     dev: dict[str, Any] = {}
     for n in names:
         s, daily = _evaluate(trades[n], pf, d0, d1, capital, limits, syms)
-        s["params"] = asdict(settings[n])
+        s["params"] = asdict(settings[n])  # type: ignore[call-overload]
+        s["label"] = settings[n].label()
         dev[n] = s
         period = f"{dev0}..{dev1}"
         ledger.record_trial(
@@ -298,7 +335,7 @@ def run_scalper(
             daily,
             {"sharpe": round(s["sharpe"], 3), "trades": int(s["engine"].get("trades", 0))},
         )
-        log.info("scalper_dev_done", config=n, sharpe=round(s["sharpe"], 2))
+        log.info("selection_dev_done", config=n, sharpe=round(s["sharpe"], 2))
     ranked = [n for n in names if dev[n]["engine"].get("trades", 0) >= min_trades]
     chosen = max(ranked, key=lambda n: dev[n]["sharpe"]) if ranked else None
     test: dict[str, Any] | None = None
@@ -309,7 +346,8 @@ def run_scalper(
         )
         t0, t1 = _day(dev1), _day(test1)
         test, daily = _evaluate(t_trades[chosen], pf, t0, t1, capital, limits, t_syms)
-        test["params"] = asdict(settings[chosen])
+        test["params"] = asdict(settings[chosen])  # type: ignore[call-overload]
+        test["label"] = settings[chosen].label()
         test["outcome"] = outcome(test, fx)
         period = f"{dev1}..{test1}"
         ledger.record_trial(
@@ -337,6 +375,11 @@ def run_scalper(
         "test": test,
         "capital_usd": capital,
         "portfolio": asdict(pf),
+        "sizing": {
+            "trade_usd": capital * sizing.notional_mult,
+            "max_positions": sizing.max_positions,
+            "risk_per_trade": sizing.risk_per_trade,
+        },
         "targets": {
             "usd_day": float(fx.get("target_usd_day", 10.0)),
             "max_drawdown_usd": float(fx.get("max_drawdown_usd", 750.0)),
@@ -347,17 +390,49 @@ def run_scalper(
     }
 
 
+SCALPER_METHOD = [
+    "- Her 5 dakikada, pozisyonu olmayan her uygun USDC kontratında (önceki ay günde ≥ 20 "
+    "milyon $ işlem, en az bir tam aydır listeli, en hacimli 10): kapanışın d altına alış, d "
+    "üstüne satış yalnız-maker limit emir, d = a·σ·√15. 5 dk bekler; fiyat ötesine geçen ilk "
+    "taraf dolar, öbürü iptal. Aynı mumda ikisi birden geçilirse mumun ters gittiği taraf "
+    "sayılır (karamsar).",
+    "- Kâr al: maker limit, fiyat ötesine geçince dolar, giriş mumunda sayılmaz. Zarar kes: "
+    "stop-market, taker %0,04 + iki kat kayma; aynı mumda ikisi de varsa zarar kes sayılır. "
+    "Süre dolunca maker limit, 5 dk'da dolmazsa piyasa emri. Funding gerçek oranlarla.",
+    "- Durgun piyasa filtresi: son 60 dakikanın verimlilik oranı < 0,3 (yön yok) ve oynaklığı "
+    "normalin 1,5 katından az.",
+]
+
+
 def scalper_markdown(doc: dict[str, Any]) -> str:
+    return selection_markdown(doc, SCALPER_METHOD)
+
+
+def _label(s: dict[str, Any]) -> str:
+    if "label" in s:
+        return str(s["label"])
+    p = s["params"]  # G1 documents (written before labels existed)
+    quiet = "durgun filtre" if p.get("quiet") else "filtre yok"
+    return f"a {num(p['a'], 1)}, kâr al {num(p['tp'], 1)}·d, {quiet}"
+
+
+def selection_markdown(doc: dict[str, Any], method: list[str]) -> str:
     pf, tg = doc["portfolio"], doc["targets"]
+    sz = doc.get("sizing") or {}
+    if sz.get("risk_per_trade") or not sz:
+        size_text = (
+            f"işlem başı risk %{pf['risk_per_trade'] * 100:.1f}, coin başına ≤ "
+            f"{num(pf['cap_symbol'], 1)}×, toplam ≤ {num(pf['cap_gross'], 1)}×"
+        )
+    else:
+        size_text = f"her işlem {usd(sz['trade_usd'])}"
     lines = [
         f"# {doc['hypothesis']} — {doc['title']}",
         "",
         f"Geliştirme {doc['dev_period'].replace('..', ' – ')} · test "
-        f"{doc['test_period'].replace('..', ' – ')} · sermaye {usd(doc['capital_usd'])}, işlem "
-        f"başı risk %{pf['risk_per_trade'] * 100:.1f}, coin başına ≤ {num(pf['cap_symbol'], 1)}×, "
-        f"toplam ≤ {num(pf['cap_gross'], 1)}×, en fazla {pf['max_positions']} pozisyon · gerçek "
-        f"USDC mumları · kod `{doc['commit'][:7]}`"
-        + (" · **keşif koşusu (sayılmaz)**" if doc["exploratory"] else ""),
+        f"{doc['test_period'].replace('..', ' – ')} · sermaye {usd(doc['capital_usd'])}, "
+        f"{size_text}, en fazla {pf['max_positions']} pozisyon · gerçek USDC mumları · kod "
+        f"`{doc['commit'][:7]}`" + (" · **keşif koşusu (sayılmaz)**" if doc["exploratory"] else ""),
         "",
         f"Hedef (ön-kayıtlı): günde ortalama ≥ {usd(tg['usd_day'])}, en büyük düşüş ≤ "
         f"{usd(tg['max_drawdown_usd'])}, günde ≥ {tg['trades_day']:.0f} işlem.",
@@ -370,26 +445,23 @@ def scalper_markdown(doc: dict[str, Any]) -> str:
         lines.append("Geliştirme döneminde yeterli işlem yapan ayar yok: **SONUÇSUZ**.")
     else:
         lines.append(
-            f"Seçilen ayar **{doc['chosen']}** test döneminde: **{OUTCOME_TEXT[t['outcome']]}** — "
-            f"günde ortalama {usd(t['avg_day_usd'])}, günde {num(t['trades_per_day'], 1)} işlem, "
-            f"kazanan işlem {pct(t['engine'].get('win_rate'), 0)}, en büyük düşüş "
-            f"{usd(t['max_drawdown_usd'])}."
+            f"Seçilen ayar **{doc['chosen']}** ({_label(t)}) test döneminde: "
+            f"**{OUTCOME_TEXT[t['outcome']]}** — günde ortalama {usd(t['avg_day_usd'])}, günde "
+            f"{num(t['trades_per_day'], 1)} işlem, kazanan işlem "
+            f"{pct(t['engine'].get('win_rate'), 0)}, en büyük düşüş {usd(t['max_drawdown_usd'])}."
         )
     lines += [
         "",
         "## Geliştirme dönemi (bütün ayarlar)",
         "",
-        "| Ayar | a | kâr al | filtre | Yıllık Sharpe | Günlük ort. | En büyük düşüş | Günde işlem"
-        " | Kazanan |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Ayar | Kural | Yıllık Sharpe | Günlük ort. | En büyük düşüş | Günde işlem | Kazanan |",
+        "|---|---|---|---|---|---|---|",
     ]
     for n, s in doc["dev"].items():
-        p = s["params"]
         mark = " ←" if n == doc["chosen"] else ""
         lines.append(
-            f"| {n}{mark} | {num(p['a'], 1)} | {num(p['tp'], 1)}·d | "
-            f"{'durgun' if p['quiet'] else 'yok'} | {num(s['sharpe'])} | {usd(s['avg_day_usd'])}"
-            f" | {usd(s['max_drawdown_usd'])} | {num(s['trades_per_day'], 1)} | "
+            f"| {n}{mark} | {_label(s)} | {num(s['sharpe'])} | {usd(s['avg_day_usd'])} | "
+            f"{usd(s['max_drawdown_usd'])} | {num(s['trades_per_day'], 1)} | "
             f"{pct(s['engine'].get('win_rate'), 0)} |"
         )
     if t is not None:
@@ -424,16 +496,7 @@ def scalper_markdown(doc: dict[str, Any]) -> str:
         "",
         "## Yöntem",
         "",
-        "- Her 5 dakikada, pozisyonu olmayan her uygun USDC kontratında (önceki ay günde ≥ 20 "
-        "milyon $ işlem, en az bir tam aydır listeli, en hacimli 10): kapanışın d altına alış, d "
-        "üstüne satış yalnız-maker limit emir, d = a·σ·√15. 5 dk bekler; fiyat ötesine geçen ilk "
-        "taraf dolar, öbürü iptal. Aynı mumda ikisi birden geçilirse mumun ters gittiği taraf "
-        "sayılır (karamsar).",
-        "- Kâr al: maker limit, fiyat ötesine geçince dolar, giriş mumunda sayılmaz. Zarar kes: "
-        "stop-market, taker %0,04 + iki kat kayma; aynı mumda ikisi de varsa zarar kes sayılır. "
-        "Süre dolunca maker limit, 5 dk'da dolmazsa piyasa emri. Funding gerçek oranlarla.",
-        "- Durgun piyasa filtresi: son 60 dakikanın verimlilik oranı < 0,3 (yön yok) ve oynaklığı "
-        "normalin 1,5 katından az.",
+        *method,
         "- Seçim kuralı koşudan önce yazıldı: geliştirme döneminde en az 300 işlem yapanlar "
         "arasında en yüksek yıllık Sharpe; test dönemi yalnız o ayarla bir kez koşuldu.",
         f"- Ön-kayıt sha256 `{doc['prereg_sha'][:12]}`, veri `{doc['data_sha']}`, deneme "

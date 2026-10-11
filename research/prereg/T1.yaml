@@ -1,0 +1,74 @@
+# Ön-kayıt: sonuçlar görülmeden önce sabitlenir. Değiştirmek yeni bir sürüm demektir
+# (version artar) ve her deneme deneme defterine (research/ledger) sayılır.
+id: T1
+version: 1
+title: "Klasik indikatörler: RSI, Bollinger, EMA, MACD, Supertrend — USDC, 5 / 15 dk"
+strategy: indicators
+mechanism: >-
+  Kullanıcının isteği (2026-10-11): "İndikatörler kullan" — günde 15–20 işlemle günde 200–300 $
+  hedefi, eşit kâr al / zarar kes, long ve short. Bireysel yatırımcıların en çok kullandığı altı
+  kural test edilir: RSI 30/70 (aşırı satım/alım dönüşü), Bollinger bandı dışına taşma (dönüş),
+  EMA 9/21 kesişimi (trend), MACD kesişimi (trend), Supertrend dönüşü (trend), EMA200 trendi
+  yönünde RSI geri çekilmesi. Her kural 5 ve 15 dakikalık mumlarda. Bütün kurallarda çıkış aynıdır,
+  yalnız giriş sinyali farklıdır: kâr al = zarar kes = 1,5·ATR(14) (kullanıcının eşit 1.100 / 900
+  fikri, oynaklığa göre), 12 mum sonra süre çıkışı. Giriş sinyal mumunun kapanışına yalnız-maker
+  limit (USDC'de ücretsiz), kâr al maker, zarar kes stop-market. Pozisyon B1 gibi: her işlem
+  10.000 $ (1.000 $ teminat × 10), aynı anda en fazla 4.
+falsification: >-
+  Geliştirme dönemi (2024-07 … 2026-02) on iki ayarın hepsini koşar; seçim kuralı koşudan önce
+  sabit: en az 300 işlem yapanlar içinde en yüksek yıllık Sharpe. Seçilen tek ayar test döneminde
+  (2026-03 … 2026-09) bir kez koşulur. Sınıflar: "Hedefe ulaştı": günde ortalama ≥ 200 $, en büyük
+  düşüş ≤ 2.500 $ ve günde ≥ 15 işlem. "Kârlı ama hedefin altında": günlük ortalama > 0 ve
+  Newey–West t ≥ 2. Diğer her durum: "Kâr kanıtlanamadı". Test kâr kanıtlayamazsa indikatör
+  stratejisi bota konmaz.
+universe_file: ""
+data_start: "2024-07-01"
+dev_end: "2026-03-01"
+lockbox_end: "2026-10-01"
+data_manifests:
+  - research/data/manifest_r1_usdc_1m.csv.gz
+costs:                      # R1, B1, G1 ile aynı
+  fee_bps: 4.0
+  maker_bps: 0.0
+  slip_top2_bps: 1.5
+  slip_rest_bps: 4.5
+  slip_6_10_bps: 7.5
+  slip_11_20_bps: 12.0
+  stop_slip_mult: 2.0
+grid:
+  config: [T1-1, T1-2, T1-3, T1-4, T1-5, T1-6, T1-7, T1-8, T1-9, T1-10, T1-11, T1-12]
+fixed:
+  configs:
+    T1-1: {rule: rsi, tf: 5}
+    T1-2: {rule: rsi, tf: 15}
+    T1-3: {rule: bollinger, tf: 5}
+    T1-4: {rule: bollinger, tf: 15}
+    T1-5: {rule: ema_cross, tf: 5}
+    T1-6: {rule: ema_cross, tf: 15}
+    T1-7: {rule: macd, tf: 5}
+    T1-8: {rule: macd, tf: 15}
+    T1-9: {rule: supertrend, tf: 5}
+    T1-10: {rule: supertrend, tf: 15}
+    T1-11: {rule: trend_rsi, tf: 5}
+    T1-12: {rule: trend_rsi, tf: 15}
+  params:                   # bütün ayarlarda aynı
+    k_atr: 1.5              # kâr al ve zarar kes 1,5·ATR(14) uzakta (eşit)
+    hold_bars: 12           # 12 mum sonra süre çıkışı (5 dk mumda 1 saat, 15 dk mumda 3 saat)
+    valid: 5                # giriş limiti 5 dk bekler
+    exit_valid: 5
+  min_qv_day: 20000000
+  top: 10
+  capital_usd: 5000
+  notional_mult: 2.0        # her işlem 10.000 $ = 1.000 $ teminat × 10 kaldıraç
+  max_positions: 4
+  min_trades: 300
+  target_usd_day: 200
+  max_drawdown_usd: 2500
+  min_trades_day: 15
+  loss_day_limits_usd: [150, 1000]
+notes: >-
+  Koşudan önce bilinenler: sentetik öz-testte (tests/unit/test_research_indicators.py) gömülü
+  12 saatlik trendlerde Supertrend ve EMA kesişimi maliyet öncesi işlem başı +30 … +60 bps
+  kazanıyor, rastgele yürüyüşte ≈ 0. Programın önceki sonuçları: saatlik trend (H6, H6B) ve
+  dakikalık basit kurallar (I1–I4) elendi; eşit kâr al / zarar kes ile günde 20 işlem (B1) günde
+  −101 $. Bu bir kez koşulur.
