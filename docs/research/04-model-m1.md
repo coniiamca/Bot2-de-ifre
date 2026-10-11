@@ -200,3 +200,33 @@ zararda (t −2,8).
 - Eşik gevşetilince (günde 3 yerine 17–23 işlem), modelin ayırt edici gücü işlem başına dağılıyor.
   Kazanma oranı %49'a düşüyor; komisyon ve kayma (6 ayda 1.950–3.450 $) farkı kapatıyor.
 - Test dönemi kullanıldı. Bundan sonraki her kanıt canlı piyasadan gelmek zorunda.
+
+## R1: M1'in en iyi ayarı bugünkü piyasada (son 7 ay)
+
+Kullanıcının hedefi (2026-10-11): USDC kontratlarında sıfır komisyonlu limit emirle, zarar kes /
+kâr al ile küçük küçük kazanan, lokalde çalışan bir bot. Bot için elimizdeki en iyi yön sinyali
+M1'in en iyi ayarı (60 dk, en uç %0,25). Bu ayar 2026'da hiç koşulmamıştı.
+
+**Test:** 2026-03 … 2026-09 (Eylül hiçbir testte görülmedi), gerçek USDC mumları, 5.000 $,
+işlem başı risk %0,5 (M1'in boyutu). İki ayar: M1 aynen ve kullanıcının istediği kâr al emriyle
+(1,5·σ·√h, maker). Ön-kayıt: `research/prereg/R1.yaml`. Sonuç: [`sonuclar/R1.md`](sonuclar/R1.md).
+
+| | M1 aynen | + kâr al |
+|---|---|---|
+| 7 ayın toplamı | +229 $ | +200 $ |
+| Günlük ortalama | ≈ 1 $ | ≈ 1 $ |
+| En büyük düşüş | −606 $ (%−11) | −588 $ (%−11) |
+| Günde işlem | 2,7 | 3,1 |
+| Kazanan işlem | %48 | %51 |
+| Eylül 2026 | −70 $ | +48 $ |
+| İstatistiksel güven (t) | 0,46 | 0,47 |
+
+**Sonuç: iki ayar için de KÂR KANITLANAMADI.** Artıda bitiyor ama sıfırdan ayırt edilemiyor;
+7 ayın 3'ü zararda. Bu, M1'in 2025+ dönemindeki zayıflamayla (Sharpe ≈ 0,8) tutarlı: bugünkü
+piyasada beklenti yılda sermayenin birkaç yüzdesi, arada %10'u aşan düşüşlerle. Kâr al emri
+sonucu değiştirmiyor (zarar kes uzakta, kâr al yakında: kazanma oranı artıyor, kazanç başı
+tutar azalıyor).
+
+**Anlamı:** Bot bu sinyalle kurulabilir ama "küçük küçük ama düzenli kazanç" beklentisini
+karşılamaz. Bot varsayılan olarak kağıt modunda (gerçek piyasa, sanal para) çalışır; ileriye
+dönük kanıt oradan gelir. Gerçek paraya geçmek kullanıcının ayrı kararıdır.
