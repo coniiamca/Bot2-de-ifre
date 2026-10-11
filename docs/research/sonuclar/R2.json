@@ -1,0 +1,247 @@
+{
+ "commit": "a412f97a5fa14caf6c2f6f648a1b109af27f7890",
+ "configs": {
+  "R2-IDEAL": {
+   "avg_day_usd": 1.5233597147153355,
+   "avg_trade_usd": 0.48729294312269333,
+   "best_day_usd": 87.37406282328702,
+   "coins_usd": {
+    "1000PEPEUSDT": -39.88797007207418,
+    "BNBUSDT": 50.619269003888085,
+    "BTCUSDT": -1.3412536690164765,
+    "DOGEUSDT": 79.79687846073541,
+    "ETHUSDT": 72.21751184104318,
+    "SOLUSDT": 87.15957244741121,
+    "SUIUSDT": 0.4072834820011183,
+    "TRUMPUSDT": 8.298766445520691,
+    "WLDUSDT": 4.872913164759688,
+    "XRPUSDT": -2.0467998912475838,
+    "ZECUSDT": 65.90280773606062
+   },
+   "days": 214,
+   "engine": {
+    "avg_before_cost": 0.00018643853302756922,
+    "avg_cost": 0.0,
+    "avg_loss": -0.007636074000257775,
+    "avg_minutes": 48.28325859491779,
+    "avg_net": 0.00018644889177196386,
+    "avg_weight": 0.3231210775365789,
+    "avg_win": 0.007755890160824271,
+    "liquidation_flags": 0,
+    "long_share": 0.4813153961136024,
+    "per_day": 3.1261682242990654,
+    "reasons": {
+     "gap": 0,
+     "sl": 41,
+     "time": 417,
+     "tp": 211
+    },
+    "trades": 669,
+    "win_rate": 0.5082212257100149
+   },
+   "features": {
+    "dow_sin": 0.0601259611824543,
+    "funding_8h": 0.03568529556961516,
+    "funding_left": 0.054796954836306755,
+    "hour_cos": 0.08919545641466707,
+    "hour_sin": 0.07882502666659938,
+    "ret_1440": 0.039117008519633734,
+    "rv_240": 0.05084959942859528,
+    "top_ls": 0.036060885577842476
+   },
+   "fees_usd": 0.0,
+   "funding_usd": -0.4287462804520093,
+   "loss_days": {
+    "1000": 0,
+    "150": 0
+   },
+   "max_drawdown_pct": -0.09353427168866979,
+   "max_drawdown_usd": -487.4106536799927,
+   "median_day_usd": 0.0,
+   "monthly": {
+    "2026-03": {
+     "days": 31,
+     "trades": 87,
+     "usd": -1.5792181661841411
+    },
+    "2026-04": {
+     "days": 30,
+     "trades": 69,
+     "usd": -22.471091505514494
+    },
+    "2026-05": {
+     "days": 31,
+     "trades": 92,
+     "usd": -189.57363797537337
+    },
+    "2026-06": {
+     "days": 30,
+     "trades": 137,
+     "usd": 159.65333809275933
+    },
+    "2026-07": {
+     "days": 31,
+     "trades": 96,
+     "usd": 225.11666379800033
+    },
+    "2026-08": {
+     "days": 31,
+     "trades": 64,
+     "usd": 114.4898044972717
+    },
+    "2026-09": {
+     "days": 30,
+     "trades": 124,
+     "usd": 40.36312020812257
+    }
+   },
+   "outcome": "KANITSIZ",
+   "params": {
+    "entry": "market",
+    "horizon": 60,
+    "q": 0.0025,
+    "tp_k": 1.5,
+    "zero_cost": true
+   },
+   "positive_days": 0.37383177570093457,
+   "signals": 2593,
+   "slippage_usd": 0.0,
+   "t_nw": 0.7780205006900972,
+   "total_usd": 325.9989789490818,
+   "trades_per_day": 3.1261682242990654,
+   "worst_day_usd": -70.46432437944887
+  },
+  "R2-PIYASA": {
+   "avg_day_usd": -3.0266932908548183,
+   "avg_trade_usd": -0.966734872004375,
+   "best_day_usd": 76.79531558565142,
+   "coins_usd": {
+    "1000PEPEUSDT": -53.83550797915092,
+    "BNBUSDT": -136.49319263554554,
+    "BTCUSDT": -181.14947646908973,
+    "DOGEUSDT": -72.14825230866789,
+    "ETHUSDT": -57.912203521595615,
+    "SOLUSDT": 7.392786573090409,
+    "SUIUSDT": -4.343849508782728,
+    "TRUMPUSDT": -2.851387048322944,
+    "WLDUSDT": -8.55224545533816,
+    "XRPUSDT": -164.25790236250518,
+    "ZECUSDT": 26.43886647297717
+   },
+   "days": 214,
+   "engine": {
+    "avg_before_cost": 0.0001678126171571995,
+    "avg_cost": 0.0009368656716417911,
+    "avg_loss": -0.008248687337586756,
+    "avg_minutes": 48.26268656716418,
+    "avg_net": -0.000769079636574144,
+    "avg_weight": 0.3165212484912569,
+    "avg_win": 0.007266288388971916,
+    "liquidation_flags": 0,
+    "long_share": 0.48059701492537316,
+    "per_day": 3.130841121495327,
+    "reasons": {
+     "gap": 0,
+     "sl": 41,
+     "time": 418,
+     "tp": 211
+    },
+    "trades": 670,
+    "win_rate": 0.48208955223880595
+   },
+   "features": {
+    "dow_sin": 0.0601259611824543,
+    "funding_8h": 0.03568529556961516,
+    "funding_left": 0.054796954836306755,
+    "hour_cos": 0.08919545641466707,
+    "hour_sin": 0.07882502666659938,
+    "ret_1440": 0.039117008519633734,
+    "rv_240": 0.05084959942859528,
+    "top_ls": 0.036060885577842476
+   },
+   "fees_usd": 463.9399236795312,
+   "funding_usd": -0.33475302010095537,
+   "loss_days": {
+    "1000": 0,
+    "150": 0
+   },
+   "max_drawdown_pct": -0.15491234656304753,
+   "max_drawdown_usd": -830.8147794862407,
+   "median_day_usd": 0.0,
+   "monthly": {
+    "2026-03": {
+     "days": 31,
+     "trades": 87,
+     "usd": -122.2627993541266
+    },
+    "2026-04": {
+     "days": 30,
+     "trades": 70,
+     "usd": -111.3210849387206
+    },
+    "2026-05": {
+     "days": 31,
+     "trades": 92,
+     "usd": -321.01182399455325
+    },
+    "2026-06": {
+     "days": 30,
+     "trades": 137,
+     "usd": 12.286085905981992
+    },
+    "2026-07": {
+     "days": 31,
+     "trades": 96,
+     "usd": 39.53154430546619
+    },
+    "2026-08": {
+     "days": 31,
+     "trades": 64,
+     "usd": -13.087827652196783
+    },
+    "2026-09": {
+     "days": 30,
+     "trades": 124,
+     "usd": -131.84645851478214
+    }
+   },
+   "outcome": "KANITSIZ",
+   "params": {
+    "entry": "market",
+    "horizon": 60,
+    "q": 0.0025,
+    "tp_k": 1.5
+   },
+   "positive_days": 0.32710280373831774,
+   "signals": 2593,
+   "slippage_usd": 490.605861202968,
+   "t_nw": -1.5526659802262037,
+   "total_usd": -647.7123642429311,
+   "trades_per_day": 3.130841121495327,
+   "worst_day_usd": -83.86454069836167
+  }
+ },
+ "data_sha": "dfb3a3f9eb35e669",
+ "exploratory": false,
+ "hypothesis": "R2",
+ "months": 7,
+ "period": "2026-03-01..2026-10-01",
+ "prereg_sha": "aa2c907db9c3d402fd156db796bb2c1df1028b165407d0e9feb2653deee63294",
+ "program_trials": 251,
+ "sizing": {
+  "cap_gross": 1.5,
+  "capital_usd": 5000.0,
+  "max_positions": 3,
+  "risk_per_trade": 0.005,
+  "trade_usd": 5000.0
+ },
+ "strategy": "ml_recent",
+ "targets": {
+  "max_drawdown_usd": 750.0,
+  "trades_day": 1.0,
+  "usd_day": 300.0
+ },
+ "title": "Limit emri piyasa emri gibi kullanmak: hep dolan giri\u015f, en iyi halinde \u00fccretsiz",
+ "verdict": "KANITSIZ",
+ "version": 1
+}

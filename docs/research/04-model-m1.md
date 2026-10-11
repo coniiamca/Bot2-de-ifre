@@ -230,3 +230,32 @@ tutar azalıyor).
 **Anlamı:** Bot bu sinyalle kurulabilir ama "küçük küçük ama düzenli kazanç" beklentisini
 karşılamaz. Bot varsayılan olarak kağıt modunda (gerçek piyasa, sanal para) çalışır; ileriye
 dönük kanıt oradan gelir. Gerçek paraya geçmek kullanıcının ayrı kararıdır.
+
+## R2: limit emri piyasa emri gibi kullanmak (günde 300 $ hedefi)
+
+Kullanıcının önerisi (2026-10-11): limit emirde komisyon sıfır olduğuna göre emir milisaniyeler
+içinde en yakın fiyata konup kovalansın, piyasa emri gibi hep dolsun; hedef günde 300 $.
+Ön-kayıt: `research/prereg/R2.yaml`. Sonuç: [`sonuclar/R2.md`](sonuclar/R2.md).
+
+Fikir en iyimser haliyle test edildi: aynı dönem, aynı model, botun ayarı (R1-60-TP); giriş her
+sinyalde hemen dolar. **R2-IDEAL**'de üstüne komisyon ve kayma her bacakta sıfırdır — kovalayan
+emrin gerçekte yaşayacağı aleyhe dolumlar ve evden bağlantının gecikmesi yok sayıldı.
+
+| 5.000 $, işlem başı risk %0,5, 7 ay | Toplam | Günlük | En büyük düşüş | t |
+|---|---|---|---|---|
+| Bot bugün (R1-60-TP: maker giriş, 5 dk bekler) | +200 $ | ≈ 1 $ | −588 $ | 0,47 |
+| R2-PIYASA: hep dolan giriş, gerçek maliyet | −648 $ | ≈ −3 $ | −831 $ | −1,55 |
+| R2-IDEAL: hep dolan giriş, maliyet sıfır | +326 $ | ≈ 1,5 $ | −487 $ | 0,78 |
+
+**Sonuç: iki ayar için de KÂR KANITLANAMADI; hedefin (günde 300 $) yanına bile yaklaşılamıyor.**
+
+- İşlem sayısı değişmedi (günde 3,1): bot bugün de sinyallerin neredeyse hepsinde doluyor.
+  Sinyallerin çoğu dolmadığı için değil, aynı coinde açık işlem ya da 3 pozisyon sınırı yüzünden
+  işleme dönüşmüyor. Kovalamak işlem sayısını artırmıyor.
+- Yürütme kusursuz ve bedava olsa bile kazanç günde ≈ 1,5 $. Darboğaz maliyet değil, sinyalin
+  zayıflığı: işlemlerin %51'i kazanıyor.
+- Kovalayıp hep dolmak gerçek maliyetle zarara döndürüyor (−648 $): maker girişin fiyat avantajı
+  kayboluyor, M1'in 2021–2026 bulgusuyla aynı (piyasa emriyle giriş Sharpe 2,2 → 0,98).
+- Günde 300 $ için bu sinyalle gereken: R2-IDEAL'in 200 katı. Ya ≈ 1 milyon $ sermaye (aynı
+  riskle), ya da 5.000 $'da işlem başı ≈ %100 risk — ilk kötü günde hesap biter (düşüş × 200 ≈
+  −97.000 $).
