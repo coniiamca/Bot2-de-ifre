@@ -259,3 +259,29 @@ emrin gerçekte yaşayacağı aleyhe dolumlar ve evden bağlantının gecikmesi 
 - Günde 300 $ için bu sinyalle gereken: R2-IDEAL'in 200 katı. Ya ≈ 1 milyon $ sermaye (aynı
   riskle), ya da 5.000 $'da işlem başı ≈ %100 risk — ilk kötü günde hesap biter (düşüş × 200 ≈
   −97.000 $).
+
+## B1: eşit kâr al / zarar kes, günde 15–20 işlem (1.000 $ teminat × 10, ±%1)
+
+Kullanıcının tarifi (2026-10-11): "1.000 $ pozisyon 1.100 olunca kapansın, 900'e düşerse stop;
+long da short da; günde 15–20 işlemle günde 200–300 $." Mantıklı hali birebir test edildi:
+10.000 $'lık pozisyon (1.000 $ teminat × 10), kâr al = zarar kes = fiyatın ±%1'i (±100 $), yön
+M1 modelinden, günde 15–20 işlem verecek seçicilik; ikinci ayar ±%0,5. Ön-kayıt
+`research/prereg/B1.yaml`, sonuç [`sonuclar/B1.md`](sonuclar/B1.md).
+
+| 5.000 $, son 7 ay | ±%1 (±100 $) | ±%0,5 (±50 $) |
+|---|---|---|
+| Günde işlem | 19,7 | 30,5 |
+| Kazanan işlem | %48 | %48 |
+| Günlük ortalama | **−101 $** | **−212 $** |
+| 7 ay toplam | −21.668 $ | −45.438 $ |
+| En iyi / en kötü gün | +1.234 $ / −2.048 $ | +910 $ / −2.068 $ |
+| −1.000 $'dan kötü gün | 9 | 12 |
+| t | −3,42 | −6,89 |
+
+**Sonuç: KÂR KANITLANAMADI — açıkça zararda; 5.000 $ hesap birkaç haftada biterdi.**
+
+- Eşit kâr al / zarar keste kazanma oranı %50'nin altında kalırsa, her işlem ortalamada kaybettirir.
+  Günde 250 $ için %59–60 gerekirdi; model bu sıklıkta %48 tutturuyor.
+- Maliyet işlem başına ≈ 3,8 $ (zarar kes taker ücreti + kayma); günde 20 işlemde ≈ 75 $.
+- Bazı günler +1.000 $'ın üstünde (videodaki geceler gibi), ama aynı büyüklükte kayıp günleri
+  daha sık.

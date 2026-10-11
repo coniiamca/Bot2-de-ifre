@@ -65,6 +65,7 @@ en büyük düşüş ≈ −600 $, kâr istatistiksel olarak kanıtlanamadı. K�
 - R1 ([sonuç](docs/research/sonuclar/R1.md)): M1'in en iyi ayarı son 7 ayda (2026-03 … 09, Eylül hiç görülmemiş), gerçek USDC, işlem başı risk %0,5, kâr al'lı ve kâr al'sız: 5.000 $'da +229 $ / +200 $, en büyük düşüş ≈ −600 $, t 0,46 → KÂR KANITLANAMADI (artıda ama şanstan ayırt edilemiyor)
 - R2 ([sonuç](docs/research/sonuclar/R2.md)): limit emri piyasa emri gibi kovalamak — kusursuz ve bedava yürütmede bile 5.000 $'da günde ≈ 1,5 $; gerçek maliyetle zarar → KÂR KANITLANAMADI
 - G1 ([sonuç](docs/research/sonuclar/G1.md)): durgun piyasa scalper (iki taraflı maker limit, küçük kâr al, %58–80 kazanan işlem) — 8 ayarın hepsi zararda, testte günde −152 $ (t −7,4) → ELENDİ
+- B1 ([sonuç](docs/research/sonuclar/B1.md)): eşit kâr al / zarar kes (±%1, 1.000 $ teminat × 10), günde 20 işlem — kazanan %48, günde −101 $ (t −3,4) → ELENDİ
 
 **Lokal işlem botu (Faz 4, dilim 2)** kodu tamam: `quanta bot` — kağıt / demo / gerçek mod, USDC kontratları, yalnız-maker giriş ve kâr al, borsada zarar kes, süre çıkışı, risk bazlı boyut, Windows/macOS/Linux. Bkz. [bot kılavuzu](docs/runbooks/bot.md).
 
