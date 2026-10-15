@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>A—Z Tadilat Atölyesi</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Mutfak, banyo, özel mobilya ve komple daire tadilatı. Çizimden teslime tek ekip, tek sözleşme, milimetrik işçilik.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Instrument+Sans:wght@400..600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css">
+<script>
+  document.documentElement.classList.add('js');
+  // Güvenlik ağı: sahne yüklenemese bile sayfa 3,5 sn içinde açılır.
+  setTimeout(function () { document.documentElement.classList.add('loaded'); }, 3500);
+</script>
+<script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+</script>
+</head>
+<body>
+<div id="app" lang="tr">
+
+  <!-- Yükleme: tavan yüksekliğini ölçen bir şerit metre gibi -->
+  <div id="loader" aria-hidden="true">
+    <svg class="ld-ring" viewBox="0 0 700 700"><circle class="ld-track" cx="350" cy="350" r="345"/><circle class="ld-arc" cx="350" cy="350" r="345"/></svg>
+    <div class="ld-text"><span>Ölçü</span> alınıyor</div>
+    <div class="ld-mm"><span id="ld-mm">0000</span> mm</div>
+  </div>
+
+  <canvas id="gl" aria-hidden="true"></canvas>
+
+  <header class="nav">
+    <a class="logo" href="#top" aria-label="A—Z Tadilat Atölyesi, başa dön">
+      <span>A</span><span class="level" aria-hidden="true"><i id="bubble"></i></span><span>Z</span>
+    </a>
+    <nav class="nav-links" aria-label="Bölümler">
+      <a href="#anatomi">Anatomi</a>
+      <a href="#gorunmeyen">Görünmeyen</a>
+      <a href="#mutfak">Mutfak</a>
+      <a href="#banyo">Banyo</a>
+      <a href="#mobilya">Mobilya</a>
+      <a href="#malzeme">Malzeme</a>
+      <a href="#surec">Süreç</a>
+    </nav>
+    <a class="nav-cta" href="#kesif"><i class="dot" aria-hidden="true"></i>Keşif planla</a>
+    <button class="nav-menu" id="menu-btn" aria-expanded="false" aria-controls="menu">Menü</button>
+  </header>
+
+  <div class="menu" id="menu" hidden>
+    <a href="#anatomi">Anatomi</a>
+    <a href="#gorunmeyen">Görünmeyen işçilik</a>
+    <a href="#mutfak">Mutfak</a>
+    <a href="#banyo">Banyo</a>
+    <a href="#mobilya">Mobilya</a>
+    <a href="#malzeme">Malzeme</a>
+    <a href="#surec">Süreç</a>
+    <a href="#kesif">Keşif planla</a>
+  </div>
+
+  <aside class="hud" aria-hidden="true">
+    <span class="hud-n" id="hud-n">01</span>
+    <span class="hud-bar"><i id="hud-bar"></i></span>
+    <span class="hud-t" id="hud-t">Giriş</span>
+  </aside>
+
+  <main>
+
+    <!-- 01 · GİRİŞ -->
+    <section class="sec sec-hero" id="top" data-scene="hero" data-label="Giriş">
+      <div class="frame frame-back" aria-hidden="true">
+        <div class="ghost ghost-hero">A—Z</div>
+        <svg class="hero-ring" viewBox="0 0 700 700"><circle cx="350" cy="350" r="345"/></svg>
+      </div>
+      <div class="frame frame-front">
+        <div class="hero-notes">
+          <div class="note reveal" style="--d:.15s">
+            <h3>Tek sorumlu</h3>
+            <p>Söküm, tesisat, elektrik, yalıtım, seramik, mobilya ve boya. Hepsi tek ekip ve tek sözleşmeyle.</p>
+          </div>
+          <div class="note reveal" style="--d:.3s">
+            <h3>Önce dijital ikiz</h3>
+            <p>Her proje, ilk çekiç vurulmadan önce ölçülü 3D modelde onaylanır. Şantiyede sürpriz çıkmaz.</p>
+          </div>
+        </div>
+        <div class="hero-main">
+          <p class="eyebrow reveal">Ev içi tadilat · Mutfak · Banyo · Özel mobilya</p>
+          <h1 class="hero-title">
+            <span class="ln ln-ghost reveal" style="--d:.05s">Eviniz için</span>
+            <span class="ln reveal" style="--d:.15s">Milimetrik</span>
+            <span class="ln reveal" style="--d:.25s">tadilat</span>
+          </h1>
+          <div class="hero-cta reveal" style="--d:.4s">
+            <a class="btn" href="#kesif">Ücretsiz keşif planlayın <span aria-hidden="true">→</span></a>
+            <a class="link" href="#anatomi">Yöntemi görün <span aria-hidden="true">↓</span></a>
+          </div>
+        </div>
+        <div class="hero-foot">
+          <span class="scroll-cue"><i aria-hidden="true"></i>Kaydırın, evi katman katman açalım</span>
+          <span class="mono">Maket · Örnek daire, 32 m²</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 02 · MANİFESTO -->
+    <section class="sec sec-manifesto" id="manifesto" data-scene="manifesto" data-label="Yaklaşım">
+      <div class="frame frame-front manifesto-frame">
+        <p class="eyebrow">Yaklaşımımız</p>
+        <p class="manifesto" id="manifesto-text">Bir tadilatın kalitesi bittiği gün değil, beş yıl sonra anlaşılır.</p>
+        <p class="manifesto-sub">Bu yüzden duvarın arkasında kalan katmanlara, göz önündeki yüzeylerle aynı özeni gösteriyoruz. Aşağıda bir banyo duvarını katman katman açıyoruz.</p>
+      </div>
+    </section>
+
+    <!-- 03 · ANATOMİ -->
+    <section class="sec sec-anatomi" id="anatomi" data-scene="anatomy" data-label="Anatomi">
+      <div class="frame frame-front">
+        <div class="ana-head">
+          <p class="eyebrow">Anatomi · Islak hacim duvarı</p>
+          <h2 class="title-xl">
+            <span class="ln">Gördüğünüz</span>
+            <span class="ln">10 mm.</span>
+            <span class="ln ln-ghost">Ömrünü belirleyen,</span>
+            <span class="ln ln-ghost">arkasındaki 25 mm.</span>
+          </h2>
+        </div>
+        <div class="ana-panel" id="ana-panel" aria-live="polite">
+          <div class="ana-idx mono"><span id="ana-n">01</span> / 08</div>
+          <h3 id="ana-name">Tuğla duvar</h3>
+          <p class="ana-mm mono" id="ana-mm">85 mm</p>
+          <p id="ana-desc">Taşıyıcı olmayan bölme duvar. Çatlak, boşluk ve gevşek sıva yalıtımdan önce onarılır; kusurlu zemine yapılan yalıtım ilk hareketle kopar.</p>
+          <p class="ana-std mono" id="ana-std">Kontrol · Mastar ve çekiç testi</p>
+        </div>
+        <ol class="ana-labels" id="ana-labels" aria-label="Duvar katmanları"></ol>
+        <p class="hint mono"><i aria-hidden="true"></i>Bir katmana tıklayarak inceleyin</p>
+      </div>
+    </section>
+
+    <!-- 04 · GÖRÜNMEYEN İŞÇİLİK -->
+    <section class="sec sec-dark" id="gorunmeyen" data-scene="hidden" data-label="Görünmeyen">
+      <div class="frame frame-front">
+        <div class="hid-head">
+          <p class="eyebrow">Duvar kapanmadan önce</p>
+          <h2 class="title-xl"><span class="ln ln-ghost">Görünmeyen</span><span class="ln">işçilik</span></h2>
+          <p class="hid-text">Duvar kapandıktan sonra tesisatı kimse görmez. Biz her hattı kapatmadan önce test eder, ölçüleriyle fotoğraflar ve size bir arşiv olarak teslim ederiz. Yıllar sonra raf asarken bile borunun nereden geçtiğini bilirsiniz.</p>
+          <ul class="legend mono" aria-label="Çizim açıklaması">
+            <li><i class="lg-cold"></i>Soğuk su</li>
+            <li><i class="lg-hot"></i>Sıcak su</li>
+            <li><i class="lg-drain"></i>Atık su</li>
+            <li><i class="lg-elec"></i>Elektrik</li>
+          </ul>
+        </div>
+        <div class="hid-stat" aria-live="polite">
+          <p class="hid-cap" id="hid-cap"><span class="mono" id="hid-k">01 / 05 · Basınç testi</span><span id="hid-d">EN 806-4'e göre tesisat, duvar kapanmadan 11 bar'da 30 dakika tutulur; PPR borularda ardından 5,5 bar'da 2 saat. İbre kıpırdamamalıdır.</span></p>
+          <p class="hid-num" id="hid-num">11<small>bar</small></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 05 · MUTFAK -->
+    <section class="sec sec-svc" id="mutfak" data-scene="kitchen" data-label="Mutfak">
+      <div class="frame frame-front svc-frame">
+        <div class="svc-head">
+          <span class="cross" aria-hidden="true"></span>
+          <p class="eyebrow">Hizmet · Mutfak</p>
+          <h2 class="title-l">Çalışma<br>üçgeni</h2>
+          <p>Evye, ocak ve buzdolabı arasındaki üç kenar, mutfakta günde yüzlerce kez yürünen yoldur. Planı adımlarla çiziyoruz.</p>
+        </div>
+        <dl class="spec spec-l">
+          <div><dt>Üçgenin her kenarı</dt><dd>1,2 – 2,7 m</dd></div>
+          <div><dt>Üç kenarın toplamı</dt><dd>≤ 7,9 m · bu planda 6,4 m</dd></div>
+          <div><dt>Çalışma koridoru</dt><dd>≥ 107 cm</dd></div>
+        </dl>
+        <dl class="spec spec-r">
+          <div><dt>Tezgâh yüksekliği</dt><dd>85 / 90 / 95 cm</dd></div>
+          <div><dt>Tezgâh derinliği</dt><dd>≥ 60 cm</dd></div>
+          <div><dt>Tezgâh ile üst dolap arası</dt><dd>≥ 45 cm</dd></div>
+        </dl>
+        <div class="pins" id="pins-kitchen"></div>
+      </div>
+    </section>
+
+    <!-- 06 · BANYO -->
+    <section class="sec sec-svc" id="banyo" data-scene="bath" data-label="Banyo">
+      <div class="frame frame-front svc-frame">
+        <div class="svc-head">
+          <span class="cross" aria-hidden="true"></span>
+          <p class="eyebrow">Hizmet · Banyo</p>
+          <h2 class="title-l">Islak<br>hacim</h2>
+          <p>Banyo, evin en küçük ama en teknik odasıdır. Su, elektrik ve buhar aynı metrekarede buluşur. Tekne kenarından 60 cm ve 2,25 m yüksekliğe kadar priz ya da anahtar olmaz.</p>
+        </div>
+        <dl class="spec spec-l">
+          <div><dt>Bölge 0 · Tekne içi</dt><dd>IPX7</dd></div>
+          <div><dt>Bölge 1 · 225 cm'e kadar</dt><dd>IPX4</dd></div>
+          <div><dt>Bölge 2 · 60 cm dışarı</dt><dd>IPX4</dd></div>
+        </dl>
+        <dl class="spec spec-r">
+          <div><dt>Duş zemini eğimi</dt><dd>%1,5 – 2</dd></div>
+          <div><dt>Yalıtım: duşta / diplerde</dt><dd>200 cm / 15 cm</dd></div>
+          <div><dt>Kaçak akım koruma</dt><dd>30 mA</dd></div>
+        </dl>
+        <div class="pins" id="pins-bath"></div>
+      </div>
+    </section>
+
+    <!-- 07 · MOBİLYA -->
+    <section class="sec sec-svc" id="mobilya" data-scene="furniture" data-label="Mobilya">
+      <div class="frame frame-front svc-frame">
+        <div class="svc-head">
+          <span class="cross" aria-hidden="true"></span>
+          <p class="eyebrow">Hizmet · Özel mobilya</p>
+          <h2 class="title-l">Milimetrik<br>ölçü</h2>
+          <p>Hazır modül duvara uymaz, duvar ona uydurulur. Biz tersini yapıyoruz: lazerle ölçüyor, atölyede üretiyor, tek seferde monte ediyoruz.</p>
+        </div>
+        <dl class="spec spec-l">
+          <div><dt>Gövde levhası</dt><dd>18 mm</dd></div>
+          <div><dt>Arkalık</dt><dd>8 mm, kanala geçme</dd></div>
+          <div><dt>Kenar bandı</dt><dd>1 – 2 mm ABS</dd></div>
+        </dl>
+        <dl class="spec spec-r">
+          <div><dt>Menteşe</dt><dd>110°, frenli</dd></div>
+          <div><dt>Çekmece rayı</dt><dd>Tam açılım, 40 / 70 kg</dd></div>
+          <div><dt>Montaj toleransı</dt><dd>± 1 mm</dd></div>
+        </dl>
+        <div class="pins" id="pins-furniture"></div>
+      </div>
+    </section>
+
+    <!-- 08 · MALZEME -->
+    <section class="sec sec-mat" id="malzeme" data-scene="material" data-label="Malzeme">
+      <div class="frame frame-back" aria-hidden="true">
+        <div class="ghost ghost-mat" id="mat-ghost"><span>Calacatta</span><span>mermer</span></div>
+      </div>
+      <div class="frame frame-front">
+        <div class="mat-top">
+          <p class="eyebrow">Malzeme kütüphanesi · Tezgâh</p>
+          <div class="mat-nav" role="tablist" aria-label="Tezgâh malzemesi">
+            <button role="tab" aria-selected="true" data-i="0">Mermer</button>
+            <button role="tab" aria-selected="false" data-i="1">Kuvars</button>
+            <button role="tab" aria-selected="false" data-i="2">Porselen</button>
+            <button role="tab" aria-selected="false" data-i="3">Meşe</button>
+          </div>
+        </div>
+        <div class="mat-card" id="mat-card" aria-live="polite">
+          <p class="mono mat-kind" id="mat-kind">Doğal taş</p>
+          <h3 id="mat-name">Calacatta mermer</h3>
+          <ul class="scales" id="mat-scales"></ul>
+          <p class="mat-note" id="mat-note">Her levha tektir. Damar yönünü ada ve tezgâhta kesintisiz akacak şekilde levha başında birlikte seçeriz.</p>
+        </div>
+        <div class="mat-side">
+          <p class="mono"><span id="mat-i">01</span> / 04</p>
+          <p class="mat-use"><span class="mono">En uygun</span><span id="mat-use">Görsel etkinin öncelikli olduğu, bakımı göze alan mutfaklar.</span></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 09 · SÜREÇ -->
+    <section class="sec sec-flow" id="surec" data-label="Süreç">
+      <div class="wrap">
+        <div class="flow-head">
+          <p class="eyebrow">Süreç · Tipik takvim</p>
+          <div class="flow-tabs" role="tablist" aria-label="Proje türü">
+            <button role="tab" aria-selected="true" data-p="banyo">Banyo</button>
+            <button role="tab" aria-selected="false" data-p="mutfak">Mutfak</button>
+            <button role="tab" aria-selected="false" data-p="daire">Komple daire</button>
+          </div>
+        </div>
+        <div class="flow-hero">
+          <h2 class="flow-big"><span class="ln-ghost" id="flow-name">Banyo</span><span id="flow-dur">5 hafta</span></h2>
+          <p class="flow-lead" id="flow-lead">Tasarım dahil yaklaşık beş hafta, sahada dört hafta. Yalıtım, üreticinin istediği kürlenme süresini ve 24 saatlik su dolum testini bekler; bu süreyi takvimden kısmayız.</p>
+        </div>
+        <div class="gantt" id="gantt" aria-label="Aşama takvimi"></div>
+        <p class="flow-foot mono">Tipik süreler. Kesin takvim keşif ve malzeme seçiminden sonra sözleşmeye yazılır. <i class="ms" aria-hidden="true"></i> = test ve onay noktası</p>
+      </div>
+    </section>
+
+    <!-- 10 · İLKELER -->
+    <section class="sec sec-principles" id="ilkeler" data-label="İlkeler">
+      <div class="wrap">
+        <h2 class="title-xl pr-title"><span class="ln ln-ghost">Tek ekip.</span><span class="ln ln-ghost">Tek sözleşme.</span><span class="ln">Tek sorumlu.</span></h2>
+        <div class="pr-grid">
+          <article>
+            <h3>Kalem kalem teklif</h3>
+            <p>Teklif metraja dayanır: her iş kalemi, miktarı ve malzemesiyle yazılır. Sonradan çıkan sürpriz "ek iş" olmaz; her değişiklik yazılı onayla yapılır.</p>
+          </article>
+          <article>
+            <h3>Tek proje yöneticisi</h3>
+            <p>Bütün ustalar tek bir planla çalışır. Siz yalnızca bir kişiyle konuşursunuz; kim, ne zaman, nerede çalışıyor her gün bilinir.</p>
+          </article>
+          <article>
+            <h3>Haftalık rapor</h3>
+            <p>Her cuma fotoğraflı ilerleme raporu ve gelecek haftanın planı. Test tutanakları ve duvar arkası fotoğrafları aynı dosyada birikir.</p>
+          </article>
+          <article>
+            <h3>Temiz şantiye</h3>
+            <p>Toz bariyeri, zemin ve kapı koruması, her gün sonunda süpürülmüş alan. Apartman ortak alanları ilk günkü gibi bırakılır.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 11 · SSS -->
+    <section class="sec sec-faq" id="sss" data-label="Sorular">
+      <div class="wrap faq-wrap">
+        <h2 class="title-l">Sık<br>sorulanlar</h2>
+        <div class="faq">
+          <details>
+            <summary>Keşif ücretli mi?</summary>
+            <p>Hayır. Ölçüleri lazerle alırız, mevcut tesisatı ve duvarları kontrol ederiz. Ardından kalem kalem teklifi ve ilk 3D taslağı birlikte inceleriz.</p>
+          </details>
+          <details>
+            <summary>Tadilat sırasında evde yaşayabilir miyiz?</summary>
+            <p>Tek oda işlerinde (banyo ya da mutfak) genellikle evet; çalışma alanını toz bariyeriyle ayırırız. Komple daire tadilatında, su ve elektriğin kesileceği günler olduğu için evde kalmanızı önermiyoruz.</p>
+          </details>
+          <details>
+            <summary>Taşıyıcı duvarlara müdahale ediyor musunuz?</summary>
+            <p>Kolon, kiriş ve perde duvarlara dokunmayız. Bir duvarın taşıyıcı olup olmadığından emin olunamıyorsa, plan değişikliğinden önce inşaat mühendisi görüşü alınır.</p>
+          </details>
+          <details>
+            <summary>Fiyat nasıl belirleniyor, ödeme nasıl yapılıyor?</summary>
+            <p>Fiyat; metraj, seçtiğiniz malzeme ve işçilik kalemlerinden oluşur. Ödeme, iş aşamaları tamamlandıkça ve her aşamanın kontrolü yapıldıkça ilerler.</p>
+          </details>
+          <details>
+            <summary>Garanti veriyor musunuz?</summary>
+            <p>İşçilik ve su yalıtımı için yazılı garanti verilir; kapsam ve süre sözleşmede yazar. Kullanılan ürünlerin üretici garanti belgeleri teslim dosyasına eklenir.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- 12 · KEŞİF -->
+    <section class="sec sec-cta" id="kesif" data-label="Keşif">
+      <div class="wrap cta-wrap">
+        <div class="cta-copy">
+          <p class="eyebrow">Ücretsiz keşif</p>
+          <h2 class="title-xl"><span class="ln">Evinizi</span><span class="ln ln-ghost">ölçmeye</span><span class="ln ln-ghost">gelelim.</span></h2>
+          <p>Keşif sonrasında elinizde üç şey olur: lazerle alınmış ölçüler, kalem kalem teklif ve projenizin ilk 3D taslağı.</p>
+          <dl class="contact mono">
+            <div><dt>Telefon</dt><dd>+90 (5xx) xxx xx xx</dd></div>
+            <div><dt>E-posta</dt><dd>merhaba@alanadiniz.com</dd></div>
+            <div><dt>Çalışma saatleri</dt><dd>Pzt – Cmt · 09:00 – 18:00</dd></div>
+          </dl>
+        </div>
+        <form class="form" id="lead-form" novalidate>
+          <fieldset class="chips">
+            <legend>Proje türü</legend>
+            <label><input type="checkbox" id="t-mutfak" name="tur" value="Mutfak" checked><span>Mutfak</span></label>
+            <label><input type="checkbox" id="t-banyo" name="tur" value="Banyo"><span>Banyo</span></label>
+            <label><input type="checkbox" id="t-mobilya" name="tur" value="Özel mobilya"><span>Özel mobilya</span></label>
+            <label><input type="checkbox" id="t-daire" name="tur" value="Komple daire"><span>Komple daire</span></label>
+          </fieldset>
+          <div class="row">
+            <label class="field"><span>Yaklaşık alan</span><span class="unit"><input type="number" id="f-m2" name="m2" min="1" max="1000" inputmode="numeric" placeholder="12"><em>m²</em></span></label>
+            <label class="field"><span>İlçe / Şehir</span><input type="text" id="f-ilce" name="ilce" placeholder="Kadıköy, İstanbul" autocomplete="address-level2"></label>
+          </div>
+          <div class="row">
+            <label class="field"><span>Adınız</span><input type="text" id="f-ad" name="ad" autocomplete="name" required></label>
+            <label class="field"><span>Telefon</span><input type="tel" id="f-tel" name="tel" autocomplete="tel" placeholder="05xx xxx xx xx" required></label>
+          </div>
+          <label class="field"><span>Kısaca anlatın <em class="opt">(isteğe bağlı)</em></span><textarea id="f-not" name="not" rows="3" placeholder="Örneğin: 1998 yapımı daire, banyo tesisatı eski, küvet yerine duş istiyoruz."></textarea></label>
+          <p class="form-err" id="form-err" role="alert" hidden></p>
+          <button class="btn btn-wide" type="submit">Keşif talebini hazırla <span aria-hidden="true">→</span></button>
+          <div class="form-ok" id="form-ok" hidden>
+            <p class="mono">Talebiniz hazır</p>
+            <pre id="form-summary"></pre>
+            <div class="form-ok-actions">
+              <button type="button" class="link" id="copy-btn">Metni kopyala</button>
+              <a class="btn" id="wa-btn" href="#" target="_blank" rel="noopener" hidden>WhatsApp ile gönder <span aria-hidden="true">→</span></a>
+            </div>
+          </div>
+        </form>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    <div class="wrap">
+      <p class="foot-mark" aria-hidden="true">A—Z</p>
+      <div class="foot-row">
+        <p>A—Z Tadilat Atölyesi<br><span class="mute">Mutfak · Banyo · Özel mobilya · Komple daire</span></p>
+        <p class="mono mute">Teknik değerler: TS EN 14891 · TS EN 12004 · TS EN 13888 · EN 806-4 · IEC 60364-7-701 · EN 1116 · NKBA · Elektrik İç Tesisleri Yönetmeliği</p>
+        <p class="mono mute">© 2026 A—Z<br><a href="#top">Başa dön ↑</a></p>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
