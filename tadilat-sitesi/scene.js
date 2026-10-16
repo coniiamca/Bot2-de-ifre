@@ -476,6 +476,26 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
       const baked = bake(g);
       plates.push({ g, L, lines: baked.lines, x0: 0, x1: 0, lift: 0 });
     });
+    // Görünmeyen algılama kutuları: ince katmanlar (astar, derz) da imleçle kolayca yakalanır
+    const hitMat = new THREE.MeshBasicMaterial();
+    // Köşe bandı ve derz seyrek şekiller: algılama alanı da şeritler/çubuklar kadar, arkadaki katmanı örtmez
+    plates.forEach((pl, i) => {
+      const t = Math.max(pl.L.t * 1.3, 0.16);
+      const boxes = pl.L.band ? [[t, 0.24, D, 0, -HH / 2 + 0.12, 0], [t, HH, 0.24, 0, 0, -D / 2 + 0.12]]
+        : pl.L.grout ? [[t, HH, 0.12, 0, 0, -0.3], [t, HH, 0.12, 0, 0, 0.3], [t, 0.12, D, 0, 0, 0]]
+        : [[t, HH, D, 0, 0, 0]];
+      pl.hits = boxes.map(([w, h, d, x, y, z]) => {
+        const hb = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), hitMat);
+        hb.position.set(x, y, z);
+        hb.visible = false;
+        hb.userData.plate = i;
+        pl.g.add(hb);
+        return hb;
+      });
+    });
+    const hitList = () => plates.flatMap((pl) => pl.hits);
+    const ray = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
     let acc = 0;
     plates.forEach((pl) => { pl.x0 = acc + pl.L.t / 2; acc += pl.L.t; });
     const gap = 0.5;
@@ -509,6 +529,14 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
         pivot.rotation.x = 0.17 + ptr.y * 0.03;
       },
       invalidate() { fh = 0; bh = []; lastKey.length = 0; },
+      // Ekran koordinatındaki katman (duvar açılmış değilse -1)
+      pick(cx, cy, p) {
+        if (p < 0.95) return -1;
+        ndc.set((cx / vw) * 2 - 1, -(cy / vh) * 2 + 1);
+        ray.setFromCamera(ndc, camera);
+        const hits = ray.intersectObjects(hitList(), false);
+        return hits.length ? hits[0].object.userData.plate : -1;
+      },
       // 3D sahne güncellendikten sonra: alttaki dikey etiketleri katmanların altına hizala.
       // Yerleşim yalnızca boyut değişince okunur; DOM'a yalnızca değer değişince yazılır.
       place(s) {
@@ -1001,6 +1029,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
       particles.resize();
     },
     setMaterial(i) { const k = mats[i] && mats[i].tex; if (k) matGroup.setTarget(k); },
+    pickLayer(x, y) { return sections.anatomy.vis ? ana.pick(x, y, sections.anatomy.p) : -1; },
     update(t, ctx) {
       ptr.x = lerp(ptr.x, ctx.pointer.x, 0.05);
       ptr.y = lerp(ptr.y, ctx.pointer.y, 0.05);

@@ -124,9 +124,15 @@ function makeCycle({ n, every, btn, bar, onChange }) {
   c.stop = () => { c.running = false; };
   c.reset = () => { c.running = false; c.t = 0; show(0); };
   c.select = (i, now) => { show(i); c.t = now + 8000; c.frozen = 0; };
+  // Üzerine gelinen öğe gösterilir ve akış bekler; bırakılınca süre baştan işler
+  c.hover = (i, now) => {
+    if (i >= 0) { c.held = true; if (i !== c.i) show(i); }
+    else if (c.held) { c.held = false; c.t = Math.max(c.t, now); }
+  };
   c.tick = (now) => {
     let k = 0;
     if (c.paused) k = c.frozen;
+    else if (c.held) k = 0;
     else if (c.running) {
       k = (now - c.t) / every;
       if (k >= 1) { show(c.i + 1); c.t = now; k = 0; }
@@ -302,7 +308,41 @@ function showLayer(i) {
 }
 // Duvar açıldıktan sonra katmanlar 2,6 sn arayla kendiliğinden gezilir
 const anaCycle = makeCycle({ n: LAYERS.length, every: 2600, btn: $('#ana-auto'), bar: $('#ana-bar'), onChange: showLayer });
-labelEls.forEach((li, i) => li.querySelector('button').addEventListener('click', () => anaCycle.select(i, performance.now())));
+labelEls.forEach((li, i) => {
+  const b = li.querySelector('button');
+  b.addEventListener('click', () => anaCycle.select(i, performance.now()));
+  b.addEventListener('mouseenter', () => { labelHover = true; setHover(i, false); });
+  b.addEventListener('mouseleave', () => { labelHover = false; setHover(-1, false); });
+});
+
+// İmleç bir katmanın üzerine gelince o katman gösterilir: katman kalkar, panel ve etiket güncellenir,
+// imlecin yanında adı ve kalınlığı çıkar. Dokunmatikte katmana dokunmak onu seçer.
+const anaSec = $('#anatomi'), anaFrame = $('#anatomi .frame-front'), anaTip = $('#ana-tip');
+let hoverIdx = -1, labelHover = false, ptrX = 0, ptrY = 0, ptrIn = false;
+addEventListener('pointermove', (e) => { ptrX = e.clientX; ptrY = e.clientY; ptrIn = e.pointerType === 'mouse'; }, { passive: true });
+document.documentElement.addEventListener('pointerleave', () => { ptrIn = false; });
+function setHover(i, tip) {
+  if (i !== hoverIdx) {
+    hoverIdx = i;
+    anaCycle.hover(i, performance.now());
+    anaFrame.classList.toggle('is-pick', i >= 0 && tip);
+    if (i >= 0) anaTip.textContent = `${pad(i + 1)} · ${LAYERS[i].name} · ${LAYERS[i].mm}`;
+  }
+  const show = i >= 0 && tip;
+  if (anaTip.hidden === show) anaTip.hidden = !show;
+}
+function updatePick() {
+  const s = byScene.anatomy;
+  if (labelHover) return;
+  if (!scene || !s.vis || !ptrIn) { if (hoverIdx >= 0) setHover(-1, false); return; }
+  setHover(scene.pickLayer(ptrX, ptrY), true);
+  if (hoverIdx >= 0) anaTip.style.transform = `translate3d(${ptrX + 16}px,${Math.round(ptrY - s.offPx + 18)}px,0)`;
+}
+anaSec.addEventListener('click', (e) => {
+  if (!scene || e.target.closest('button, a')) return;
+  const i = scene.pickLayer(e.clientX, e.clientY);
+  if (i >= 0) anaCycle.select(i, performance.now());
+});
 function updateAnatomy(now) {
   const s = byScene.anatomy;
   if (!s.vis) { if (anaCycle.running) anaCycle.reset(); return; }
@@ -487,6 +527,7 @@ function tick(time) {
   updateBubble(y);
   updateManifesto();
   updateAnatomy(now);
+  updatePick();
   updateHidden(now);
   updateMaterial(now);
   if (scene) {

@@ -318,6 +318,14 @@ html:not(.js) .manifesto { color: var(--ink); }
 .ana-labels .mm { font-family: var(--f-mono); font-size: var(--t-xs); opacity: .7; }
 .ana-labels li.on button { color: var(--ink); }
 .ana-labels li.on .ln { background: var(--brass); }
+.frame-front.is-pick { cursor: pointer; }
+.ana-tip {
+  position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none; white-space: nowrap;
+  padding: 5px 9px; background: var(--ink); color: var(--bg);
+  font-family: var(--f-mono); font-size: var(--t-xs); letter-spacing: .05em; text-transform: uppercase;
+  will-change: transform;
+}
+
 /* Kendiliğinden ilerleyen diziler: ilerleme çizgisi + Durdur/Oynat */
 .ctl-row { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .auto-bar { position: relative; flex: 1; min-width: 48px; height: 1px; background: var(--line); overflow: hidden; }
