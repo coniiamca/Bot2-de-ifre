@@ -36,10 +36,11 @@ new MutationObserver(() => { if (root.classList.contains('loaded') && !introStar
 /* ---------------- Yumuşak kaydırma ---------------- */
 let lenis = null;
 if (window.Lenis && !reduced) {
-  try { lenis = new window.Lenis({ lerp: 0.1, touchMultiplier: 1.3 }); } catch (e) { lenis = null; }
+  // lerp yükseldikçe kaydırma bırakılınca daha az süzülür
+  try { lenis = new window.Lenis({ lerp: 0.14, wheelMultiplier: 0.85, virtualScroll: (e) => limitGesture(e) }); } catch (e) { lenis = null; }
 }
-function scrollToY(y) {
-  if (lenis) lenis.scrollTo(y, { duration: 1.5 });
+function scrollToY(y, opts = { duration: 1.5 }) {
+  if (lenis) lenis.scrollTo(y, opts);
   else window.scrollTo({ top: y, behavior: reduced ? 'auto' : 'smooth' });
 }
 document.addEventListener('click', (e) => {
@@ -162,21 +163,96 @@ function applyColors() {
   if (nd !== dark) { dark = nd; root.classList.toggle('dark', dark); }
 }
 
-/* ---------------- Bölüm göstergesi + menü bağlantıları ---------------- */
-const hudN = $('#hud-n'), hudT = $('#hud-t'), hudBar = $('#hud-bar');
+/* ---------------- Bölüm gezgini (sağdaki noktalar) + menü bağlantıları ---------------- */
+const hudN = $('#hud-n'), hudT = $('#hud-t'), hudDots = $('#hud-dots');
+hudDots.innerHTML = sections.map((s) => `<li><button type="button" aria-label="${s.label}" title="${s.label}"><i><b></b></i></button></li>`).join('');
+const hudBtns = $$('button', hudDots);
+const hudFills = hudBtns.map((b) => b.querySelector('b'));
+hudBtns.forEach((b, i) => b.addEventListener('click', () => scrollToY(i === 0 ? 0 : sections[i].top)));
 const navLinks = $$('.nav-links a');
 let lastHud = -1, lastHp = -1;
 function updateHud(y) {
   const mid = y + vh * 0.5;
   let cur = sections[0];
   for (const s of sections) if (mid >= s.top) cur = s;
-  const hp = Math.round(cur.sp * 200) / 200;
-  if (hp !== lastHp) { lastHp = hp; hudBar.style.transform = 'scaleY(' + hp + ')'; }
-  if (cur.i === lastHud) return;
-  lastHud = cur.i;
-  hudN.textContent = pad(cur.i + 1);
-  hudT.textContent = cur.label;
-  navLinks.forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#' + cur.el.id));
+  if (cur.i !== lastHud) {
+    if (lastHud >= 0) { hudBtns[lastHud].removeAttribute('aria-current'); hudFills[lastHud].style.transform = 'scaleY(0)'; }
+    lastHud = cur.i; lastHp = -1;
+    hudBtns[cur.i].setAttribute('aria-current', 'true');
+    hudN.textContent = pad(cur.i + 1);
+    hudT.textContent = cur.label;
+    navLinks.forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#' + cur.el.id));
+  }
+  // tam ekran bölümde nokta dolu; uzun okuma bölümlerinde okuma ilerlemesini gösterir
+  const hp = cur.h > vh + 2 ? Math.round(cur.sp * 200) / 200 : 1;
+  if (hp !== lastHp) { lastHp = hp; hudFills[cur.i].style.transform = 'scaleY(' + hp + ')'; }
+}
+
+/* ---------------- Bölüm bölüm ilerleme ----------------
+   3D'li bölümlerde her tekerlek/trackpad hareketi yalnızca bir sonraki ya da önceki bölüme kadar gider
+   (hızlı bir fırlatma bölüm atlamaz). Klavye, kaydırma çubuğu ve dokunmatikte hareket bitince sayfa,
+   gidilen yöndeki bölüme yumuşakça yerleşir. Süreç, SSS ve form gibi okunan bölümlerde kaydırma serbesttir. */
+let lastInput = 0, touching = false, dragging = false, stillSince = 0, prevY = -1, settled = true;
+let anchor = 0, restY = 0; // en son durulan durak (null = serbest bölge)
+const markInput = () => { lastInput = performance.now(); };
+addEventListener('wheel', markInput, { passive: true });
+addEventListener('keydown', markInput);
+addEventListener('touchstart', () => { touching = true; markInput(); }, { passive: true });
+addEventListener('touchend', () => { touching = false; markInput(); }, { passive: true });
+addEventListener('touchcancel', () => { touching = false; markInput(); }, { passive: true });
+addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse') dragging = true; }, { passive: true });
+addEventListener('pointerup', () => { dragging = false; markInput(); }, { passive: true });
+const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+// Duraklar: her 3D bölümün ekranı tam doldurduğu aralık [a, b] ve serbest bölgenin başı
+function storyStops() {
+  const story = sections.filter((s) => s.scene);
+  const free = sections.find((s) => !s.scene && s.top > story[0].top);
+  const R = story.map((s) => [s.top, s.top + Math.max(0, s.h - vh)]);
+  if (free) R.push([free.top, free.top]);
+  return { R, limit: free ? free.top : Infinity };
+}
+// Tekerlek hareketi: bulunulan duraktan bir öncekinin sonu ile bir sonrakinin başı arasında sınırlanır
+function limitGesture(e) {
+  lastInput = performance.now();
+  if (reduced || anchor == null || !lenis || !e.event || !e.event.type.includes('wheel')) return true;
+  const { R } = storyStops();
+  if (anchor >= R.length) return true;
+  const lo = anchor > 0 ? R[anchor - 1][1] : 0;
+  const hi = anchor < R.length - 1 ? R[anchor + 1][0] : Infinity;
+  const cur = lenis.targetScroll;
+  const want = cur + e.deltaY;
+  if (want > hi || want < lo) {
+    const d = clamp(want, lo, hi) - cur;
+    if (Math.abs(d) < 0.5) { e.event.preventDefault(); return false; }
+    e.deltaY = d;
+  }
+  return true;
+}
+// Hareket bitince: bir durakta ise orası yeni çapa olur; iki durak arasındaysa gidilen yöndekine yerleşir
+function onSettle(y) {
+  const { R, limit } = storyStops();
+  if (y > limit + 2) { anchor = null; restY = y; return; }
+  const hit = R.findIndex(([a, b]) => y >= a - 2 && y <= b + 2);
+  if (hit >= 0) { anchor = hit; restY = y; return; }
+  let j = 0;
+  while (j < R.length - 2 && !(y > R[j][1] && y < R[j + 1][0])) j++;
+  const prev = R[j][1], next = R[j + 1][0];
+  const moved = y - restY;
+  const t = Math.abs(moved) < 24
+    ? (Math.abs(prev - restY) <= Math.abs(next - restY) ? prev : next)
+    : moved > 0 ? next : prev;
+  scrollToY(t, { duration: 0.75, easing: easeOutCubic });
+}
+function updateSnap(y, now) {
+  if (Math.abs(y - prevY) >= 0.5) { stillSince = now; settled = false; }
+  prevY = y;
+  // kare hızından bağımsız: sayfa 120 ms kıpırdamadıysa ve 250 ms'dir giriş yoksa hareket bitmiştir
+  // (trackpad ataleti olayları ~16 ms arayla gelir; atalet sürerken çapa ilerlemez)
+  if (settled || now - stillSince < 120 || touching || dragging || now - lastInput < 250) return;
+  settled = true;
+  if (reduced || !menu.hidden) { restY = y; return; }
+  onSettle(y);
 }
 
 /* ---------------- Logo: kaydırma hızına tepki veren su terazisi kabarcığı ---------------- */
@@ -377,6 +453,8 @@ copyBtn.addEventListener('click', () => {
   try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
 });
 
+if (/[?&]perf\b/.test(location.search)) window.__snap = () => ({ anchor, restY, y: Math.round(window.scrollY), target: lenis && Math.round(lenis.targetScroll), settled });
+
 /* ---------------- İmleç ---------------- */
 const pointer = { x: 0, y: 0 };
 addEventListener('pointermove', (e) => { pointer.x = (e.clientX / vw) * 2 - 1; pointer.y = (e.clientY / vh) * 2 - 1; }, { passive: true });
@@ -405,6 +483,7 @@ function tick(time) {
   computeSections(y, now);
   applyColors();
   updateHud(y);
+  updateSnap(y, now);
   updateBubble(y);
   updateManifesto();
   updateAnatomy(now);

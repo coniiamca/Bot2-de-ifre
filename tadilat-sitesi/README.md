@@ -29,7 +29,9 @@ Logo, kaydırma hızına tepki veren bir su terazisi kabarcığıdır.
 
 ## Kaydırma ve otomatik oynatma
 
-Animasyonlar kaydırmaya bağlı değildir: bir bölüm ekrana girdiğinde kendi süresiyle oynar (duvarın açılması, boruların çizilmesi, mutfak üçgeni, banyo bölgeleri, gardırop). Katmanlar, test değerleri ve tezgâh malzemeleri kendiliğinden ilerler; her birinde ilerleme çizgisi ve Durdur/Oynat düğmesi vardır, elle seçim akışı 8 saniye bekletir. Hareket azaltma tercihi olan ziyaretçilerde akışlar duraklatılmış başlar. Kaydırma modellere yalnızca hafif bir döndürme verir. Sayfa boyu masaüstünde yaklaşık 14 ekrandır.
+Animasyonlar kaydırmaya bağlı değildir: bir bölüm ekrana girdiğinde kendi süresiyle oynar (duvarın açılması, boruların çizilmesi, mutfak üçgeni, banyo bölgeleri, gardırop). Katmanlar, test değerleri ve tezgâh malzemeleri kendiliğinden ilerler; her birinde ilerleme çizgisi ve Durdur/Oynat düğmesi vardır, elle seçim akışı 8 saniye bekletir. Hareket azaltma tercihi olan ziyaretçilerde akışlar duraklatılmış başlar. Kaydırma modellere yalnızca hafif bir döndürme verir. Sayfa boyu masaüstünde yaklaşık 12 ekrandır.
+
+3D'li bölümler tam bir ekrandır ve sayfa bunlarda bölüm bölüm ilerler: her tekerlek ya da trackpad hareketi (hızlı bir fırlatma dahil) yalnızca bir sonraki ya da önceki bölüme gider; klavye, kaydırma çubuğu ve dokunmatikte hareket bitince sayfa gidilen yöndeki bölüme yerleşir. Süreç bölümünden itibaren kaydırma serbesttir. Sağdaki noktalarla istenen bölüme doğrudan gidilir. Kurallar `app.js` içinde "Bölüm bölüm ilerleme" başlığı altındadır.
 
 Süreler `app.js` içinde: bölüm animasyonları `AUTO`, dizilerin aralıkları `makeCycle({ every })`; bölüm yükseklikleri `styles.css` içinde `.sec-*` kurallarında.
 

@@ -171,8 +171,16 @@ ol, ul { padding: 0; list-style: none; }
   font-family: var(--f-mono); font-size: var(--t-xs); letter-spacing: .06em; text-transform: uppercase;
   color: var(--ink-2); pointer-events: none;
 }
-.hud-bar { position: relative; width: 1px; height: 64px; background: var(--line); overflow: hidden; }
-.hud-bar i { position: absolute; left: 0; top: 0; width: 1px; height: 100%; background: var(--ink); transform-origin: top; transform: scaleY(0); will-change: transform; }
+.hud-dots { display: grid; justify-items: center; pointer-events: auto; }
+.hud-dots button { display: grid; place-items: center; width: 24px; height: 14px; padding: 0; border: 0; background: none; cursor: pointer; transition: height .35s var(--ease); }
+.hud-dots i {
+  position: relative; display: block; width: 5px; height: 5px; border-radius: 3px; overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 28%, transparent); transition: height .35s var(--ease), background .25s;
+}
+.hud-dots button:hover i { background: var(--ink-2); }
+.hud-dots button[aria-current="true"] { height: 34px; }
+.hud-dots button[aria-current="true"] i { height: 28px; background: color-mix(in srgb, var(--ink) 18%, transparent); }
+.hud-dots b { position: absolute; inset: 0; background: var(--ink); transform-origin: top; transform: scaleY(0); will-change: transform; }
 .hud-t { writing-mode: vertical-rl; transform: rotate(180deg); }
 .hud-n { color: var(--ink); font-variant-numeric: tabular-nums; }
 
@@ -191,13 +199,8 @@ ol, ul { padding: 0; list-style: none; }
 }
 .frame-back + .frame-front { margin-top: -100vh; margin-top: -100svh; }
 
-/* Animasyonlar zamanla oynar; bölümler yalnızca kısa bir süre sabit kalır */
-.sec-hero { height: 100vh; }
-.sec-manifesto { height: 100vh; }
-.sec-anatomi { height: 150vh; }
-.sec-dark { height: 150vh; }
-.sec-svc { height: 125vh; }
-.sec-mat { height: 130vh; }
+/* Animasyonlar zamanla oynar; her 3D bölüm tam bir ekran, sayfa bölüm bölüm ilerler */
+.sec-hero, .sec-manifesto, .sec-anatomi, .sec-dark, .sec-svc, .sec-mat { height: 100vh; }
 
 .ln { display: block; }
 .ln-ghost { color: color-mix(in srgb, var(--ink) 26%, transparent); }
@@ -538,10 +541,6 @@ html:not(.js) .manifesto { color: var(--ink); }
   .nav-menu { display: inline-flex; align-items: center; }
   .hud { display: none; }
 
-  .sec-anatomi { height: 140vh; }
-  .sec-dark { height: 140vh; }
-  .sec-svc { height: 115vh; }
-  .sec-mat { height: 120vh; }
 
   .hero-notes { display: none; }
   .hero-main { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); gap: 16px; }
