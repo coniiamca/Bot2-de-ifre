@@ -50,6 +50,7 @@ Sayfada saf beyaz yoktur: zemin sıcak bir beton grisi (`--stone` #D4D1CB), orta
 - Koyu bölümdeki parçacıklar tamamen GPU'da hareket eder.
 - Açık-koyu geçişi yalnızca opaklığı değişen bir katmanla yapılır; etiketler ve işaretler yalnızca `transform` ile taşınır.
 - Çözünürlük üst sınırı 1,5'tir ve kareler sürekli yavaşlarsa kendiliğinden 1'e kadar düşer. 3D'siz bölümlerde hiç çizim yapılmaz.
+- Telefon ve tablette (dokunmatik ekran) 3D sahne ekranda sabit durur, sayfayla birlikte JS ile taşınmaz: tarayıcı kaydırmayı ayrı bir iş parçacığında akıttığı için taşınan model bir kare geriden gelip titriyordu. Bölümler arasında tuval saydamlaşarak geçer (yalnızca opaklık, kaydırmayla senkron); çözünürlük üst sınırı 1,3'tür.
 
 ## Yerelde çalıştırma
 

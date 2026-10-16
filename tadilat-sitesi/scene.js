@@ -6,6 +6,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const range = (v, a, b) => clamp((v - a) / (b - a));
+const smooth = (a, b, v) => { const t = range(v, a, b); return t * t * (3 - 2 * t); };
 const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const fmt = (n, d = 2) => n.toFixed(d).replace('.', ',');
@@ -261,7 +262,11 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
   if (!renderer.getContext()) throw new Error('WebGL yok');
   // Çözünürlük üst sınırı 1,5; kareler yavaşlarsa update() içinde kademeli düşer
-  let dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  // Dokunmatik cihazlarda (telefon, tablet) kaydırmayı tarayıcı ayrı bir iş parçacığında akıtır; JS ile
+  // sayfayla birlikte taşınan 3D bir kare geriden gelip titrer. Bu cihazlarda sahne ekranda sabit durur,
+  // bölümler arasında tuval saydamlaşarak geçer (yalnızca opaklık: birleştiricide, kaydırmayla senkron).
+  const fixedStage = !!(window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
+  let dpr = Math.min(window.devicePixelRatio || 1, fixedStage ? 1.3 : 1.5);
   renderer.setPixelRatio(dpr);
   renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -282,6 +287,9 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
   const isSmall = Math.min(window.innerWidth, window.innerHeight) < 700;
 
   let vw = 0, vh = 0, aspect = 1, H = 1, W = 1;
+  let domVh = window.innerHeight;
+  // bölüm çerçevesinin ekranı ne kadar doldurduğu (1 = tam, 0 = dışarıda)
+  const presence = (s) => (s.vis ? clamp(1 - Math.abs(s.offPx) / domVh) : 0);
   let plasterMat = null;
   const ptr = { x: 0, y: 0 };
   const groups = [];
@@ -550,7 +558,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
         if (!fh) fh = frameEl ? frameEl.clientHeight : vh;
         if (bh.length !== labelEls.length || bh.some((v) => !v)) bh = labelEls.map((li) => li.querySelector('button').offsetHeight);
         const safe = 26;
-        const op = range(s.p, 0.35, 0.9).toFixed(2);
+        const op = (range(s.p, 0.35, 0.9) * (fixedStage ? smooth(0.6, 0.95, presence(s)) : 1)).toFixed(2);
         plates.forEach((pl, i) => {
           const li = labelEls[i];
           anchor.set(pl.L.t / 2, -1.2, 0.9);
@@ -988,7 +996,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
   function placePins() {
     for (const pin of pins) {
       const s = pin.sec;
-      const show = s.vis && pin.show(s.p);
+      const show = s.vis && pin.show(s.p) && (!fixedStage || presence(s) > 0.95);
       if (show !== pin.on) { pin.on = show; pin.el.classList.toggle('off', !show); }
       if (!show) continue;
       pin.obj.localToWorld(v3.copy(pin.local));
@@ -1019,7 +1027,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     }
   }
 
-  let parked = false;
+  let parked = false, lastOp = -1;
   const api = {
     // Tuval 100lvh: mobilde adres çubuğu açılıp kapanırken boyut değişmez, yeniden ayırma yapılmaz
     resize() {
@@ -1039,14 +1047,25 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     update(t, ctx) {
       ptr.x = lerp(ptr.x, ctx.pointer.x, 0.05);
       ptr.y = lerp(ptr.y, ctx.pointer.y, 0.05);
+      domVh = ctx.vh;
       let any = ctx.dw > 0.01;
+      // Sabit sahne: yalnızca ekranı en çok dolduran bölümün modeli çizilir; tuval opaklığı o bölümün
+      // ekranı doldurma oranına göre değişir, iki bölümün ortasında 0'a iner ve model orada değişir.
+      let active = null;
+      if (fixedStage) {
+        let best = 0;
+        for (const g of groups) { const pr = presence(g.sec); if (pr > best) { best = pr; active = g; } }
+        const op = Math.round(smooth(0.55, 0.95, best) * 100) / 100;
+        if (op !== lastOp) { lastOp = op; canvas.style.opacity = String(op); }
+      }
       for (const g of groups) {
         const s = g.sec;
-        g.root.visible = s.vis;
-        if (!s.vis) continue;
+        const on = fixedStage ? g === active : s.vis;
+        g.root.visible = on;
+        if (!on) continue;
         any = true;
         const L = g.layout();
-        g.root.position.set(L.x, L.y - (s.offPx / vh) * H, 0);
+        g.root.position.set(L.x, L.y - (fixedStage ? 0 : (s.offPx / vh) * H), 0);
         g.root.scale.setScalar(L.s);
         g.update(t, s, ctx);
       }
