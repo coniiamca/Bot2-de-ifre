@@ -261,12 +261,15 @@ function bake(parent, skip = new Set()) {
 export async function createScene({ canvas, sections, layers, mats, labelEls, pinRoots, reduced }) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
   if (!renderer.getContext()) throw new Error('WebGL yok');
-  // Çözünürlük üst sınırı 1,5; kareler yavaşlarsa update() içinde kademeli düşer
   // Dokunmatik cihazlarda (telefon, tablet) kaydırmayı tarayıcı ayrı bir iş parçacığında akıtır; JS ile
   // sayfayla birlikte taşınan 3D bir kare geriden gelip titrer. Bu cihazlarda sahne ekranda sabit durur,
   // bölümler arasında tuval saydamlaşarak geçer (yalnızca opaklık: birleştiricide, kaydırmayla senkron).
   const fixedStage = !!(window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
-  let dpr = Math.min(window.devicePixelRatio || 1, fixedStage ? 1.3 : 1.5);
+  // Çözünürlük: masaüstünde 1–1,5. Telefon ekranı 2–3 kat yoğun olduğundan orada 1,5–2; daha düşüğü
+  // ince çizgileri ve kenarları bulanıklaştırıyordu. Kareler yavaşlarsa adapt() kademeli düşürür.
+  const DPR_MAX = Math.min(window.devicePixelRatio || 1, fixedStage ? 2 : 1.5);
+  const DPR_MIN = Math.min(DPR_MAX, fixedStage ? 1.5 : 1);
+  let dpr = DPR_MAX;
   renderer.setPixelRatio(dpr);
   renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -1010,20 +1013,29 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     }
   }
 
-  // Kareler sürekli yavaşsa çözünürlüğü kademeli düşür (en az 1)
-  let lastNow = 0, slow = 0, cool = 0;
+  // Kareler sürekli yavaşsa çözünürlüğü 0,25 adımla düşür (DPR_MIN'e kadar); 4 sn boyunca hiç takılma
+  // olmazsa bir adım geri yükselt. Geri çıkılan seviyede yine yavaşlarsa oraya bir daha çıkmaz.
+  // İlk 3 sn ölçülmez: yükleme sırasındaki doku ve gölgelendirici işi çözünürlüğü kalıcı düşürmesin.
+  let lastNow = 0, slow = 0, fastSince = 0, holdUntil = 0, raisedTo = 0, ceil = DPR_MAX;
+  function setDpr(v) {
+    dpr = Math.round(v * 100) / 100;
+    renderer.setPixelRatio(dpr);
+    particles.resize();
+    slow = 0; fastSince = 0; holdUntil = performance.now() + 1500;
+  }
   function adapt() {
     const now = performance.now();
     const dt = lastNow ? now - lastNow : 16;
     lastNow = now;
-    if (dt > 250 || dpr <= 1) return;
-    if (cool > 0) { cool--; return; }
-    slow = dt > 24 ? slow + 1 : Math.max(0, slow - 1);
-    if (slow > 40) {
-      dpr = Math.max(1, Math.round((dpr - 0.25) * 100) / 100);
-      renderer.setPixelRatio(dpr);
-      particles.resize();
-      slow = 0; cool = 90;
+    if (!holdUntil) holdUntil = now + 3000;
+    if (dt > 250 || now < holdUntil) return;
+    if (dt > 28) { slow++; fastSince = 0; } else { slow = Math.max(0, slow - 1); if (!fastSince) fastSince = now; }
+    if (slow > 45 && dpr > DPR_MIN) {
+      if (raisedTo === dpr) ceil = Math.round((dpr - 0.25) * 100) / 100;
+      setDpr(Math.max(DPR_MIN, dpr - 0.25));
+    } else if (fastSince && now - fastSince > 4000 && dpr < ceil) {
+      raisedTo = Math.round(Math.min(ceil, dpr + 0.25) * 100) / 100;
+      setDpr(raisedTo);
     }
   }
 
