@@ -12,6 +12,11 @@ const root = document.documentElement;
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const t0 = performance.now();
 
+// Yenilemede tarayıcı eski kaydırma konumunu geri yüklemesin: site her açılışta girişten başlar,
+// bölümün ortasında açılıp bir sonraki bölüme oturtulmaz. Bağlantıda #bölüm varsa oraya gidilir.
+try { history.scrollRestoration = 'manual'; } catch (e) { /* desteklenmiyor */ }
+if (!location.hash) scrollTo(0, 0);
+
 /* ---------------- Yükleyici sayacı ---------------- */
 const mmEl = $('#ld-mm');
 (function ldTick() {
@@ -33,9 +38,15 @@ function finishLoading() {
 new MutationObserver(() => { if (root.classList.contains('loaded') && !introStart) introStart = performance.now(); })
   .observe(root, { attributes: true, attributeFilter: ['class'] });
 
-/* ---------------- Yumuşak kaydırma ---------------- */
+/* ---------------- Yumuşak kaydırma ----------------
+   Dokunmatik cihazlarda (telefon, tablet) kaydırma tamamen tarayıcınındır: Lenis ve JS ile bölüme
+   yerleşme kapalı; yerine CSS scroll-snap (proximity) kullanılır. JS ile yerleşme, ataletli kaydırma
+   bittikten sonra sayfayı bir ekran ileri atıyordu (ışınlanma hissi); tarayıcı ise hedefi atalet
+   sırasında belirler ve yalnızca bölüm başına yakın bırakıldığında oturtur. */
+const touchUI = !!(window.matchMedia && matchMedia('(hover: none) and (pointer: coarse)').matches);
+if (touchUI && !reduced) root.classList.add('touch-snap');
 let lenis = null;
-if (window.Lenis && !reduced) {
+if (window.Lenis && !reduced && !touchUI) {
   // lerp yükseldikçe kaydırma bırakılınca daha az süzülür
   try { lenis = new window.Lenis({ lerp: 0.14, wheelMultiplier: 0.85, virtualScroll: (e) => limitGesture(e) }); } catch (e) { lenis = null; }
 }
@@ -73,6 +84,8 @@ const sections = $$('.sec').map((el, i) => ({
   top: 0, h: 0, enter: 0, p: 0, exit: 0, offPx: 0, vis: false,
 }));
 const byScene = Object.fromEntries(sections.filter((s) => s.scene).map((s) => [s.scene, s]));
+// dokunmatik yerleşme noktaları: her 3D bölümün başı (CSS) ve kaydırmalı bölümlerin sonu (bu işaret)
+for (const s of sections) if (s.scene) s.el.insertAdjacentHTML('beforeend', '<i class="snap-end" aria-hidden="true"></i>');
 let vw = innerWidth, vh = innerHeight;
 
 function measure() {
@@ -252,12 +265,15 @@ function onSettle(y) {
   while (j < R.length - 2 && !(y > R[j][1] && y < R[j + 1][0])) j++;
   const prev = R[j][1], next = R[j + 1][0];
   const moved = y - restY;
-  const t = Math.abs(moved) < 24
+  // küçük bir kaydırmadan sonra koca bir ekran ileri atlamasın: ekranın %12'sinden (60–120 px) azsa
+  // geri yerleşir; tek tekerlek tıkı (≈85 px) geri döner, iki tık sonraki bölüme geçirir
+  const t = Math.abs(moved) < clamp(vh * 0.12, 60, 120)
     ? (Math.abs(prev - restY) <= Math.abs(next - restY) ? prev : next)
     : moved > 0 ? next : prev;
   scrollToY(t, { duration: 0.75, easing: easeOutCubic });
 }
 function updateSnap(y, now) {
+  if (touchUI) return; // dokunmatikte yerleşmeyi tarayıcı (CSS scroll-snap) yapar
   if (Math.abs(y - prevY) >= 0.5) { stillSince = now; settled = false; }
   prevY = y;
   // kare hızından bağımsız: sayfa 120 ms kıpırdamadıysa ve 250 ms'dir giriş yoksa hareket bitmiştir

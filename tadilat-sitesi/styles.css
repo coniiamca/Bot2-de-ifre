@@ -339,6 +339,14 @@ html:not(.js) .manifesto { color: var(--ink); }
   will-change: transform;
 }
 
+/* Dokunmatik cihazlarda bölüme oturtmayı tarayıcı yapar (proximity: yalnızca bir noktaya yakın bırakılınca).
+   Noktalar: 3D bölümlerin başı ve kaydırmalı bölümlerin sonu. Süreç ve sonrası nokta almaz: ekrandan uzun
+   bir bölüme nokta verilince Chrome kaydırmayı bölümün ortasında kilitliyordu. */
+html.touch-snap { scroll-snap-type: y proximity; }
+html.touch-snap .sec[data-scene] { scroll-snap-align: start; }
+.snap-end { position: absolute; left: 0; top: calc(100% - 100svh); width: 1px; height: 1px; pointer-events: none; }
+html.touch-snap .snap-end { scroll-snap-align: start; }
+
 /* Kendiliğinden ilerleyen diziler: ilerleme çizgisi + Durdur/Oynat */
 .ctl-row { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .auto-bar { position: relative; flex: 1; min-width: 48px; height: 1px; background: var(--line); overflow: hidden; }
