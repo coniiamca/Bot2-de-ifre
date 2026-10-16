@@ -85,11 +85,13 @@ function measure() {
   }
   scene && scene.resize();
 }
-// Animasyonlar kaydırmaya bağlı değil: bölüm ekrana girince kendi süresiyle oynar (saniye).
-// s.p  = animasyon ilerlemesi 0→1 (bölüm ekrandan tamamen çıkınca sıfırlanır, dönüşte yeniden oynar)
-// s.sp = bölüm içindeki kaydırma ilerlemesi (bölüm göstergesi için)
-// s.k  = bölümün ekrandan geçişi 0→1 (modellere hafif bir kaydırma döndürmesi verir)
-const AUTO = { hero: 1, manifesto: 1.6, anatomy: 1.6, hidden: 3.2, kitchen: 3.4, bath: 3.4, furniture: 2.6, material: 1 };
+// İki tür animasyon var:
+// SCRUB: kaydırmayla oynar; bölüm sabitken kaydırdıkça ileri, geri kaydırınca geri gider.
+//        [başlangıç, bitiş] = animasyonun bölüm içi kaydırmanın hangi kısmına yayıldığı.
+// AUTO:  bölüm ekrana girince kendi süresiyle (saniye) oynar; ekrandan çıkınca sıfırlanır.
+// s.p  = animasyon ilerlemesi 0→1, s.sp = bölüm içi kaydırma ilerlemesi, s.k = bölümün ekrandan geçişi 0→1
+const SCRUB = { hero: [0, 1], manifesto: [0, 0.75], anatomy: [0.05, 0.6], hidden: [0, 0.8], furniture: [0, 0.9] };
+const AUTO = { kitchen: 3.4, bath: 3.4, material: 1 };
 function computeSections(y, now) {
   for (const s of sections) {
     s.enter = clamp((y + vh - s.top) / vh);
@@ -98,6 +100,8 @@ function computeSections(y, now) {
     s.vis = s.enter > 0 && s.exit < 1;
     s.sp = s.h > vh ? clamp((y - s.top) / (s.h - vh)) : clamp((y + vh - s.top) / (s.h + vh));
     s.k = clamp((y + vh - s.top) / (s.h + vh));
+    const sc = s.scene && SCRUB[s.scene];
+    if (sc) { s.p = clamp((s.sp - sc[0]) / (sc[1] - sc[0])); continue; }
     const dur = s.scene && AUTO[s.scene];
     if (!dur) { s.p = s.sp; continue; }
     if (!s.vis) { s.t0 = 0; s.p = 0; continue; }
@@ -224,8 +228,11 @@ function limitGesture(e) {
   if (reduced || anchor == null || !lenis || !e.event || !e.event.type.includes('wheel')) return true;
   const { R } = storyStops();
   if (anchor >= R.length) return true;
-  const lo = anchor > 0 ? R[anchor - 1][1] : 0;
-  const hi = anchor < R.length - 1 ? R[anchor + 1][0] : Infinity;
+  // Kaydırmalı bölümün içinde serbest; hareket bölümün sonunda (ya da başında) durur,
+  // sonraki bölüme geçiş yeni bir hareketle olur
+  const [a, b] = R[anchor];
+  const lo = restY > a + 2 ? a : anchor > 0 ? R[anchor - 1][1] : 0;
+  const hi = restY < b - 2 ? b : anchor < R.length - 1 ? R[anchor + 1][0] : Infinity;
   const cur = lenis.targetScroll;
   const want = cur + e.deltaY;
   if (want > hi || want < lo) {
@@ -281,7 +288,7 @@ let lastWords = -1;
 function updateManifesto() {
   const s = byScene.manifesto;
   if (!s.vis) return;
-  const n = Math.round(s.p * wordEls.length);
+  const n = Math.round((0.12 + 0.88 * s.p) * wordEls.length);
   if (n === lastWords) return;
   lastWords = n;
   wordEls.forEach((el, i) => el.classList.toggle('on', i < n));
@@ -346,7 +353,9 @@ anaSec.addEventListener('click', (e) => {
 function updateAnatomy(now) {
   const s = byScene.anatomy;
   if (!s.vis) { if (anaCycle.running) anaCycle.reset(); return; }
+  // duvar tamamen açılınca katman turu başlar; geri kaydırıp kapatınca durur
   if (s.p >= 1) anaCycle.start(now);
+  else if (anaCycle.running) anaCycle.stop();
   anaCycle.tick(now);
 }
 
@@ -361,7 +370,7 @@ dotEls.forEach((b, i) => b.addEventListener('click', () => hidCycle.select(i, pe
 function updateHidden(now) {
   const s = byScene.hidden;
   if (!s.vis) { if (hidCycle.running) hidCycle.reset(); return; }
-  if (s.p > 0) hidCycle.start(now);
+  if (s.enter > 0.6) hidCycle.start(now);
   hidCycle.tick(now);
 }
 function showStat(idx) {

@@ -428,9 +428,11 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
             baked.visible = true;
           }
         }
-        const k = s.k - 0.5; // kaydırmanın verdiği hafif döndürme
-        pivot.rotation.y = -0.74 + (reduced ? 0 : Math.sin(t * 0.22) * 0.05) + k * 0.6 + ptr.x * 0.07;
-        pivot.rotation.x = 0.5 + k * 0.1 + ptr.y * 0.03;
+        // kaydırdıkça maket döner, eğilir ve yaklaşır
+        const p = s.p;
+        pivot.rotation.y = -0.74 + (reduced ? 0 : Math.sin(t * 0.22) * 0.05) + p * 0.9 + ptr.x * 0.07;
+        pivot.rotation.x = 0.5 + p * 0.16 + ptr.y * 0.03;
+        pivot.scale.setScalar(1 + p * 0.14);
       },
     };
   });
@@ -525,7 +527,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
           const em = on ? edgeHi : edge;
           for (const l of pl.lines) if (l.material !== em) l.material = em;
         });
-        pivot.rotation.y = lerp(-1.3, -0.84, easeOut(p)) + (s.k - 0.5) * 0.3 + ptr.x * 0.05;
+        pivot.rotation.y = lerp(-1.3, -0.84, easeOut(p)) + (s.sp - 0.6) * 0.2 + ptr.x * 0.05;
         pivot.rotation.x = 0.17 + ptr.y * 0.03;
       },
       invalidate() { fh = 0; bh = []; lastKey.length = 0; },
@@ -699,7 +701,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
         for (const pp of pipes) pp.m.userData.draw(easeInOut(range(p, pp.a, pp.b)));
         const fk = easeOut(range(p, 0.25, 0.45));
         fx.forEach((m) => { m.scale.setScalar(Math.max(0.001, fk)); });
-        pivot.rotation.y = -0.3 + (s.k - 0.5) * 0.45 + (reduced ? 0 : Math.sin(t * 0.3) * 0.03) + ptr.x * 0.05;
+        pivot.rotation.y = -0.42 + s.sp * 0.36 + (reduced ? 0 : Math.sin(t * 0.3) * 0.03) + ptr.x * 0.05;
         pivot.rotation.x = 0.16 + ptr.y * 0.03;
       },
     };
@@ -898,7 +900,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
         const p = s.p;
         const e = easeInOut(range(p, 0.08, 0.6));
         for (const pt of parts) pt.m.position.copy(pt.base).addScaledVector(pt.ex, e);
-        pivot.rotation.y = 0.62 - p * 0.25 - (s.k - 0.5) * 0.3 + ptr.x * 0.05;
+        pivot.rotation.y = 0.62 - p * 0.36 + ptr.x * 0.05;
         pivot.rotation.x = 0.14 + ptr.y * 0.03;
       },
     };
@@ -957,7 +959,8 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
           slabs.position.y = Math.sin(swapT * Math.PI) * 0.22;
           slabs.rotation.z = Math.sin(swapT * Math.PI) * 0.02;
         } else if (target !== cur) { swapT = 0; swapped = false; }
-        pivot.rotation.y = -0.45 + (reduced ? 0 : Math.sin(t * 0.3) * 0.4) + (s.k - 0.5) * 0.5 + ptr.x * 0.06;
+        // ada kaydırdıkça döner; malzemeler kendiliğinden değişir
+        pivot.rotation.y = -0.62 + s.sp * 1.2 + (reduced ? 0 : Math.sin(t * 0.3) * 0.06) + ptr.x * 0.06;
         pivot.rotation.x = 0.3 + ptr.y * 0.03;
       },
     };

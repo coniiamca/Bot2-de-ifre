@@ -29,11 +29,14 @@ Logo, kaydırma hızına tepki veren bir su terazisi kabarcığıdır.
 
 ## Kaydırma ve otomatik oynatma
 
-Animasyonlar kaydırmaya bağlı değildir: bir bölüm ekrana girdiğinde kendi süresiyle oynar (duvarın açılması, boruların çizilmesi, mutfak üçgeni, banyo bölgeleri, gardırop). Katmanlar, test değerleri ve tezgâh malzemeleri kendiliğinden ilerler; her birinde ilerleme çizgisi ve Durdur/Oynat düğmesi vardır, elle seçim akışı 8 saniye bekletir. Hareket azaltma tercihi olan ziyaretçilerde akışlar duraklatılmış başlar. Kaydırma modellere yalnızca hafif bir döndürme verir. Sayfa boyu masaüstünde yaklaşık 12 ekrandır.
+İki tür animasyon var:
 
-3D'li bölümler tam bir ekrandır ve sayfa bunlarda bölüm bölüm ilerler: her tekerlek ya da trackpad hareketi (hızlı bir fırlatma dahil) yalnızca bir sonraki ya da önceki bölüme gider; klavye, kaydırma çubuğu ve dokunmatikte hareket bitince sayfa gidilen yöndeki bölüme yerleşir. Süreç bölümünden itibaren kaydırma serbesttir. Sağdaki noktalarla istenen bölüme doğrudan gidilir. Kurallar `app.js` içinde "Bölüm bölüm ilerleme" başlığı altındadır.
+- **Kaydırmayla oynayanlar:** giriş maketinin dönmesi, manifesto kelimeleri, duvarın katmanlarına ayrılması, tesisat borularının çizilmesi, gardırobun açılması, malzeme adasının dönmesi. Bölüm sabit kalırken kaydırdıkça ilerler, geri kaydırınca geri gider; istenen karede bırakılabilir.
+- **Kendiliğinden oynayanlar:** mutfak çalışma üçgeni ve banyo bölgeleri (bölüm ekrana girince). Duvar katmanları, test değerleri ve tezgâh malzemeleri de kendiliğinden ilerler; ilerleme çizgisi ve Durdur/Oynat düğmesi vardır, elle seçim ya da üzerine gelme akışı bekletir. Hareket azaltma tercihi olan ziyaretçilerde akışlar duraklatılmış başlar.
 
-Süreler `app.js` içinde: bölüm animasyonları `AUTO`, dizilerin aralıkları `makeCycle({ every })`; bölüm yükseklikleri `styles.css` içinde `.sec-*` kurallarında.
+Sayfa bölüm bölüm ilerler: kaydırmalı bir bölümün içinde kaydırma serbesttir, ama bir hareket (hızlı bir trackpad fırlatması dahil) bölümün sonunda durur; sonraki bölüme yeni bir hareketle geçilir. Klavye, kaydırma çubuğu ve dokunmatikte hareket iki bölüm arasında biterse sayfa gidilen yöndeki bölüme yerleşir. Süreç bölümünden itibaren kaydırma tamamen serbesttir. Sağdaki noktalarla istenen bölüme doğrudan gidilir. Sayfa boyu masaüstünde yaklaşık 16 ekrandır.
+
+Ayarlar `app.js` içinde: kaydırmalı animasyonlar `SCRUB`, kendiliğinden oynayanlar `AUTO` (saniye), dizi aralıkları `makeCycle({ every })`, bölüm bölüm ilerleme kuralları "Bölüm bölüm ilerleme" başlığı altında. Bölüm yükseklikleri `styles.css` içinde `.sec-*` kurallarında.
 
 ## Akıcılık için yapılanlar
 
