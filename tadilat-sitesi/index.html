@@ -103,7 +103,7 @@
           </div>
         </div>
         <div class="hero-foot">
-          <span class="scroll-cue"><i aria-hidden="true"></i>Kaydırın, evi katman katman açalım</span>
+          <span class="scroll-cue"><i aria-hidden="true"></i>Aşağı inin, evi katman katman açalım</span>
           <span class="mono">Maket · Örnek daire, 32 m²</span>
         </div>
       </div>
@@ -130,15 +130,15 @@
             <span class="ln ln-ghost">arkasındaki 25 mm.</span>
           </h2>
         </div>
-        <div class="ana-panel" id="ana-panel" aria-live="polite">
-          <div class="ana-idx mono"><span id="ana-n">01</span> / 08</div>
+        <div class="ana-panel" id="ana-panel">
+          <div class="ana-idx mono"><span><span id="ana-n">01</span> / 08</span></div>
+          <div class="ctl-row"><span class="auto-bar" aria-hidden="true"><i id="ana-bar"></i></span><button type="button" class="auto-btn" id="ana-auto" aria-pressed="false" aria-label="Katmanların kendiliğinden ilerlemesi">Durdur</button></div>
           <h3 id="ana-name">Tuğla duvar</h3>
           <p class="ana-mm mono" id="ana-mm">85 mm</p>
           <p id="ana-desc">Taşıyıcı olmayan bölme duvar. Çatlak, boşluk ve gevşek sıva yalıtımdan önce onarılır; kusurlu zemine yapılan yalıtım ilk hareketle kopar.</p>
           <p class="ana-std mono" id="ana-std">Kontrol · Mastar ve çekiç testi</p>
         </div>
         <ol class="ana-labels" id="ana-labels" aria-label="Duvar katmanları"></ol>
-        <p class="hint mono"><i aria-hidden="true"></i>Bir katmana tıklayarak inceleyin</p>
       </div>
     </section>
 
@@ -156,8 +156,8 @@
             <li><i class="lg-elec"></i>Elektrik</li>
           </ul>
         </div>
-        <div class="hid-stat" aria-live="polite">
-          <p class="hid-cap" id="hid-cap"><span class="mono" id="hid-k">01 / 05 · Basınç testi</span><span id="hid-d">EN 806-4'e göre tesisat, duvar kapanmadan 11 bar'da 30 dakika tutulur; PPR borularda ardından 5,5 bar'da 2 saat. İbre kıpırdamamalıdır.</span></p>
+        <div class="hid-stat">
+          <p class="hid-cap" id="hid-cap"><span class="ctl-row"><span class="dots" id="hid-dots"></span><span class="auto-bar" aria-hidden="true"><i id="hid-bar"></i></span><button type="button" class="auto-btn" id="hid-auto" aria-pressed="false" aria-label="Test değerlerinin kendiliğinden ilerlemesi">Durdur</button></span><span class="mono" id="hid-k">01 / 05 · Basınç testi</span><span id="hid-d">EN 806-4'e göre tesisat, duvar kapanmadan 11 bar'da 30 dakika tutulur; PPR borularda ardından 5,5 bar'da 2 saat. İbre kıpırdamamalıdır.</span></p>
           <p class="hid-num" id="hid-num">11<small>bar</small></p>
         </div>
       </div>
@@ -240,14 +240,17 @@
       <div class="frame frame-front">
         <div class="mat-top">
           <p class="eyebrow">Malzeme kütüphanesi · Tezgâh</p>
-          <div class="mat-nav" role="tablist" aria-label="Tezgâh malzemesi">
-            <button role="tab" aria-selected="true" data-i="0">Mermer</button>
-            <button role="tab" aria-selected="false" data-i="1">Kuvars</button>
-            <button role="tab" aria-selected="false" data-i="2">Porselen</button>
-            <button role="tab" aria-selected="false" data-i="3">Meşe</button>
+          <div class="mat-ctl">
+            <div class="mat-nav" role="tablist" aria-label="Tezgâh malzemesi">
+              <button role="tab" aria-selected="true" data-i="0">Mermer</button>
+              <button role="tab" aria-selected="false" data-i="1">Kuvars</button>
+              <button role="tab" aria-selected="false" data-i="2">Porselen</button>
+              <button role="tab" aria-selected="false" data-i="3">Meşe</button>
+            </div>
+            <div class="ctl-row"><span class="auto-bar" aria-hidden="true"><i id="mat-bar"></i></span><button type="button" class="auto-btn" id="mat-auto" aria-pressed="false" aria-label="Malzemelerin kendiliğinden değişmesi">Durdur</button></div>
           </div>
         </div>
-        <div class="mat-card" id="mat-card" aria-live="polite">
+        <div class="mat-card" id="mat-card">
           <p class="mono mat-kind" id="mat-kind">Doğal taş</p>
           <h3 id="mat-name">Calacatta mermer</h3>
           <ul class="scales" id="mat-scales"></ul>

@@ -84,17 +84,64 @@ function measure() {
   }
   scene && scene.resize();
 }
-function computeSections(y) {
+// Animasyonlar kaydırmaya bağlı değil: bölüm ekrana girince kendi süresiyle oynar (saniye).
+// s.p  = animasyon ilerlemesi 0→1 (bölüm ekrandan tamamen çıkınca sıfırlanır, dönüşte yeniden oynar)
+// s.sp = bölüm içindeki kaydırma ilerlemesi (bölüm göstergesi için)
+// s.k  = bölümün ekrandan geçişi 0→1 (modellere hafif bir kaydırma döndürmesi verir)
+const AUTO = { hero: 1, manifesto: 1.6, anatomy: 1.6, hidden: 3.2, kitchen: 3.4, bath: 3.4, furniture: 2.6, material: 1 };
+function computeSections(y, now) {
   for (const s of sections) {
     s.enter = clamp((y + vh - s.top) / vh);
-    s.p = s.h > vh ? clamp((y - s.top) / (s.h - vh)) : clamp((y + vh - s.top) / (s.h + vh));
     s.exit = clamp((y - (s.top + s.h - vh)) / vh);
     s.offPx = (1 - s.enter) * vh - s.exit * vh;
     s.vis = s.enter > 0 && s.exit < 1;
+    s.sp = s.h > vh ? clamp((y - s.top) / (s.h - vh)) : clamp((y + vh - s.top) / (s.h + vh));
+    s.k = clamp((y + vh - s.top) / (s.h + vh));
+    const dur = s.scene && AUTO[s.scene];
+    if (!dur) { s.p = s.sp; continue; }
+    if (!s.vis) { s.t0 = 0; s.p = 0; continue; }
+    if (!s.t0 && s.enter > 0.6) s.t0 = now;
+    s.p = !s.t0 ? 0 : reduced ? 1 : clamp((now - s.t0) / 1000 / dur);
   }
 }
-// Bir bölümün içindeki ilerleme değerine (0–1) kaydır
-function scrollToProgress(s, p) { scrollToY(s.top + p * (s.h - vh) + 2); }
+
+// Kendiliğinden ilerleyen dizi (katmanlar, testler, malzemeler).
+// Süre dolunca sonrakine geçer; elle seçim 8 sn bekletir; Durdur/Oynat düğmesi ve ilerleme çizgisi vardır.
+// Hareket azaltma tercihi olanlarda duraklatılmış başlar.
+function makeCycle({ n, every, btn, bar, onChange }) {
+  const c = { i: 0, t: 0, running: false, paused: reduced, frozen: 0, lastK: -1 };
+  const show = (i) => { c.i = ((i % n) + n) % n; onChange(c.i); };
+  const setBar = (k) => {
+    k = Math.round(clamp(k) * 300) / 300;
+    if (k !== c.lastK) { c.lastK = k; bar.style.transform = 'scaleX(' + k + ')'; }
+  };
+  const label = () => {
+    btn.setAttribute('aria-pressed', String(c.paused));
+    btn.textContent = c.paused ? 'Oynat' : 'Durdur';
+  };
+  c.start = (now) => { if (!c.running) { c.running = true; c.t = Math.max(c.t, now); } };
+  c.stop = () => { c.running = false; };
+  c.reset = () => { c.running = false; c.t = 0; show(0); };
+  c.select = (i, now) => { show(i); c.t = now + 8000; c.frozen = 0; };
+  c.tick = (now) => {
+    let k = 0;
+    if (c.paused) k = c.frozen;
+    else if (c.running) {
+      k = (now - c.t) / every;
+      if (k >= 1) { show(c.i + 1); c.t = now; k = 0; }
+    }
+    setBar(k);
+  };
+  btn.addEventListener('click', () => {
+    const now = performance.now();
+    c.paused = !c.paused;
+    if (c.paused) c.frozen = clamp((now - c.t) / every);
+    else c.t = now - c.frozen * every;
+    label();
+  });
+  label();
+  return c;
+}
 
 let resizeT;
 addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(measure, 120); });
@@ -123,7 +170,7 @@ function updateHud(y) {
   const mid = y + vh * 0.5;
   let cur = sections[0];
   for (const s of sections) if (mid >= s.top) cur = s;
-  const hp = Math.round(cur.p * 200) / 200;
+  const hp = Math.round(cur.sp * 200) / 200;
   if (hp !== lastHp) { lastHp = hp; hudBar.style.transform = 'scaleY(' + hp + ')'; }
   if (cur.i === lastHud) return;
   lastHud = cur.i;
@@ -143,7 +190,7 @@ function updateBubble(y) {
   if (bx !== lastBx) { lastBx = bx; bubble.style.transform = 'translateX(' + bx + 'px)'; }
 }
 
-/* ---------------- Manifesto: kelimeler kaydırdıkça yanar ---------------- */
+/* ---------------- Manifesto: bölüm görününce kelimeler sırayla yanar ---------------- */
 const manEl = $('#manifesto-text');
 const words = manEl.textContent.trim().split(/\s+/);
 manEl.innerHTML = words.map((w) => `<span class="w">${w}</span>`).join(' ');
@@ -152,8 +199,7 @@ let lastWords = -1;
 function updateManifesto() {
   const s = byScene.manifesto;
   if (!s.vis) return;
-  const f = smooth(0.55, 1, s.enter) * 0.12 + clamp(s.p / 0.72) * 0.88;
-  const n = Math.round(f * wordEls.length);
+  const n = Math.round(s.p * wordEls.length);
   if (n === lastWords) return;
   lastWords = n;
   wordEls.forEach((el, i) => el.classList.toggle('on', i < n));
@@ -165,37 +211,47 @@ labelList.innerHTML = LAYERS.map((L, i) =>
   `<li><i class="ln" aria-hidden="true"></i><button type="button" aria-label="${L.name}, ${L.mm}"><span class="n">${pad(i + 1)}</span><span class="t">${L.name}</span><span class="mm">${L.mm}</span></button></li>`
 ).join('');
 const labelEls = $$('li', labelList);
-const ANA_STEP0 = 0.4, ANA_STEP1 = 0.97;
-labelEls.forEach((li, i) => li.querySelector('button').addEventListener('click', () => {
-  scrollToProgress(byScene.anatomy, ANA_STEP0 + ((i + 0.5) / LAYERS.length) * (ANA_STEP1 - ANA_STEP0));
-}));
 const anaN = $('#ana-n'), anaName = $('#ana-name'), anaMm = $('#ana-mm'), anaDesc = $('#ana-desc'), anaStd = $('#ana-std');
-let anaIdx = 0, lastAna = -1;
-function updateAnatomy() {
-  const s = byScene.anatomy;
-  if (!s.vis) return;
-  const k = clamp((s.p - ANA_STEP0) / (ANA_STEP1 - ANA_STEP0));
-  anaIdx = s.p < ANA_STEP0 ? 0 : Math.min(LAYERS.length - 1, Math.floor(k * LAYERS.length));
-  if (anaIdx === lastAna) return;
-  lastAna = anaIdx;
-  const L = LAYERS[anaIdx];
-  anaN.textContent = pad(anaIdx + 1);
+let anaIdx = 0;
+function showLayer(i) {
+  if (i === anaIdx && anaName.textContent === LAYERS[i].name) return;
+  anaIdx = i;
+  const L = LAYERS[i];
+  anaN.textContent = pad(i + 1);
   anaName.textContent = L.name;
   anaMm.textContent = L.mm;
   anaDesc.textContent = L.desc;
   anaStd.textContent = L.std;
-  labelEls.forEach((li, i) => li.classList.toggle('on', i === anaIdx));
+  labelEls.forEach((li, j) => li.classList.toggle('on', j === i));
+}
+// Duvar açıldıktan sonra katmanlar 2,6 sn arayla kendiliğinden gezilir
+const anaCycle = makeCycle({ n: LAYERS.length, every: 2600, btn: $('#ana-auto'), bar: $('#ana-bar'), onChange: showLayer });
+labelEls.forEach((li, i) => li.querySelector('button').addEventListener('click', () => anaCycle.select(i, performance.now())));
+function updateAnatomy(now) {
+  const s = byScene.anatomy;
+  if (!s.vis) { if (anaCycle.running) anaCycle.reset(); return; }
+  if (s.p >= 1) anaCycle.start(now);
+  anaCycle.tick(now);
 }
 
 /* ---------------- Görünmeyen işçilik: sayaç ---------------- */
-const hidNum = $('#hid-num'), hidK = $('#hid-k'), hidD = $('#hid-d');
+const hidNum = $('#hid-num'), hidK = $('#hid-k'), hidD = $('#hid-d'), hidDots = $('#hid-dots');
+hidDots.innerHTML = STATS.map((S, i) => `<button type="button" aria-label="${S.key}"${i === 0 ? ' aria-current="true"' : ''}><i></i></button>`).join('');
+const dotEls = $$('button', hidDots);
 let lastHid = 0;
-function updateHidden() {
+// Test değerleri 3,4 sn arayla kendiliğinden değişir
+const hidCycle = makeCycle({ n: STATS.length, every: 3400, btn: $('#hid-auto'), bar: $('#hid-bar'), onChange: showStat });
+dotEls.forEach((b, i) => b.addEventListener('click', () => hidCycle.select(i, performance.now())));
+function updateHidden(now) {
   const s = byScene.hidden;
-  if (!s.vis) return;
-  const idx = Math.min(STATS.length - 1, Math.floor(clamp((s.p - 0.06) / 0.88) * STATS.length));
+  if (!s.vis) { if (hidCycle.running) hidCycle.reset(); return; }
+  if (s.p > 0) hidCycle.start(now);
+  hidCycle.tick(now);
+}
+function showStat(idx) {
   if (idx === lastHid) return;
   lastHid = idx;
+  dotEls.forEach((b, i) => (i === idx ? b.setAttribute('aria-current', 'true') : b.removeAttribute('aria-current')));
   const S = STATS[idx];
   hidNum.animate([{ opacity: 0, transform: 'translateY(12%)' }, { opacity: 1, transform: 'none' }], { duration: reduced ? 1 : 600, easing: 'cubic-bezier(.22,.8,.2,1)' });
   hidNum.innerHTML = `${S.num}<small>${S.unit}</small>`;
@@ -207,7 +263,7 @@ function updateHidden() {
 const matTabs = $$('.mat-nav button');
 const matGhost = $('#mat-ghost'), matKind = $('#mat-kind'), matName = $('#mat-name'), matScales = $('#mat-scales'),
   matNote = $('#mat-note'), matI = $('#mat-i'), matUse = $('#mat-use');
-let matIdx = 0, lastMat = -1;
+let matIdx = 0;
 function scalesHtml(M) {
   return M.scales.map(([k, v, d]) =>
     `<li><span>${k}</span><span class="bar" role="img" aria-label="5 üzerinden ${v}">${[1, 2, 3, 4, 5].map((j) => `<i class="${j <= v ? 'f' : ''}"></i>`).join('')}</span><span class="v">${d}</span></li>`
@@ -230,16 +286,14 @@ function renderMat(i) {
   scene && scene.setMaterial(i);
 }
 matScales.innerHTML = scalesHtml(MATS[0]);
-matTabs.forEach((b, i) => b.addEventListener('click', () => scrollToProgress(byScene.material, (i + 0.5) / MATS.length)));
-function updateMaterial() {
+// Malzemeler 4,5 sn arayla kendiliğinden değişir; sekmeye tıklamak o malzemeyi seçer
+const matCycle = makeCycle({ n: MATS.length, every: 4500, btn: $('#mat-auto'), bar: $('#mat-bar'), onChange: (i) => { matIdx = i; renderMat(i); } });
+matTabs.forEach((b, i) => b.addEventListener('click', () => matCycle.select(i, performance.now())));
+function updateMaterial(now) {
   const s = byScene.material;
-  if (!s.vis) return;
-  matIdx = Math.min(MATS.length - 1, Math.floor(clamp(s.p / 0.999) * MATS.length));
-  if (matIdx === lastMat) return;
-  const first = lastMat === -1;
-  lastMat = matIdx;
-  if (first && matIdx === 0) { scene && scene.setMaterial(0); return; }
-  renderMat(matIdx);
+  if (!s.vis) { matCycle.stop(); return; }
+  if (s.p > 0) matCycle.start(now);
+  matCycle.tick(now);
 }
 
 /* ---------------- Süreç: tipik takvim ---------------- */
@@ -347,14 +401,15 @@ import('./scene.js')
 function tick(time) {
   lenis && lenis.raf(time);
   const y = window.scrollY;
-  computeSections(y);
+  const now = performance.now();
+  computeSections(y, now);
   applyColors();
   updateHud(y);
   updateBubble(y);
   updateManifesto();
-  updateAnatomy();
-  updateHidden();
-  updateMaterial();
+  updateAnatomy(now);
+  updateHidden(now);
+  updateMaterial(now);
   if (scene) {
     const intro = introStart ? (performance.now() - introStart) / 1000 : -1;
     scene.update(time / 1000, { pointer, vw, vh, anaIdx, matIdx, dw, intro });

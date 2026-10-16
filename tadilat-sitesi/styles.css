@@ -191,12 +191,13 @@ ol, ul { padding: 0; list-style: none; }
 }
 .frame-back + .frame-front { margin-top: -100vh; margin-top: -100svh; }
 
-.sec-hero { height: 170vh; }
-.sec-manifesto { height: 220vh; }
-.sec-anatomi { height: 460vh; }
-.sec-dark { height: 460vh; }
-.sec-svc { height: 270vh; }
-.sec-mat { height: 420vh; }
+/* Animasyonlar zamanla oynar; bölümler yalnızca kısa bir süre sabit kalır */
+.sec-hero { height: 100vh; }
+.sec-manifesto { height: 100vh; }
+.sec-anatomi { height: 150vh; }
+.sec-dark { height: 150vh; }
+.sec-svc { height: 125vh; }
+.sec-mat { height: 130vh; }
 
 .ln { display: block; }
 .ln-ghost { color: color-mix(in srgb, var(--ink) 26%, transparent); }
@@ -314,7 +315,21 @@ html:not(.js) .manifesto { color: var(--ink); }
 .ana-labels .mm { font-family: var(--f-mono); font-size: var(--t-xs); opacity: .7; }
 .ana-labels li.on button { color: var(--ink); }
 .ana-labels li.on .ln { background: var(--brass); }
-.hint { position: absolute; left: max(var(--gx), env(safe-area-inset-left, 0px)); bottom: calc(26px + env(safe-area-inset-bottom, 0px)); color: var(--ink-2); display: none; }
+/* Kendiliğinden ilerleyen diziler: ilerleme çizgisi + Durdur/Oynat */
+.ctl-row { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.auto-bar { position: relative; flex: 1; min-width: 48px; height: 1px; background: var(--line); overflow: hidden; }
+.auto-bar i { position: absolute; inset: 0; background: var(--ink); transform-origin: left; transform: scaleX(0); will-change: transform; }
+.auto-btn {
+  flex: none; background: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; cursor: pointer;
+  font-family: var(--f-mono); font-size: var(--t-xs); letter-spacing: .06em; text-transform: uppercase; color: var(--ink);
+  transition: border-color .2s;
+}
+.auto-btn:hover { border-color: var(--ink); }
+.dots { display: flex; gap: 2px; flex: none; }
+.dots button { width: 20px; height: 20px; padding: 0; border: 0; background: none; cursor: pointer; display: grid; place-items: center; }
+.dots i { width: 6px; height: 6px; border-radius: 50%; border: 1px solid var(--ink-2); transition: background .25s, border-color .25s; }
+.dots button[aria-current="true"] i { background: var(--brass); border-color: var(--brass); }
+.mat-ctl { display: grid; gap: 10px; justify-items: stretch; }
 
 /* ---------- 04 Görünmeyen ---------- */
 .hid-head { position: absolute; top: calc(var(--navh) + env(safe-area-inset-top, 0px) + 6vh); left: max(var(--gx), env(safe-area-inset-left, 0px)); display: grid; gap: 18px; max-width: 30rem; }
@@ -523,11 +538,10 @@ html:not(.js) .manifesto { color: var(--ink); }
   .nav-menu { display: inline-flex; align-items: center; }
   .hud { display: none; }
 
-  .sec-hero { height: 150vh; }
-  .sec-anatomi { height: 420vh; }
-  .sec-dark { height: 420vh; }
-  .sec-svc { height: 240vh; }
-  .sec-mat { height: 380vh; }
+  .sec-anatomi { height: 140vh; }
+  .sec-dark { height: 140vh; }
+  .sec-svc { height: 115vh; }
+  .sec-mat { height: 120vh; }
 
   .hero-notes { display: none; }
   .hero-main { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); gap: 16px; }

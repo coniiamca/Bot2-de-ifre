@@ -27,6 +27,12 @@ Logo, kaydırma hızına tepki veren bir su terazisi kabarcığıdır.
 
 3D sahne yüklenemezse (eski cihaz, WebGL kapalı) site metin ve etkileşimleriyle eksiksiz çalışmaya devam eder.
 
+## Kaydırma ve otomatik oynatma
+
+Animasyonlar kaydırmaya bağlı değildir: bir bölüm ekrana girdiğinde kendi süresiyle oynar (duvarın açılması, boruların çizilmesi, mutfak üçgeni, banyo bölgeleri, gardırop). Katmanlar, test değerleri ve tezgâh malzemeleri kendiliğinden ilerler; her birinde ilerleme çizgisi ve Durdur/Oynat düğmesi vardır, elle seçim akışı 8 saniye bekletir. Hareket azaltma tercihi olan ziyaretçilerde akışlar duraklatılmış başlar. Kaydırma modellere yalnızca hafif bir döndürme verir. Sayfa boyu masaüstünde yaklaşık 14 ekrandır.
+
+Süreler `app.js` içinde: bölüm animasyonları `AUTO`, dizilerin aralıkları `makeCycle({ every })`; bölüm yükseklikleri `styles.css` içinde `.sec-*` kurallarında.
+
 ## Akıcılık için yapılanlar
 
 - Bütün modeller, dokular ve gölgelendiriciler yükleme ekranı sırasında GPU'ya yüklenir; bölüm geçişlerinde ilk çizim takılması olmaz.
