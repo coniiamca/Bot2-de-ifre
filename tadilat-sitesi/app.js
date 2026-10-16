@@ -40,9 +40,9 @@ new MutationObserver(() => { if (root.classList.contains('loaded') && !introStar
 
 /* ---------------- Yumuşak kaydırma ----------------
    Dokunmatik cihazlarda (telefon, tablet) kaydırma tamamen tarayıcınındır: Lenis ve JS ile bölüme
-   yerleşme kapalı; yerine CSS scroll-snap (proximity) kullanılır. JS ile yerleşme, ataletli kaydırma
-   bittikten sonra sayfayı bir ekran ileri atıyordu (ışınlanma hissi); tarayıcı ise hedefi atalet
-   sırasında belirler ve yalnızca bölüm başına yakın bırakıldığında oturtur. */
+   yerleşme kapalı; yerine CSS scroll-snap kullanılır (bkz. styles.css, html.touch-snap). JS ile yerleşme,
+   ataletli kaydırma bittikten sonra sayfayı bir ekran ileri atıyordu (ışınlanma hissi); tarayıcı ise
+   hedefi atalet sırasında belirler. */
 const touchUI = !!(window.matchMedia && matchMedia('(hover: none) and (pointer: coarse)').matches);
 if (touchUI && !reduced) root.classList.add('touch-snap');
 let lenis = null;
@@ -84,8 +84,6 @@ const sections = $$('.sec').map((el, i) => ({
   top: 0, h: 0, enter: 0, p: 0, exit: 0, offPx: 0, vis: false,
 }));
 const byScene = Object.fromEntries(sections.filter((s) => s.scene).map((s) => [s.scene, s]));
-// dokunmatik yerleşme noktaları: her 3D bölümün başı (CSS) ve kaydırmalı bölümlerin sonu (bu işaret)
-for (const s of sections) if (s.scene) s.el.insertAdjacentHTML('beforeend', '<i class="snap-end" aria-hidden="true"></i>');
 let vw = innerWidth, vh = innerHeight;
 
 function measure() {

@@ -899,14 +899,14 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     }
     const root = pinRoots.furniture, sec = sections.furniture;
     const ph = (a) => (p) => p > a;
-    addPin(root, 'Gövde · 18 mm', sideR, [0, 0.7, 0.28], { sec, show: ph(0.3) });
+    addPin(root, 'Gövde · 18 mm', sideR, [0, 0.35, 0.28], { sec, show: ph(0.3) });
     addPin(root, 'Arkalık · 8 mm', back, [-0.4, 0.6, 0], { sec, show: ph(0.4) });
     addPin(root, 'Kapak · 18 mm', doors[1], [0.2, -0.5, 0.01], { sec, show: ph(0.5) });
     addPin(root, 'Menteşe · 110°', hinges[4], [0, 0, 0], { sec, show: ph(0.6) });
     addPin(root, 'Ray · 40 kg', drawer, [0.27, -0.06, 0.22], { sec, show: ph(0.7) });
     return {
       layout: () => (aspect < 0.85
-        ? { x: -W * 0.08, y: -1.25, s: Math.min(0.92, (W * 0.62) / 2.6) }
+        ? { x: 0, y: -1.25, s: Math.min(0.92, (W * 0.62) / 2.6) }
         : { x: 0, y: -2.25, s: Math.min(1.3, (H * 0.48) / 2.4) }),
       update(tt, s) {
         const p = s.p;
@@ -1002,11 +1002,14 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
       if (!show) continue;
       pin.obj.localToWorld(v3.copy(pin.local));
       v3.project(camera);
-      const x = (v3.x * 0.5 + 0.5) * vw;
+      let x = (v3.x * 0.5 + 0.5) * vw;
       const y = (-v3.y * 0.5 + 0.5) * vh - (attached ? 0 : s.offPx);
-      const tf = pin.tag
-        ? `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) translate(-50%,-50%)`
-        : `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) translate(-4px,-50%)`;
+      // etiket ekrandan taşmasın: ortalı etiket kenardan içeri itilir, noktalı etiket noktanın soluna geçer
+      if (!pin.w) pin.w = pin.el.offsetWidth;
+      const flip = !pin.tag && x + pin.w > vw - 6;
+      if (flip !== pin.flip) { pin.flip = flip; pin.el.classList.toggle('flip', flip); }
+      if (pin.tag) x = clamp(x, pin.w / 2 + 6, vw - pin.w / 2 - 6);
+      const tf = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) ` + (pin.tag ? 'translate(-50%,-50%)' : flip ? 'translate(calc(4px - 100%),-50%)' : 'translate(-4px,-50%)');
       if (tf !== pin.tf) { pin.tf = tf; pin.el.style.transform = tf; }
     }
   }
@@ -1078,12 +1081,16 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     renderer.setScissorTest(false);
   }
 
+  // etiket genişlikleri yazı tipi yüklenince yeniden ölçülür
+  if (document.fonts) document.fonts.ready.then(() => { for (const pin of pins) pin.w = 0; });
+
   let parked = false;
   const api = {
     // Tuval 100lvh (dokunmatikte 2 × 100svh): mobilde adres çubuğu açılıp kapanırken boyut değişmez,
     // yeniden ayırma yapılmaz
     resize() {
       ana.invalidate();
+      for (const pin of pins) pin.w = 0;
       const w = canvas.clientWidth || window.innerWidth;
       const h = attached ? canvas.clientHeight / 2 || window.innerHeight : canvas.clientHeight || window.innerHeight;
       if (w === vw && h === vh) return;
@@ -1134,6 +1141,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     const hemi = scene.children.find((o) => o.isHemisphereLight);
     window.__scene = {
       info: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, dpr, host: host && host.name, mode, ft: groups.map((g) => g.name + ':' + Math.round(g.ft)).join(' ') }),
+      setDpr: (v) => setDpr(v),
       // yalnızca ölçüm için: ışık ve ortam yansımasını çalışırken ayarla
       tune: ({ env, hemi: h, key: k, fill: f }) => {
         if (h != null) hemi.intensity = h;
