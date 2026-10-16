@@ -6,7 +6,6 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const range = (v, a, b) => clamp((v - a) / (b - a));
-const smooth = (a, b, v) => { const t = range(v, a, b); return t * t * (3 - 2 * t); };
 const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const fmt = (n, d = 2) => n.toFixed(d).replace('.', ',');
@@ -261,14 +260,14 @@ function bake(parent, skip = new Set()) {
 export async function createScene({ canvas, sections, layers, mats, labelEls, pinRoots, reduced }) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
   if (!renderer.getContext()) throw new Error('WebGL yok');
-  // Dokunmatik cihazlarda (telefon, tablet) kaydırmayı tarayıcı ayrı bir iş parçacığında akıtır; JS ile
-  // sayfayla birlikte taşınan 3D bir kare geriden gelip titrer. Bu cihazlarda sahne ekranda sabit durur,
-  // bölümler arasında tuval saydamlaşarak geçer (yalnızca opaklık: birleştiricide, kaydırmayla senkron).
-  const fixedStage = !!(window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
+  // Dokunmatik cihazlarda (telefon, tablet) kaydırmayı tarayıcı ayrı bir iş parçacığında akıtır; ekranda
+  // sabit tuvaldeki modeli JS ile sayfayla birlikte taşımak bir kare geride kalıp titretir. Bu cihazlarda
+  // tuval bölümün içindeki yapışkan katmana takılır ve yazıyla birlikte tarayıcı kaydırır (bkz. drawAttached).
+  const attached = !!(window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
   // Çözünürlük: masaüstünde 1–1,5. Telefon ekranı 2–3 kat yoğun olduğundan orada 1,5–2; daha düşüğü
   // ince çizgileri ve kenarları bulanıklaştırıyordu. Kareler yavaşlarsa adapt() kademeli düşürür.
-  const DPR_MAX = Math.min(window.devicePixelRatio || 1, fixedStage ? 2 : 1.5);
-  const DPR_MIN = Math.min(DPR_MAX, fixedStage ? 1.5 : 1);
+  const DPR_MAX = Math.min(window.devicePixelRatio || 1, attached ? 2 : 1.5);
+  const DPR_MIN = Math.min(DPR_MAX, attached ? 1.5 : 1);
   let dpr = DPR_MAX;
   renderer.setPixelRatio(dpr);
   renderer.setClearColor(0x000000, 0);
@@ -290,9 +289,6 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
   const isSmall = Math.min(window.innerWidth, window.innerHeight) < 700;
 
   let vw = 0, vh = 0, aspect = 1, H = 1, W = 1;
-  let domVh = window.innerHeight;
-  // bölüm çerçevesinin ekranı ne kadar doldurduğu (1 = tam, 0 = dışarıda)
-  const presence = (s) => (s.vis ? clamp(1 - Math.abs(s.offPx) / domVh) : 0);
   let plasterMat = null;
   const ptr = { x: 0, y: 0 };
   const groups = [];
@@ -561,14 +557,14 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
         if (!fh) fh = frameEl ? frameEl.clientHeight : vh;
         if (bh.length !== labelEls.length || bh.some((v) => !v)) bh = labelEls.map((li) => li.querySelector('button').offsetHeight);
         const safe = 26;
-        const op = (range(s.p, 0.35, 0.9) * (fixedStage ? smooth(0.6, 0.95, presence(s)) : 1)).toFixed(2);
+        const op = range(s.p, 0.35, 0.9).toFixed(2);
         plates.forEach((pl, i) => {
           const li = labelEls[i];
           anchor.set(pl.L.t / 2, -1.2, 0.9);
           pl.g.localToWorld(tmp.copy(anchor));
           tmp.project(camera);
           const x = Math.round((tmp.x * 0.5 + 0.5) * vw);
-          const y = (-tmp.y * 0.5 + 0.5) * vh - s.offPx;
+          const y = (-tmp.y * 0.5 + 0.5) * vh - (attached ? 0 : s.offPx);
           const lh = Math.max(0, Math.round(fh - (safe + bh[i] + 10) - (y + 10)));
           const key = x + '|' + lh + '|' + op;
           if (lastKey[i] === key) return;
@@ -644,12 +640,14 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     scene.add(pts);
     return {
       resize() { mat.uniforms.uScale.value = (vh * renderer.getPixelRatio()) / 2; },
+      pts,
       update(t, dw) {
         mat.uniforms.uOpacity.value = 0.8 * dw;
         pts.visible = dw > 0.01;
-        if (!pts.visible) return;
+        if (!pts.visible) return false;
         mat.uniforms.uTime.value = reduced ? 0 : t;
         pts.rotation.z = Math.sin(t * 0.05) * 0.08;
+        return true;
       },
     };
   })();
@@ -999,13 +997,13 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
   function placePins() {
     for (const pin of pins) {
       const s = pin.sec;
-      const show = s.vis && pin.show(s.p) && (!fixedStage || presence(s) > 0.95);
+      const show = s.vis && pin.show(s.p);
       if (show !== pin.on) { pin.on = show; pin.el.classList.toggle('off', !show); }
       if (!show) continue;
       pin.obj.localToWorld(v3.copy(pin.local));
       v3.project(camera);
       const x = (v3.x * 0.5 + 0.5) * vw;
-      const y = (-v3.y * 0.5 + 0.5) * vh - s.offPx;
+      const y = (-v3.y * 0.5 + 0.5) * vh - (attached ? 0 : s.offPx);
       const tf = pin.tag
         ? `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) translate(-50%,-50%)`
         : `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) translate(-4px,-50%)`;
@@ -1039,15 +1037,58 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     }
   }
 
-  let parked = false, lastOp = -1;
+  /* Dokunmatik: tuval iki çerçeve boyundadır ve bir 3D bölümünün yapışkan katmanına (.frame-gl, arka plan
+     ile yazı arasında) takılıdır. 'down' iken üst yarısı o bölümün çerçevesi, alt yarısı hemen altındaki
+     çerçevedir; 'up' iken üst yarısı hemen üstteki, alt yarısı o bölümün çerçevesidir. İki bölüm arasındaki
+     geçişte iki çerçeve bitişiktir ve birlikte kayar: tuval hangisine takılı olursa olsun yerindedir. Tuval
+     geçişin ortasında yeni bölüme taşınır; böylece bir bölüm ekrana yapışmadan önce tuval onun içindedir ve
+     JS'nin kaydırmadan bir kare geride kalması görüntüye yansımaz. */
+  let host = null, mode = 'down';
+  const hiddenGroup = groups.find((g) => g.name === 'hidden');
+  function hang(g, m) {
+    if (host !== g) { g.slot.appendChild(canvas); host = g; }
+    if (mode !== m) { mode = m; canvas.style.top = m === 'up' ? '-100%' : '0'; }
+  }
+  function drawHalf(g, oy, ptsOn) {
+    renderer.setViewport(0, oy, vw, vh);
+    renderer.setScissor(0, oy, vw, vh);
+    if (!g) { renderer.clear(); return; }
+    for (const o of groups) o.root.visible = o === g;
+    particles.pts.visible = ptsOn && g === hiddenGroup;
+    renderer.render(scene, camera);
+  }
+  function drawAttached(y, viewH, ptsOn) {
+    // çerçevenin ekrandaki üst kenarı: bölüm başında doğal yerinde, sonra 0'da yapışık, bölüm sonunda yukarı kayar
+    let P = null, N = null;
+    for (const g of groups) {
+      const s = g.sec;
+      g.ft = s.top - y > 0 ? s.top - y : Math.min(0, s.top + s.h - vh - y);
+      if (g.ft < viewH - 1 && g.ft + vh > 1) { if (!P) P = g; else if (!N) N = g; }
+    }
+    // adres çubuğu kapalıyken ekran çerçeveden uzundur; üstteki bölüm hâlâ yapışıkken alttaki alt şeritte
+    // görünür ama henüz bitişik değildir. O sırada alttaki çizilmez.
+    const pair = N && Math.abs(N.ft - P.ft - vh) < 2;
+    if (pair) { if (N.ft < vh * 0.5) hang(N, 'up'); else hang(P, 'down'); }
+    else if (P && host !== P) hang(P, mode);
+    const top = pair || mode === 'down' ? P : null;
+    const bottom = pair ? N : mode === 'up' ? P : null;
+    renderer.setScissorTest(true);
+    drawHalf(top, vh, ptsOn);
+    drawHalf(bottom, 0, ptsOn);
+    renderer.setScissorTest(false);
+  }
+
+  let parked = false;
   const api = {
-    // Tuval 100lvh: mobilde adres çubuğu açılıp kapanırken boyut değişmez, yeniden ayırma yapılmaz
+    // Tuval 100lvh (dokunmatikte 2 × 100svh): mobilde adres çubuğu açılıp kapanırken boyut değişmez,
+    // yeniden ayırma yapılmaz
     resize() {
       ana.invalidate();
-      const w = canvas.clientWidth || window.innerWidth, h = canvas.clientHeight || window.innerHeight;
+      const w = canvas.clientWidth || window.innerWidth;
+      const h = attached ? canvas.clientHeight / 2 || window.innerHeight : canvas.clientHeight || window.innerHeight;
       if (w === vw && h === vh) return;
       vw = w; vh = h; aspect = w / h;
-      renderer.setSize(w, h, false);
+      renderer.setSize(w, attached ? h * 2 : h, false);
       camera.aspect = aspect;
       camera.updateProjectionMatrix();
       H = 2 * camera.position.z * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
@@ -1059,25 +1100,17 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     update(t, ctx) {
       ptr.x = lerp(ptr.x, ctx.pointer.x, 0.05);
       ptr.y = lerp(ptr.y, ctx.pointer.y, 0.05);
-      domVh = ctx.vh;
-      let any = ctx.dw > 0.01;
-      // Sabit sahne: yalnızca ekranı en çok dolduran bölümün modeli çizilir; tuval opaklığı o bölümün
-      // ekranı doldurma oranına göre değişir, iki bölümün ortasında 0'a iner ve model orada değişir.
-      let active = null;
-      if (fixedStage) {
-        let best = 0;
-        for (const g of groups) { const pr = presence(g.sec); if (pr > best) { best = pr; active = g; } }
-        const op = Math.round(smooth(0.55, 0.95, best) * 100) / 100;
-        if (op !== lastOp) { lastOp = op; canvas.style.opacity = String(op); }
-      }
+      const ptsOn = particles.update(t, ctx.dw);
+      // dokunmatikte parçacıklar yalnızca koyu bölümün çerçevesiyle birlikte çizilir
+      let any = ptsOn && !attached;
       for (const g of groups) {
         const s = g.sec;
-        const on = fixedStage ? g === active : s.vis;
-        g.root.visible = on;
-        if (!on) continue;
+        g.root.visible = s.vis;
+        if (!s.vis) continue;
         any = true;
         const L = g.layout();
-        g.root.position.set(L.x, L.y - (fixedStage ? 0 : (s.offPx / vh) * H), 0);
+        // masaüstünde tuval sabittir, model çerçeveyle birlikte JS ile kaydırılır
+        g.root.position.set(L.x, L.y - (attached ? 0 : (s.offPx / vh) * H), 0);
         g.root.scale.setScalar(L.s);
         g.update(t, s, ctx);
       }
@@ -1089,18 +1122,18 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
         return;
       }
       if (parked) { canvas.style.visibility = ''; parked = false; }
-      particles.update(t, ctx.dw);
       scene.updateMatrixWorld();
       if (sections.anatomy.vis) ana.place(sections.anatomy);
       placePins();
-      renderer.render(scene, camera);
+      if (attached) drawAttached(ctx.y, ctx.vh, ptsOn);
+      else renderer.render(scene, camera);
       adapt();
     },
   };
   if (/[?&]perf\b/.test(location.search)) {
     const hemi = scene.children.find((o) => o.isHemisphereLight);
     window.__scene = {
-      info: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, dpr }),
+      info: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, dpr, host: host && host.name, mode, ft: groups.map((g) => g.name + ':' + Math.round(g.ft)).join(' ') }),
       // yalnızca ölçüm için: ışık ve ortam yansımasını çalışırken ayarla
       tune: ({ env, hemi: h, key: k, fill: f }) => {
         if (h != null) hemi.intensity = h;
@@ -1114,6 +1147,16 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
   // Yükleme ekranı açıkken: dokuları bekle (en çok 3 sn), gölgelendiricileri derle ve
   // her şeyi bir kez çiz ki geometriler ve dokular GPU'ya şimdi yüklensin, bölüm geçişlerinde değil.
   await Promise.race([Promise.all(texJobs), new Promise((r) => setTimeout(r, 3000))]);
+  if (attached) {
+    document.documentElement.classList.add('gl-attached');
+    for (const g of groups) {
+      g.slot = document.createElement('div');
+      g.slot.className = 'frame frame-gl';
+      g.slot.setAttribute('aria-hidden', 'true');
+      g.sec.el.querySelector('.frame-front').before(g.slot);
+    }
+    hang(groups[0], 'down');
+  }
   api.resize();
   const hidden = [];
   scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });

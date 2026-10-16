@@ -54,7 +54,7 @@ Sayfada saf beyaz yoktur: zemin sıcak bir beton grisi (`--stone` #D4D1CB), orta
 - Koyu bölümdeki parçacıklar tamamen GPU'da hareket eder.
 - Açık-koyu geçişi yalnızca opaklığı değişen bir katmanla yapılır; etiketler ve işaretler yalnızca `transform` ile taşınır.
 - 3D çözünürlüğü masaüstünde 1–1,5, telefon ve tablette 1,5–2 kattır (telefon ekranı 2–3 kat yoğundur; daha düşüğü ince çizgileri bulanıklaştırıyordu). Kareler sürekli yavaşlarsa çözünürlük 0,25 adımla alt sınıra kadar iner, 4 saniye takılmasız geçerse bir adım geri çıkar. Yüklemenin ilk 3 saniyesi ölçülmez. 3D'siz bölümlerde hiç çizim yapılmaz.
-- Telefon ve tablette (dokunmatik ekran) 3D sahne ekranda sabit durur, sayfayla birlikte JS ile taşınmaz: tarayıcı kaydırmayı ayrı bir iş parçacığında akıttığı için taşınan model bir kare geriden gelip titriyordu. Bölümler arasında tuval saydamlaşarak geçer (yalnızca opaklık, kaydırmayla senkron).
+- Telefon ve tablette (dokunmatik ekran) 3D modeller sayfayla birlikte kayar, ama JS ile taşınmaz: tarayıcı kaydırmayı ayrı bir iş parçacığında akıttığı için JS ile taşınan model bir kare geriden gelip titriyordu. Bunun yerine tuval, bölümün içindeki yapışkan bir katmana (arka plan ile yazı arasında) takılır ve yazıyla aynı anda tarayıcı tarafından kaydırılır. Tuval iki ekran boyundadır; iki bölüm arasındaki geçişte üst yarısında giden, alt yarısında gelen bölümün modeli çizilir ve tuval geçişin ortasında yeni bölüme taşınır.
 
 ## Yerelde çalıştırma
 

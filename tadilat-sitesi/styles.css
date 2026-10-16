@@ -204,7 +204,11 @@ ol, ul { padding: 0; list-style: none; }
   padding-left: max(var(--gx), env(safe-area-inset-left, 0px));
   padding-right: max(var(--gx), env(safe-area-inset-right, 0px));
 }
-.frame-back + .frame-front { margin-top: -100vh; margin-top: -100svh; }
+/* Dokunmatik cihazlarda 3D tuvali, arka plan (z 0) ile yazı (z 2) arasındaki bu yapışkan katmana takılır ve
+   sayfayla birlikte tarayıcı tarafından kaydırılır. Tuval iki çerçeve boyundadır (bkz. scene.js drawAttached). */
+.frame-gl { z-index: 1; overflow: visible; pointer-events: none; }
+.frame-back + .frame-front, .frame-back + .frame-gl, .frame-gl + .frame-front { margin-top: -100vh; margin-top: -100svh; }
+html.gl-attached #gl { position: absolute; left: 0; top: 0; width: 100%; height: 200%; }
 
 /* Kaydırmalı bölümler sabit kalırken animasyon kaydırmayla oynar; mutfak ve banyo kendiliğinden oynar */
 .sec-hero { height: 150vh; }

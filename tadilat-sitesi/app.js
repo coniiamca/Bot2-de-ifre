@@ -557,7 +557,7 @@ function tick(time) {
   updateMaterial(now);
   if (scene) {
     const intro = introStart ? (performance.now() - introStart) / 1000 : -1;
-    scene.update(time / 1000, { pointer, vw, vh, anaIdx, matIdx, dw, intro });
+    scene.update(time / 1000, { pointer, vw, vh, y, anaIdx, matIdx, dw, intro });
   }
   requestAnimationFrame(tick);
 }
