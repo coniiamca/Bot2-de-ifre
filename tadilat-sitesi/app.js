@@ -90,8 +90,8 @@ function measure() {
 //        [başlangıç, bitiş] = animasyonun bölüm içi kaydırmanın hangi kısmına yayıldığı.
 // AUTO:  bölüm ekrana girince kendi süresiyle (saniye) oynar; ekrandan çıkınca sıfırlanır.
 // s.p  = animasyon ilerlemesi 0→1, s.sp = bölüm içi kaydırma ilerlemesi, s.k = bölümün ekrandan geçişi 0→1
-const SCRUB = { hero: [0, 1], manifesto: [0, 0.75], anatomy: [0.05, 0.6], hidden: [0, 0.8], furniture: [0, 0.9] };
-const AUTO = { kitchen: 3.4, bath: 3.4, material: 1 };
+const SCRUB = { hero: [0, 1], anatomy: [0, 0.75], hidden: [0, 1], furniture: [0, 0.9] };
+const AUTO = { manifesto: 2.2, kitchen: 3.4, bath: 3.4, material: 1 };
 function computeSections(y, now) {
   for (const s of sections) {
     s.enter = clamp((y + vh - s.top) / vh);
@@ -279,7 +279,7 @@ function updateBubble(y) {
   if (bx !== lastBx) { lastBx = bx; bubble.style.transform = 'translateX(' + bx + 'px)'; }
 }
 
-/* ---------------- Manifesto: bölüm görününce kelimeler sırayla yanar ---------------- */
+/* ---------------- Manifesto: bölüm görününce kelimeler kendiliğinden sırayla yanar ---------------- */
 const manEl = $('#manifesto-text');
 const words = manEl.textContent.trim().split(/\s+/);
 manEl.innerHTML = words.map((w) => `<span class="w">${w}</span>`).join(' ');
@@ -288,7 +288,7 @@ let lastWords = -1;
 function updateManifesto() {
   const s = byScene.manifesto;
   if (!s.vis) return;
-  const n = Math.round((0.12 + 0.88 * s.p) * wordEls.length);
+  const n = Math.round(s.p * wordEls.length);
   if (n === lastWords) return;
   lastWords = n;
   wordEls.forEach((el, i) => el.classList.toggle('on', i < n));

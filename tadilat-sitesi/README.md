@@ -31,10 +31,10 @@ Logo, kaydırma hızına tepki veren bir su terazisi kabarcığıdır.
 
 İki tür animasyon var:
 
-- **Kaydırmayla oynayanlar:** giriş maketinin dönmesi, manifesto kelimeleri, duvarın katmanlarına ayrılması, tesisat borularının çizilmesi, gardırobun açılması, malzeme adasının dönmesi. Bölüm sabit kalırken kaydırdıkça ilerler, geri kaydırınca geri gider; istenen karede bırakılabilir.
-- **Kendiliğinden oynayanlar:** mutfak çalışma üçgeni ve banyo bölgeleri (bölüm ekrana girince). Duvar katmanları, test değerleri ve tezgâh malzemeleri de kendiliğinden ilerler; ilerleme çizgisi ve Durdur/Oynat düğmesi vardır, elle seçim ya da üzerine gelme akışı bekletir. Hareket azaltma tercihi olan ziyaretçilerde akışlar duraklatılmış başlar.
+- **Kaydırmayla oynayanlar:** giriş maketinin dönmesi, duvarın katmanlarına ayrılması (kısa kaydırma), tesisat borularının çizilmesi (kısa kaydırma), gardırobun açılması. Bölüm sabit kalırken kaydırdıkça ilerler, geri kaydırınca geri gider; istenen karede bırakılabilir.
+- **Kendiliğinden oynayanlar:** manifesto kelimeleri, mutfak çalışma üçgeni, banyo bölgeleri ve kendi kendine dönen malzeme adası (bölüm ekrana girince). Duvar katmanları, test değerleri ve tezgâh malzemeleri de kendiliğinden ilerler; ilerleme çizgisi ve Durdur/Oynat düğmesi vardır, elle seçim ya da üzerine gelme akışı bekletir. Hareket azaltma tercihi olan ziyaretçilerde akışlar duraklatılmış başlar.
 
-Sayfa bölüm bölüm ilerler: kaydırmalı bir bölümün içinde kaydırma serbesttir, ama bir hareket (hızlı bir trackpad fırlatması dahil) bölümün sonunda durur; sonraki bölüme yeni bir hareketle geçilir. Klavye, kaydırma çubuğu ve dokunmatikte hareket iki bölüm arasında biterse sayfa gidilen yöndeki bölüme yerleşir. Süreç bölümünden itibaren kaydırma tamamen serbesttir. Sağdaki noktalarla istenen bölüme doğrudan gidilir. Sayfa boyu masaüstünde yaklaşık 16 ekrandır.
+Sayfa bölüm bölüm ilerler: kaydırmalı bir bölümün içinde kaydırma serbesttir, ama bir hareket (hızlı bir trackpad fırlatması dahil) bölümün sonunda durur; sonraki bölüme yeni bir hareketle geçilir. Klavye, kaydırma çubuğu ve dokunmatikte hareket iki bölüm arasında biterse sayfa gidilen yöndeki bölüme yerleşir. Süreç bölümünden itibaren kaydırma tamamen serbesttir. Sağdaki noktalarla istenen bölüme doğrudan gidilir. Sayfa boyu masaüstünde yaklaşık 14 ekrandır.
 
 Ayarlar `app.js` içinde: kaydırmalı animasyonlar `SCRUB`, kendiliğinden oynayanlar `AUTO` (saniye), dizi aralıkları `makeCycle({ every })`, bölüm bölüm ilerleme kuralları "Bölüm bölüm ilerleme" başlığı altında. Bölüm yükseklikleri `styles.css` içinde `.sec-*` kurallarında.
 

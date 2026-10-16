@@ -201,12 +201,12 @@ ol, ul { padding: 0; list-style: none; }
 
 /* Kaydırmalı bölümler sabit kalırken animasyon kaydırmayla oynar; mutfak ve banyo kendiliğinden oynar */
 .sec-hero { height: 150vh; }
-.sec-manifesto { height: 150vh; }
-.sec-anatomi { height: 200vh; }
-.sec-dark { height: 180vh; }
+.sec-manifesto { height: 100vh; }
+.sec-anatomi { height: 140vh; }
+.sec-dark { height: 130vh; }
 .sec-svc { height: 100vh; }
 #mobilya.sec-svc { height: 170vh; }
-.sec-mat { height: 170vh; }
+.sec-mat { height: 100vh; }
 
 .ln { display: block; }
 .ln-ghost { color: color-mix(in srgb, var(--ink) 26%, transparent); }
@@ -554,11 +554,10 @@ html:not(.js) .manifesto { color: var(--ink); }
   .nav-cta { display: none; }
   .nav-menu { display: inline-flex; align-items: center; }
   .hud { display: none; }
-  .sec-hero, .sec-manifesto { height: 140vh; }
-  .sec-anatomi { height: 180vh; }
-  .sec-dark { height: 160vh; }
+  .sec-hero { height: 140vh; }
+  .sec-anatomi { height: 135vh; }
+  .sec-dark { height: 125vh; }
   #mobilya.sec-svc { height: 150vh; }
-  .sec-mat { height: 150vh; }
 
 
   .hero-notes { display: none; }

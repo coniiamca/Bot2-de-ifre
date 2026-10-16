@@ -959,8 +959,8 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
           slabs.position.y = Math.sin(swapT * Math.PI) * 0.22;
           slabs.rotation.z = Math.sin(swapT * Math.PI) * 0.02;
         } else if (target !== cur) { swapT = 0; swapped = false; }
-        // ada kaydırdıkça döner; malzemeler kendiliğinden değişir
-        pivot.rotation.y = -0.62 + s.sp * 1.2 + (reduced ? 0 : Math.sin(t * 0.3) * 0.06) + ptr.x * 0.06;
+        // ada sergi tablasındaymış gibi kendi kendine döner; malzemeler de kendiliğinden değişir
+        pivot.rotation.y = -0.62 + (reduced ? 0 : t * 0.16) + ptr.x * 0.06;
         pivot.rotation.x = 0.3 + ptr.y * 0.03;
       },
     };
