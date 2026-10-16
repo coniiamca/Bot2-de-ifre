@@ -411,7 +411,8 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     return {
       layout: () => (aspect < 0.85
         ? { x: W * 0.04, y: 0.75, s: Math.min(0.7, (W * 0.8) / 6.6) }
-        : { x: W * 0.16, y: 0.55, s: Math.min(0.62, (W * 0.4) / 6.6, (H * 0.56) / 5.2) }),
+        // geniş ekranda büyür: boyut ekran genişliğiyle orantılı, yükseklik ve 0,9 ile sınırlı
+        : { x: W * 0.18, y: 0.22, s: Math.min(0.8, (W * 0.36) / 6.6, (H * 0.68) / 5.2) }),
       update(t, s, ctx) {
         if (!introDone) {
           const it = ctx.intro;

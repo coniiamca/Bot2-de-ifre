@@ -241,7 +241,7 @@ ol, ul { padding: 0; list-style: none; }
 /* ---------- 01 Giriş ---------- */
 .ghost-hero { top: 50%; transform: translateY(-52%); font-size: clamp(9rem, 33vw, 40rem); }
 .hero-ring {
-  position: absolute; left: 63%; top: 44%; width: min(74vh, 70vw); height: auto;
+  position: absolute; left: 68%; top: 45%; width: min(90vh, 50vw); height: auto;
   transform: translate(-50%, -50%);
 }
 .hero-ring circle {
