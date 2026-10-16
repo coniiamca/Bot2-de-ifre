@@ -1,10 +1,12 @@
 /* Layout: sabit tek WebGL sahnesi + üzerinde kayan 100svh "sticky" çerçeveler; ışık → karanlık → ışık bir anlatı.
    Tek bir görsel dünya (beton grisi, grafit, pirinç). Koyu bölüm, anlatının parçası olarak JS ile renk geçişi yapar. */
 :root {
-  --stone: #E6E5E2;      /* zemin: sıcak-nötr beton grisi */
-  --stone-hi: #F1F0EE;   /* açık yüzey */
+  /* Göz yormayan beton grisi: saf beyaz yok, en açık yüzey bile zeminin yalnızca bir ton üstü */
+  --stone: #D4D1CB;      /* zemin: sıcak-nötr beton grisi */
+  --stone-hi: #DFDCD6;   /* bir ton açık yüzey (form, zeminin ortası) */
+  --stone-lo: #C9C6BF;   /* zeminin kenarları (ikincil yazı burada da ≥ 4,5:1) */
   --graphite: #151514;   /* mürekkep + koyu zemin */
-  --ash: #6F6D69;        /* ikincil mürekkep */
+  --ash: #55534E;        /* ikincil mürekkep (zeminde ≥ 4,5:1) */
   --brass: #B08A55;      /* pirinç: yalnızca çizgi, nokta ve büyük rakamlar */
   --chalk: #F2F1EE;      /* koyu zeminde mürekkep */
 
@@ -12,7 +14,7 @@
   --bg: var(--stone);
   --ink: var(--graphite);
   --ink-2: var(--ash);
-  --line: rgba(21, 21, 20, .14);
+  --line: rgba(21, 21, 20, .16);
 
   --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
   --f-body: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
@@ -34,10 +36,10 @@
 }
 
 /* Koyu bölüm: zemin #bgfx katmanıyla kararır, yazı renkleri burada tek seferde değişir */
-@property --bg { syntax: '<color>'; inherits: true; initial-value: #E6E5E2; }
+@property --bg { syntax: '<color>'; inherits: true; initial-value: #D4D1CB; }
 @property --ink { syntax: '<color>'; inherits: true; initial-value: #151514; }
-@property --ink-2 { syntax: '<color>'; inherits: true; initial-value: #6F6D69; }
-@property --line { syntax: '<color>'; inherits: true; initial-value: rgba(21, 21, 20, .14); }
+@property --ink-2 { syntax: '<color>'; inherits: true; initial-value: #55534E; }
+@property --line { syntax: '<color>'; inherits: true; initial-value: rgba(21, 21, 20, .16); }
 :root.dark { --bg: #121211; --ink: var(--chalk); --ink-2: #989691; --line: rgba(242, 241, 238, .16); }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -70,6 +72,11 @@ ol, ul { padding: 0; list-style: none; }
 .mute { color: var(--ink-2); }
 
 /* ---------- Görüntü yüzeyi ---------- */
+/* Zemin: ortası bir ton açık, kenarlara doğru hafifçe koyulaşır (sabit katman, kaydırmada yeniden boyanmaz) */
+#bgbase {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(120% 95% at 50% 38%, var(--stone-hi) 0%, var(--stone) 52%, var(--stone-lo) 100%);
+}
 #bgfx {
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background: #121211; opacity: 0; will-change: opacity;
@@ -99,7 +106,7 @@ ol, ul { padding: 0; list-style: none; }
 .loaded #loader { opacity: 0; visibility: hidden; pointer-events: none; }
 .ld-ring { position: absolute; width: min(78vh, 86vw); height: auto; }
 .ld-ring circle { fill: none; }
-.ld-track { stroke: #D6D4D0; stroke-width: 1; }
+.ld-track { stroke: #C3C0B9; stroke-width: 1; }
 .ld-arc {
   stroke: var(--graphite); stroke-width: 1.5;
   stroke-dasharray: 2168; stroke-dashoffset: 2168;
@@ -108,10 +115,10 @@ ol, ul { padding: 0; list-style: none; }
 }
 @keyframes ld-draw { to { stroke-dashoffset: 0; } }
 .ld-text { font-size: var(--t-s); }
-.ld-text span { color: #8b8985; }
+.ld-text span { color: #6E6B65; }
 .ld-mm {
   position: absolute; bottom: calc(28px + env(safe-area-inset-bottom, 0px));
-  font-family: var(--f-mono); font-size: var(--t-xs); letter-spacing: .06em; color: #8b8985;
+  font-family: var(--f-mono); font-size: var(--t-xs); letter-spacing: .06em; color: #6E6B65;
   font-variant-numeric: tabular-nums;
 }
 
@@ -517,7 +524,7 @@ html:not(.js) .manifesto { color: var(--ink); }
   border: 0; border-bottom: 1px solid rgba(21,21,20,.25); border-radius: 0; padding: 8px 0; outline: none; resize: vertical;
 }
 .field input:focus, .field textarea:focus { border-bottom-color: var(--graphite); }
-.field input::placeholder, .field textarea::placeholder { color: #a3a19c; }
+.field input::placeholder, .field textarea::placeholder { color: #85827B; }
 .unit { display: flex; align-items: baseline; gap: 8px; }
 .unit em { font-style: normal; font-family: var(--f-mono); font-size: var(--t-s); color: var(--ash); }
 .btn-wide { width: 100%; }

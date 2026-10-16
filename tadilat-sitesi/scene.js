@@ -58,7 +58,7 @@ function paintTexture(kind, size) {
         const vein = Math.pow(1 - Math.abs(Math.sin((u * 1.4 + v * 0.9 + n * 1.9 + q * 1.4) * Math.PI * 1.7)), 26);
         const fine = Math.pow(1 - Math.abs(Math.sin((u * 3.2 - v * 2.1 + n * 3.4) * Math.PI)), 60) * 0.55;
         const c = 0.965 + 0.035 * n;
-        r = 246 * c; g = 244 * c; b = 240 * c;
+        r = 234 * c; g = 231 * c; b = 226 * c;
         let k = cl(vein * 0.55 + fine * 0.25); r = lp(r, 182, k); g = lp(g, 160, k); b = lp(b, 120, k);
         k = cl(vein * 0.7 * (0.6 + q)); r = lp(r, 96, k); g = lp(g, 92, k); b = lp(b, 86, k);
       } else if (kind === 'porcelain') {
@@ -73,10 +73,10 @@ function paintTexture(kind, size) {
         const k = Math.pow(Math.abs(Math.sin(ring * Math.PI)), 0.55) * 0.7 + (noise(u * 3, v * 300) + 1) * 0.15;
         r = lp(140, 204, k); g = lp(100, 164, k); b = lp(64, 118, k);
       } else if (kind === 'quartz') {
-        const n = 233 + fbm(u * 9, v * 9, 3) * 10;
+        const n = 220 + fbm(u * 9, v * 9, 3) * 10;
         r = n; g = n - 1; b = n - 4;
       } else { // plaster
-        const n = 214 + fbm(u * 14, v * 14, 4) * 18 + (rnd() - 0.5) * 10;
+        const n = 200 + fbm(u * 14, v * 14, 4) * 18 + (rnd() - 0.5) * 10;
         r = n + 3; g = n; b = n - 5;
       }
       out[i] = r; out[i + 1] = g; out[i + 2] = b; out[i + 3] = 255;
@@ -169,7 +169,7 @@ const brickPaint = (ctx, w, h) => {
 /* ------------------------------------------------------------------ */
 /* Yardımcılar                                                          */
 /* ------------------------------------------------------------------ */
-const std = (color, rough = 0.85, metal = 0, env = 0.45) =>
+const std = (color, rough = 0.85, metal = 0, env = 0.15) =>
   new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, envMapIntensity: env });
 const brassMat = () => new THREE.MeshStandardMaterial({ color: 0xC9A267, metalness: 1, roughness: 0.3, envMapIntensity: 1.1 });
 const edgeMat = (color = INK, opacity = 0.24) => new THREE.LineBasicMaterial({ color, transparent: true, opacity });
@@ -271,9 +271,11 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
   // Beyaz mimari maket ışığı: gökyüzü + önden yumuşak dolgu, üst yüzler beyaz, düşey yüzler açık gri
-  scene.add(new THREE.HemisphereLight(0xffffff, 0xbdbab4, 1.6));
-  const key = new THREE.DirectionalLight(0xffffff, 1.5); key.position.set(2, 5, 7); scene.add(key);
-  const fill = new THREE.DirectionalLight(0xffffff, 0.9); fill.position.set(-5, 1, 8); scene.add(fill);
+  // Yumuşak ışık: en parlak üst yüzey bile kırık beyazda kalır, saf beyaza patlamaz
+  // (ortam yansıması da kısık: std() varsayılanı 0,15; yüksek değer üst yüzeyleri saf beyaza patlatıyordu)
+  scene.add(new THREE.HemisphereLight(0xfffdf9, 0xb3afa8, 1.15));
+  const key = new THREE.DirectionalLight(0xfffaf2, 1.0); key.position.set(2, 5, 7); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.6); fill.position.set(-5, 1, 8); scene.add(fill);
 
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 120);
   camera.position.set(0, 0, 14);
@@ -307,8 +309,8 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
   /* ================= 01 · Giriş: örnek daire maketi ================= */
   addGroup('hero', (pivot) => {
     const M = {
-      white: std(0xF5F4F1, 0.86), floor: std(0xE8E6E2, 0.92), cut: std(0x1D1D1C, 0.7, 0, 0.3),
-      dark: std(0x2C2C2B, 0.4, 0.2, 0.6), brass: brassMat(), tile: std(0xEDECE9, 0.5), rug: std(0xD9D6D0, 1),
+      white: std(0xE2DFD9, 0.86), floor: std(0xD5D2CC, 0.92), cut: std(0x1D1D1C, 0.7, 0, 0.12),
+      dark: std(0x2C2C2B, 0.4, 0.2, 0.3), brass: brassMat(), tile: std(0xDCD9D3, 0.5), rug: std(0xCBC7C0, 1),
       glass: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.2, depthWrite: false }),
       mirror: new THREE.MeshStandardMaterial({ color: 0xdfe2e4, roughness: 0.05, metalness: 1 }),
     };
@@ -447,10 +449,10 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
       const g = new THREE.Group();
       pivot.add(g);
       let mat;
-      if (L.tex === 'brick') mat = new THREE.MeshStandardMaterial({ map: canvasTex(renderer, 512, brickPaint), roughness: 0.95, envMapIntensity: 0.6 });
-      else if (L.tex === 'plaster') mat = plasterMat = new THREE.MeshStandardMaterial({ map: placeholderTex([214, 211, 205]), roughness: 1, envMapIntensity: 0.7 });
-      else if (L.tiles) mat = new THREE.MeshPhysicalMaterial({ color: L.color, roughness: 0.18, clearcoat: 0.6, envMapIntensity: 0.8 });
-      else mat = std(L.color, 0.75, 0, 0.7);
+      if (L.tex === 'brick') mat = new THREE.MeshStandardMaterial({ map: canvasTex(renderer, 512, brickPaint), roughness: 0.95, envMapIntensity: 0.3 });
+      else if (L.tex === 'plaster') mat = plasterMat = new THREE.MeshStandardMaterial({ map: placeholderTex([201, 198, 192]), roughness: 1, envMapIntensity: 0.35 });
+      else if (L.tiles) mat = new THREE.MeshPhysicalMaterial({ color: L.color, roughness: 0.18, clearcoat: 0.6, envMapIntensity: 0.4 });
+      else mat = std(L.color, 0.75, 0, 0.3);
       const meshes = [];
       const box = (w, h, d, x = 0, y = 0, z = 0, m = mat, rz = 0) => {
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
@@ -467,7 +469,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
         box(L.t, HH - 0.14, 0.14, 0, 0.07, -D / 2 + 0.07);
       } else if (L.coats) {
         box(L.t * 0.42, HH, D, -L.t * 0.29);
-        box(L.t * 0.42, HH, D, L.t * 0.29, 0, 0, std(0x6F7F8C, 0.7, 0, 0.7));
+        box(L.t * 0.42, HH, D, L.t * 0.29, 0, 0, std(0x6F7F8C, 0.7, 0, 0.3));
       } else if (L.ridges) {
         box(L.t * 0.4, HH, D, -L.t * 0.3);
         for (let i = 0; i < 13; i++) box(0.034, 0.034, D, -L.t * 0.08, -HH / 2 + 0.1 + i * 0.183, 0, mat, Math.PI / 4);
@@ -709,7 +711,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
 
   /* ================= 05 · Mutfak: çalışma üçgeni ================= */
   addGroup('kitchen', (pivot) => {
-    const M = { white: std(0xF5F4F1, 0.86), floor: std(0xE6E4E0, 0.92), cut: std(0x1D1D1C, 0.7, 0, 0.3), dark: std(0x2C2C2B, 0.4, 0.2, 0.6), brass: brassMat() };
+    const M = { white: std(0xE2DFD9, 0.86), floor: std(0xD5D2CC, 0.92), cut: std(0x1D1D1C, 0.7, 0, 0.12), dark: std(0x2C2C2B, 0.4, 0.2, 0.3), brass: brassMat() };
     const P = maker(pivot, edgeMat(INK, 0.24));
     const B = P.box;
     B(4.8, 0.06, 3.7, M.floor, -0.05, -0.06, -0.3);
@@ -772,7 +774,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
 
   /* ================= 06 · Banyo: ıslak hacim bölgeleri ================= */
   addGroup('bath', (pivot) => {
-    const M = { white: std(0xF5F4F1, 0.86), tile: std(0xECEBE8, 0.45), cut: std(0x1D1D1C, 0.7, 0, 0.3), dark: std(0x2C2C2B, 0.4, 0.2, 0.6), brass: brassMat(),
+    const M = { white: std(0xE2DFD9, 0.86), tile: std(0xDCD9D3, 0.45), cut: std(0x1D1D1C, 0.7, 0, 0.12), dark: std(0x2C2C2B, 0.4, 0.2, 0.3), brass: brassMat(),
       glass: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.05, transparent: true, opacity: 0.18, depthWrite: false }),
       mirror: new THREE.MeshStandardMaterial({ color: 0xdfe2e4, roughness: 0.05, metalness: 1 }) };
     const P = maker(pivot, edgeMat(INK, 0.24));
@@ -841,7 +843,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
 
   /* ================= 07 · Mobilya: patlatılmış gardırop ================= */
   addGroup('furniture', (pivot) => {
-    const M = { white: std(0xF5F4F1, 0.8), board: std(0xEAE7E1, 0.85), dark: std(0x2C2C2B, 0.4, 0.2, 0.6), brass: brassMat(), back: std(0xDCD8D1, 0.9) };
+    const M = { white: std(0xE2DFD9, 0.8), board: std(0xD8D4CD, 0.85), dark: std(0x2C2C2B, 0.4, 0.2, 0.3), brass: brassMat(), back: std(0xC9C5BE, 0.9) };
     const P = maker(pivot, edgeMat(INK, 0.26));
     const parts = [];
     const part = (w, h, d, mat, x, y, z, ex, o) => {
@@ -908,10 +910,10 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
 
   /* ================= 08 · Malzeme: tezgâh adası ================= */
   const SURF = {
-    marble: { size: 1024, base: [240, 238, 234], rough: 0.22, cc: 0.7, ccr: 0.15, env: 0.9 },
-    quartz: { size: 512, base: [229, 228, 225], rough: 0.3, cc: 0.4, ccr: 0.3, env: 0.85 },
-    porcelain: { size: 1024, base: [50, 50, 49], rough: 0.28, cc: 0.5, ccr: 0.25, env: 0.9 },
-    oak: { size: 512, base: [176, 136, 94], rough: 0.62, cc: 0.04, ccr: 0.8, env: 0.7 },
+    marble: { size: 1024, base: [228, 225, 220], rough: 0.22, cc: 0.7, ccr: 0.15, env: 0.55 },
+    quartz: { size: 512, base: [218, 216, 212], rough: 0.3, cc: 0.4, ccr: 0.3, env: 0.5 },
+    porcelain: { size: 1024, base: [50, 50, 49], rough: 0.28, cc: 0.5, ccr: 0.25, env: 0.55 },
+    oak: { size: 512, base: [176, 136, 94], rough: 0.62, cc: 0.04, ccr: 0.8, env: 0.4 },
   };
   // Dört yüzey aynı gölgelendiriciyi paylaşır (hepsi clearcoat'lu Physical): malzeme değişince derleme yapılmaz.
   const surfMats = {};
@@ -921,7 +923,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
   const surfFor = (k) => surfMats[k];
 
   const matGroup = addGroup('material', (pivot) => {
-    const body = std(0x2A2A29, 0.55, 0.05, 0.6);
+    const body = std(0x2A2A29, 0.55, 0.05, 0.3);
     const P = maker(pivot, edgeMat(0x000000, 0.35));
     for (let i = 0; i < 4; i++) P.box(0.546, 0.78, 0.86, body, -0.825 + i * 0.55, 0.08, 0);
     P.box(2.2, 0.08, 0.8, std(0x161615, 0.6), 0, 0, -0.02, { edges: false });
@@ -933,7 +935,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     // kütüphane objeleri
     const brass = brassMat();
     P(new THREE.CylinderGeometry(0.11, 0.07, 0.07, 32, 1, true), brass, 0.55, 0.935, 0.12, { edges: false });
-    P(new THREE.CylinderGeometry(0.045, 0.05, 0.26, 24), std(0xEDEBE6, 0.4), -0.6, 1.03, -0.18, { edges: false });
+    P(new THREE.CylinderGeometry(0.045, 0.05, 0.26, 24), std(0xDAD7D1, 0.4), -0.6, 1.03, -0.18, { edges: false });
     // gölge
     const sh = canvasTex(renderer, 128, (ctx, w) => {
       const g = ctx.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2);
@@ -1064,7 +1066,17 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     },
   };
   if (/[?&]perf\b/.test(location.search)) {
-    window.__scene = { info: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, dpr }) };
+    const hemi = scene.children.find((o) => o.isHemisphereLight);
+    window.__scene = {
+      info: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, dpr }),
+      // yalnızca ölçüm için: ışık ve ortam yansımasını çalışırken ayarla
+      tune: ({ env, hemi: h, key: k, fill: f }) => {
+        if (h != null) hemi.intensity = h;
+        if (k != null) key.intensity = k;
+        if (f != null) fill.intensity = f;
+        if (env != null) scene.traverse((o) => { if (o.material && o.material.isMeshStandardMaterial && !o.material.map && o.material.metalness < 0.5) o.material.envMapIntensity = env; });
+      },
+    };
   }
 
   // Yükleme ekranı açıkken: dokuları bekle (en çok 3 sn), gölgelendiricileri derle ve

@@ -38,6 +38,10 @@ Sayfa bölüm bölüm ilerler: kaydırmalı bir bölümün içinde kaydırma ser
 
 Ayarlar `app.js` içinde: kaydırmalı animasyonlar `SCRUB`, kendiliğinden oynayanlar `AUTO` (saniye), dizi aralıkları `makeCycle({ every })`, bölüm bölüm ilerleme kuralları "Bölüm bölüm ilerleme" başlığı altında. Bölüm yükseklikleri `styles.css` içinde `.sec-*` kurallarında.
 
+## Renk ve parlaklık
+
+Sayfada saf beyaz yoktur: zemin sıcak bir beton grisi (`--stone` #D4D1CB), ortası bir ton açık, kenarları bir ton koyu; form kutusu zeminin yalnızca bir ton üstüdür. 3D maketler kırık beyazdır ve ışık/ortam yansıması, en parlak üst yüzey bile yaklaşık #E4'te kalacak şekilde ayarlıdır (yüksek ortam yansıması yüzeyleri saf beyaza patlatıyordu). İkincil yazı zeminin her yerinde en az 4,5:1, ana yazı en az 10,7:1 kontrastlıdır. Renkler `styles.css` başındaki `:root`, 3D ışıklar `scene.js` içinde `HemisphereLight` / `DirectionalLight` ve `std()` varsayılanındadır.
+
 ## Akıcılık için yapılanlar
 
 - Bütün modeller, dokular ve gölgelendiriciler yükleme ekranı sırasında GPU'ya yüklenir; bölüm geçişlerinde ilk çizim takılması olmaz.

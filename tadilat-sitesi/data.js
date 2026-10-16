@@ -14,7 +14,7 @@ export const LAYERS = [
     std: 'Tolerans · 2 m mastarda en fazla 3 mm',
   },
   {
-    name: 'Astar', mm: '< 1 mm', t: 0.025, color: 0xC7CED3,
+    name: 'Astar', mm: '< 1 mm', t: 0.025, color: 0xBDC4C9,
     desc: 'Yüzeyin emiciliğini dengeler. Yalıtım malzemesinin suyunu duvara kaptırmadan kürlenmesini ve duvara tutunmasını sağlar.',
     std: 'Uygulama · Rulo ile tek kat',
   },
@@ -34,7 +34,7 @@ export const LAYERS = [
     std: 'Standart · TS EN 12004 · C2TE S1',
   },
   {
-    name: 'Porselen seramik', mm: '10 mm', t: 0.075, color: 0xF1F0ED, tiles: true,
+    name: 'Porselen seramik', mm: '10 mm', t: 0.075, color: 0xE0DDD7, tiles: true,
     desc: 'Su emmesi %0,5\'in altında porselen karo. Lazer nivoyla hizalanır; karolar arası kot farkı seviye klipsiyle sıfırlanır.',
     std: 'Sınıf · TS EN 14411 · BIa',
   },
