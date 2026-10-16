@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -13,38 +14,120 @@ const INK = 0x1a1a19;
 const BRASS = 0xB08A55;
 
 /* ------------------------------------------------------------------ */
-/* Gürültü ve prosedürel dokular                                       */
+/* Prosedürel dokular                                                  */
+/* paintTexture kendi içinde bağımsızdır ve bir Web Worker'da çalışır; */
+/* doku üretimi kaydırma sırasında ana iş parçacığını hiç durdurmaz.   */
 /* ------------------------------------------------------------------ */
-function makeNoise(seed = 7) {
-  let s = seed;
+function paintTexture(kind, size) {
+  let s = 11 + kind.length * 101;
   const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
-  const perm = [...Array(256).keys()];
-  for (let i = 255; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [perm[i], perm[j]] = [perm[j], perm[i]]; }
+  const perm = [];
+  for (let i = 0; i < 256; i++) perm.push(i);
+  for (let i = 255; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = perm[i]; perm[i] = perm[j]; perm[j] = t; }
   const p = new Uint8Array(512);
   for (let i = 0; i < 512; i++) p[i] = perm[i & 255];
   const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
+  const lp = (a, b, t) => a + (b - a) * t;
+  const cl = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
   const grad = (h, x, y) => {
     switch (h & 7) {
       case 0: return x + y; case 1: return -x + y; case 2: return x - y; case 3: return -x - y;
       case 4: return x; case 5: return -x; case 6: return y; default: return -y;
     }
   };
-  function noise(x, y) {
+  const noise = (x, y) => {
     const xi = Math.floor(x), yi = Math.floor(y);
     const X = xi & 255, Y = yi & 255;
     x -= xi; y -= yi;
     const u = fade(x), v = fade(y);
     const a = p[X] + Y, b = p[X + 1] + Y;
-    return lerp(lerp(grad(p[a], x, y), grad(p[b], x - 1, y), u), lerp(grad(p[a + 1], x, y - 1), grad(p[b + 1], x - 1, y - 1), u), v);
-  }
-  function fbm(x, y, o = 5) {
+    return lp(lp(grad(p[a], x, y), grad(p[b], x - 1, y), u), lp(grad(p[a + 1], x, y - 1), grad(p[b + 1], x - 1, y - 1), u), v);
+  };
+  const fbm = (x, y, o) => {
     let f = 0, a = 0.5;
     for (let i = 0; i < o; i++) { f += a * noise(x, y); x = x * 2.03 + 17.1; y = y * 2.03 + 3.7; a *= 0.5; }
     return f;
+  };
+  const out = new Uint8ClampedArray(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size, v = y / size, i = (y * size + x) * 4;
+      let r, g, b;
+      if (kind === 'marble') {
+        const n = fbm(u * 2.6, v * 2.6, 5), q = fbm(u * 1.3 + 4.1, v * 1.3 + 9.2, 3);
+        const vein = Math.pow(1 - Math.abs(Math.sin((u * 1.4 + v * 0.9 + n * 1.9 + q * 1.4) * Math.PI * 1.7)), 26);
+        const fine = Math.pow(1 - Math.abs(Math.sin((u * 3.2 - v * 2.1 + n * 3.4) * Math.PI)), 60) * 0.55;
+        const c = 0.965 + 0.035 * n;
+        r = 246 * c; g = 244 * c; b = 240 * c;
+        let k = cl(vein * 0.55 + fine * 0.25); r = lp(r, 182, k); g = lp(g, 160, k); b = lp(b, 120, k);
+        k = cl(vein * 0.7 * (0.6 + q)); r = lp(r, 96, k); g = lp(g, 92, k); b = lp(b, 86, k);
+      } else if (kind === 'porcelain') {
+        const n = fbm(u * 2 + 30, v * 2 + 11, 5);
+        const vein = Math.pow(1 - Math.abs(Math.sin((u * 1.1 - v * 1.6 + n * 2.6) * Math.PI * 1.3)), 34);
+        const c = 0.92 + 0.12 * fbm(u * 6, v * 6, 3);
+        const k = cl(vein * 0.8);
+        r = lp(46 * c, 168, k); g = lp(46 * c, 162, k); b = lp(45 * c, 152, k);
+      } else if (kind === 'oak') {
+        const warp = fbm(u * 1.2, v * 3, 3) * 1.4;
+        const ring = (((v * 9 + warp + fbm(u * 0.5 + 3, v * 1.5, 2) * 2) % 1) + 1) % 1;
+        const k = Math.pow(Math.abs(Math.sin(ring * Math.PI)), 0.55) * 0.7 + (noise(u * 3, v * 300) + 1) * 0.15;
+        r = lp(140, 204, k); g = lp(100, 164, k); b = lp(64, 118, k);
+      } else if (kind === 'quartz') {
+        const n = 233 + fbm(u * 9, v * 9, 3) * 10;
+        r = n; g = n - 1; b = n - 4;
+      } else { // plaster
+        const n = 214 + fbm(u * 14, v * 14, 4) * 18 + (rnd() - 0.5) * 10;
+        r = n + 3; g = n; b = n - 5;
+      }
+      out[i] = r; out[i + 1] = g; out[i + 2] = b; out[i + 3] = 255;
+    }
   }
-  return { noise, fbm, rnd };
+  if (kind === 'quartz') {
+    const dots = Math.round(9000 * (size / 512) * (size / 512));
+    for (let d = 0; d < dots; d++) {
+      const cx = rnd() * size, cy = rnd() * size, rr = rnd() * 1.6 + 0.3, gr = 120 + rnd() * 90, al = 0.35 + rnd() * 0.5;
+      for (let y = Math.floor(cy - rr); y <= cy + rr; y++) {
+        for (let x = Math.floor(cx - rr); x <= cx + rr; x++) {
+          if ((x - cx) * (x - cx) + (y - cy) * (y - cy) > rr * rr) continue;
+          const i = ((((y % size) + size) % size) * size + (((x % size) + size) % size)) * 4;
+          out[i] = lp(out[i], gr, al); out[i + 1] = lp(out[i + 1], gr - 2, al); out[i + 2] = lp(out[i + 2], gr - 6, al);
+        }
+      }
+    }
+  }
+  return new Uint8Array(out.buffer);
 }
-const N = makeNoise(11);
+
+// İki Worker'a kadar paralel üretim; Worker açılamazsa ana iş parçacığında sırayla üretir.
+function makeTexturer() {
+  const workers = [];
+  const jobs = new Map();
+  let id = 0, rr = 0;
+  const fallback = (job) => setTimeout(() => job.resolve(paintTexture(job.k, job.size)), 0);
+  try {
+    const src = paintTexture.toString() + '\nself.onmessage=function(e){var d=e.data;var b=paintTexture(d.k,d.size);self.postMessage({id:d.id,buf:b},[b.buffer]);};';
+    const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    const n = Math.min(2, Math.max(1, (navigator.hardwareConcurrency || 2) - 1));
+    for (let i = 0; i < n; i++) {
+      const w = new Worker(url);
+      w.onmessage = (e) => { const job = jobs.get(e.data.id); jobs.delete(e.data.id); job && job.resolve(e.data.buf); };
+      w.onerror = () => {
+        workers.splice(workers.indexOf(w), 1);
+        for (const [jid, job] of jobs) if (job.w === w) { jobs.delete(jid); fallback(job); }
+      };
+      workers.push(w);
+    }
+  } catch (e) { workers.length = 0; }
+  return (k, size) => new Promise((resolve) => {
+    const job = { k, size, resolve };
+    if (!workers.length) return fallback(job);
+    job.w = workers[rr++ % workers.length];
+    jobs.set(++id, job);
+    job.w.postMessage({ id, k, size });
+  });
+}
+
+const rnd = (() => { let s = 11; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
 
 function canvasTex(renderer, size, paint, { srgb = true, w = size, h = size } = {}) {
   const c = document.createElement('canvas');
@@ -57,75 +140,30 @@ function canvasTex(renderer, size, paint, { srgb = true, w = size, h = size } = 
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }
-function pixels(ctx, w, h, fn) {
-  const img = ctx.createImageData(w, h);
-  const d = img.data;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const c = fn(x / w, y / h);
-      const i = (y * w + x) * 4;
-      d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
+function dataTex(buf, size) {
+  const t = new THREE.DataTexture(buf, size, size, THREE.RGBAFormat, THREE.UnsignedByteType);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true;
+  t.needsUpdate = true;
+  return t;
+}
+// Gerçek doku gelene kadar aynı tipte 1×1 yer tutucu: değişince gölgelendirici yeniden derlenmez
+const placeholderTex = (rgb) => dataTex(new Uint8Array([rgb[0], rgb[1], rgb[2], 255]), 1);
+
+const brickPaint = (ctx, w, h) => {
+  ctx.fillStyle = '#c4bcb0'; ctx.fillRect(0, 0, w, h);
+  const rows = 12, cols = 6, bh = h / rows, bw = w / cols;
+  for (let r = 0; r < rows; r++) {
+    const off = (r % 2) * bw / 2;
+    for (let c = -1; c <= cols; c++) {
+      const v = rnd() * 20 - 10;
+      ctx.fillStyle = `rgb(${172 + v},${128 + v * 0.8},${101 + v * 0.6})`;
+      ctx.fillRect(c * bw + off + 3, r * bh + 3, bw - 6, bh - 6);
     }
   }
-  ctx.putImageData(img, 0, 0);
-}
-const mix3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-
-const TEX = {
-  marble: (ctx, w, h) => pixels(ctx, w, h, (u, v) => {
-    const n = N.fbm(u * 2.6, v * 2.6, 5);
-    const q = N.fbm(u * 1.3 + 4.1, v * 1.3 + 9.2, 3);
-    const t = Math.abs(Math.sin((u * 1.4 + v * 0.9 + n * 1.9 + q * 1.4) * Math.PI * 1.7));
-    const vein = Math.pow(1 - t, 26);
-    const t2 = Math.abs(Math.sin((u * 3.2 - v * 2.1 + n * 3.4) * Math.PI));
-    const fine = Math.pow(1 - t2, 60) * 0.55;
-    const cloud = 0.965 + 0.035 * n;
-    let c = [246 * cloud, 244 * cloud, 240 * cloud];
-    c = mix3(c, [182, 160, 120], clamp(vein * 0.55 + fine * 0.25));
-    c = mix3(c, [96, 92, 86], clamp(vein * 0.7 * (0.6 + q)));
-    return c;
-  }),
-  porcelain: (ctx, w, h) => pixels(ctx, w, h, (u, v) => {
-    const n = N.fbm(u * 2 + 30, v * 2 + 11, 5);
-    const t = Math.abs(Math.sin((u * 1.1 - v * 1.6 + n * 2.6) * Math.PI * 1.3));
-    const vein = Math.pow(1 - t, 34);
-    const cloud = 0.92 + 0.12 * N.fbm(u * 6, v * 6, 3);
-    let c = [46 * cloud, 46 * cloud, 45 * cloud];
-    return mix3(c, [168, 162, 152], clamp(vein * 0.8));
-  }),
-  quartz: (ctx, w, h) => {
-    pixels(ctx, w, h, (u, v) => { const n = 233 + N.fbm(u * 9, v * 9, 3) * 10; return [n, n - 1, n - 4]; });
-    for (let i = 0; i < 9000; i++) {
-      const x = N.rnd() * w, y = N.rnd() * h, r = N.rnd() * 1.6 + 0.3;
-      const g = 120 + N.rnd() * 90;
-      ctx.fillStyle = `rgba(${g},${g - 2},${g - 6},${0.35 + N.rnd() * 0.5})`;
-      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-    }
-  },
-  oak: (ctx, w, h) => pixels(ctx, w, h, (u, v) => {
-    const warp = N.fbm(u * 1.2, v * 3, 3) * 1.4;
-    const ring = (v * 9 + warp + N.fbm(u * 0.5 + 3, v * 1.5, 2) * 2) % 1;
-    const g = Math.pow(Math.abs(Math.sin(ring * Math.PI)), 0.55);
-    const streak = (N.noise(u * 3, v * 300) + 1) * 0.5;
-    const k = g * 0.7 + streak * 0.3;
-    return mix3([140, 100, 64], [204, 164, 118], k);
-  }),
-  brick: (ctx, w, h) => {
-    ctx.fillStyle = '#c4bcb0'; ctx.fillRect(0, 0, w, h);
-    const rows = 12, cols = 6, bh = h / rows, bw = w / cols;
-    for (let r = 0; r < rows; r++) {
-      const off = (r % 2) * bw / 2;
-      for (let c = -1; c <= cols; c++) {
-        const v = N.rnd() * 20 - 10;
-        ctx.fillStyle = `rgb(${172 + v},${128 + v * 0.8},${101 + v * 0.6})`;
-        ctx.fillRect(c * bw + off + 3, r * bh + 3, bw - 6, bh - 6);
-      }
-    }
-  },
-  plaster: (ctx, w, h) => pixels(ctx, w, h, (u, v) => {
-    const n = 214 + N.fbm(u * 14, v * 14, 4) * 18 + (N.rnd() - 0.5) * 10;
-    return [n + 3, n, n - 5];
-  }),
 };
 
 /* ------------------------------------------------------------------ */
@@ -182,11 +220,49 @@ function tube(path, radius, mat, radial = 10) {
   return m;
 }
 
+// Hareket etmeyen parçaları malzemeye göre tek geometride birleştirir: yüzlerce çizim çağrısı yerine birkaç tane.
+function bake(parent, skip = new Set()) {
+  const meshes = new Map(), lines = new Map(), dead = [];
+  const push = (map, mat, g) => { if (!map.has(mat)) map.set(mat, []); map.get(mat).push(g); };
+  const strip = (geo, withNormal, withUv, matrix) => {
+    const src = geo.index ? geo.toNonIndexed() : geo;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', src.getAttribute('position').clone());
+    if (withNormal) g.setAttribute('normal', src.getAttribute('normal').clone());
+    if (withUv) g.setAttribute('uv', src.getAttribute('uv').clone());
+    g.applyMatrix4(matrix);
+    return g;
+  };
+  for (const o of parent.children) {
+    if (skip.has(o) || !(o.isMesh || o.isLineSegments) || Array.isArray(o.material)) continue;
+    if (o.children.some((c) => !c.isLineSegments)) continue;
+    o.updateMatrix();
+    if (o.isMesh) {
+      push(meshes, o.material, strip(o.geometry, true, !!o.material.map, o.matrix));
+      for (const e of o.children) {
+        e.updateMatrix();
+        push(lines, e.material, strip(e.geometry, false, false, new THREE.Matrix4().multiplyMatrices(o.matrix, e.matrix)));
+      }
+    } else {
+      push(lines, o.material, strip(o.geometry, false, false, o.matrix));
+    }
+    dead.push(o);
+  }
+  dead.forEach((o) => parent.remove(o));
+  const out = { meshes: [], lines: [] };
+  const add = (obj, list) => { obj.matrixAutoUpdate = false; parent.add(obj); list.push(obj); };
+  for (const [mat, list] of meshes) add(new THREE.Mesh(mergeGeometries(list), mat), out.meshes);
+  for (const [mat, list] of lines) add(new THREE.LineSegments(mergeGeometries(list), mat), out.lines);
+  return out;
+}
+
 /* ------------------------------------------------------------------ */
 export async function createScene({ canvas, sections, layers, mats, labelEls, pinRoots, reduced }) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
   if (!renderer.getContext()) throw new Error('WebGL yok');
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+  // Çözünürlük üst sınırı 1,5; kareler yavaşlarsa update() içinde kademeli düşer
+  let dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  renderer.setPixelRatio(dpr);
   renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NoToneMapping;
@@ -203,7 +279,8 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
   camera.position.set(0, 0, 14);
   const isSmall = Math.min(window.innerWidth, window.innerHeight) < 700;
 
-  let vw = 1, vh = 1, aspect = 1, H = 1, W = 1;
+  let vw = 0, vh = 0, aspect = 1, H = 1, W = 1;
+  let plasterMat = null;
   const ptr = { x: 0, y: 0 };
   const groups = [];
   const pins = [];
@@ -322,6 +399,12 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     add(P(new THREE.CylinderGeometry(0.01, 0.01, 1.5, 8), M.brass, 1.15, 0.75, 2.25, { edges: false }));
     add(P(new THREE.ConeGeometry(0.16, 0.2, 28, 1, true), M.brass, 1.15, 1.55, 2.25, { edges: false }));
 
+    // Kurulum animasyonu bitince ~200 parça yerine birleştirilmiş kopya çizilir
+    const baked = new THREE.Group();
+    for (const pc of pieces) baked.add(pc.m.clone());
+    bake(baked);
+    baked.visible = false;
+    pivot.add(baked);
     let introDone = false;
     return {
       layout: () => (aspect < 0.85
@@ -339,7 +422,11 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
             pc.m.position.y = pc.y + (1 - e) * 1.8;
             if (e < 1) all = false;
           }
-          introDone = all;
+          if (all) {
+            introDone = true;
+            for (const pc of pieces) pc.m.visible = false;
+            baked.visible = true;
+          }
         }
         const p = s.p;
         pivot.rotation.y = -0.74 + (reduced ? 0 : Math.sin(t * 0.22) * 0.05) + p * 0.6 + ptr.x * 0.07;
@@ -352,14 +439,14 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
   const ana = addGroup('anatomy', (pivot) => {
     const HH = 2.4, D = 1.8;
     const edge = edgeMat(INK, 0.3);
-    const edgeHi = new THREE.LineBasicMaterial({ color: BRASS });
+    const edgeHi = new THREE.LineBasicMaterial({ color: BRASS, transparent: true, opacity: 1 });
     const plates = [];
     layers.forEach((L) => {
       const g = new THREE.Group();
       pivot.add(g);
       let mat;
-      if (L.tex === 'brick') mat = new THREE.MeshStandardMaterial({ map: canvasTex(renderer, 512, TEX.brick), roughness: 0.95, envMapIntensity: 0.6 });
-      else if (L.tex === 'plaster') mat = new THREE.MeshStandardMaterial({ map: canvasTex(renderer, 256, TEX.plaster), roughness: 1, envMapIntensity: 0.7 });
+      if (L.tex === 'brick') mat = new THREE.MeshStandardMaterial({ map: canvasTex(renderer, 512, brickPaint), roughness: 0.95, envMapIntensity: 0.6 });
+      else if (L.tex === 'plaster') mat = plasterMat = new THREE.MeshStandardMaterial({ map: placeholderTex([214, 211, 205]), roughness: 1, envMapIntensity: 0.7 });
       else if (L.tiles) mat = new THREE.MeshPhysicalMaterial({ color: L.color, roughness: 0.18, clearcoat: 0.6, envMapIntensity: 0.8 });
       else mat = std(L.color, 0.75, 0, 0.7);
       const meshes = [];
@@ -385,11 +472,9 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
       } else {
         box(L.t, HH, D);
       }
-      meshes.forEach((m) => {
-        const e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry, 25), edge);
-        m.add(e); m.userData.edge = e;
-      });
-      plates.push({ g, L, meshes, x0: 0, x1: 0, lift: 0 });
+      meshes.forEach((m) => m.add(new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry, 25), edge)));
+      const baked = bake(g);
+      plates.push({ g, L, lines: baked.lines, x0: 0, x1: 0, lift: 0 });
     });
     let acc = 0;
     plates.forEach((pl) => { pl.x0 = acc + pl.L.t / 2; acc += pl.L.t; });
@@ -400,7 +485,9 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     const anchor = new THREE.Vector3();
     const tmp = new THREE.Vector3();
     let frameEl = labelEls[0] && labelEls[0].closest('.frame');
-    let bh = [];
+    let bh = [], fh = 0;
+    const lastKey = [];
+    const lnEls = labelEls.map((li) => li.querySelector('.ln'));
 
     return {
       plates,
@@ -416,33 +503,38 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
           pl.lift = lerp(pl.lift, on ? 0.14 : 0, 0.14);
           pl.g.position.set(lerp(pl.x0 - mid0, pl.x1 - mid1, e), pl.lift, 0);
           const em = on ? edgeHi : edge;
-          for (const m of pl.meshes) if (m.userData.edge.material !== em) m.userData.edge.material = em;
+          for (const l of pl.lines) if (l.material !== em) l.material = em;
         });
         pivot.rotation.y = lerp(-1.3, -0.84, easeOut(range(p, 0, 0.32))) + ptr.x * 0.05;
         pivot.rotation.x = 0.17 + ptr.y * 0.03;
       },
-      // 3D sahne güncellendikten sonra: alttaki dikey etiketleri katmanların altına hizala
+      invalidate() { fh = 0; bh = []; lastKey.length = 0; },
+      // 3D sahne güncellendikten sonra: alttaki dikey etiketleri katmanların altına hizala.
+      // Yerleşim yalnızca boyut değişince okunur; DOM'a yalnızca değer değişince yazılır.
       place(s) {
         if (!labelEls.length) return;
         if (!frameEl) frameEl = labelEls[0].closest('.frame');
-        const fh = frameEl ? frameEl.clientHeight : vh;
+        if (!fh) fh = frameEl ? frameEl.clientHeight : vh;
         if (bh.length !== labelEls.length || bh.some((v) => !v)) bh = labelEls.map((li) => li.querySelector('button').offsetHeight);
         const safe = 26;
         const op = range(s.p, 0.18, 0.34).toFixed(2);
         plates.forEach((pl, i) => {
           const li = labelEls[i];
-          const L = pl.L;
-          anchor.set(L.t / 2, -1.2 - pl.lift * 0, 0.9);
+          anchor.set(pl.L.t / 2, -1.2, 0.9);
           pl.g.localToWorld(tmp.copy(anchor));
           tmp.project(camera);
-          const x = (tmp.x * 0.5 + 0.5) * vw;
+          const x = Math.round((tmp.x * 0.5 + 0.5) * vw);
           const y = (-tmp.y * 0.5 + 0.5) * vh - s.offPx;
-          const lineBottom = safe + bh[i] + 10;
-          const lh = Math.max(0, fh - lineBottom - (y + 10));
-          li.style.setProperty('--x', x.toFixed(1) + 'px');
-          li.style.setProperty('--lh', lh.toFixed(1) + 'px');
-          li.style.setProperty('--bh', bh[i] + 'px');
+          const lh = Math.max(0, Math.round(fh - (safe + bh[i] + 10) - (y + 10)));
+          const key = x + '|' + lh + '|' + op;
+          if (lastKey[i] === key) return;
+          lastKey[i] = key;
+          li.style.transform = 'translateX(' + x + 'px)';
           li.style.opacity = op;
+          if (lnEls[i]) {
+            lnEls[i].style.bottom = (safe + bh[i] + 10) + 'px';
+            lnEls[i].style.transform = 'scaleY(' + (lh / 1000).toFixed(4) + ')';
+          }
         });
       },
     };
@@ -450,63 +542,69 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
 
   /* ================= 04 · Görünmeyen: tesisat röntgeni ================= */
   // Parçacık alanı: kaydırmayla değil, koyu zeminle birlikte görünür.
+  // Hareket tamamen GPU'da hesaplanır (köşe gölgelendiricisi): her karede CPU döngüsü ve tampon yüklemesi yok.
   const particles = (() => {
     const ribbons = 7;
     const per = isSmall ? 380 : 950;
-    const S = 260;
-    const samples = [];
-    const e = new THREE.Euler();
-    for (let r = 0; r < ribbons; r++) {
-      const rx = 3.2 + r * 0.55 + N.rnd() * 0.6;
-      const ry = 1.2 + N.rnd() * 1.4;
-      const ph = N.rnd() * 6.28, ph2 = N.rnd() * 6.28;
-      e.set((N.rnd() - 0.5) * 1.3, (N.rnd() - 0.5) * 1.0, (N.rnd() - 0.5) * 1.6);
-      const arr = [];
-      for (let k = 0; k <= S; k++) {
-        const a = (k / S) * Math.PI * 2;
-        const v = new THREE.Vector3(rx * Math.cos(a), ry * Math.sin(a) * (1 + 0.28 * Math.sin(3 * a + ph)), 0.9 * Math.sin(2 * a + ph2));
-        v.applyEuler(e);
-        arr.push(v);
-      }
-      samples.push(arr);
-    }
     const count = ribbons * per;
-    const pos = new Float32Array(count * 3);
-    const meta = [];
+    const rot = [];
+    const params = [];
+    const e = new THREE.Euler(), m4 = new THREE.Matrix4();
+    for (let r = 0; r < ribbons; r++) {
+      params.push([3.2 + r * 0.55 + rnd() * 0.6, 1.2 + rnd() * 1.4, rnd() * 6.28, rnd() * 6.28]);
+      e.set((rnd() - 0.5) * 1.3, (rnd() - 0.5) * 1.0, (rnd() - 0.5) * 1.6);
+      rot.push(new THREE.Matrix3().setFromMatrix4(m4.makeRotationFromEuler(e)));
+    }
+    const seed = new Float32Array(count * 4), prm = new Float32Array(count * 4), off = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
       const r = Math.floor(i / per);
-      const spread = 0.08 + Math.pow(N.rnd(), 2) * 0.55;
-      meta.push({ r, t0: N.rnd(), sp: (0.006 + N.rnd() * 0.012) * (N.rnd() < 0.5 ? 1 : -1) * 0.6, ox: (N.rnd() - 0.5) * spread, oy: (N.rnd() - 0.5) * spread, oz: (N.rnd() - 0.5) * spread });
+      const spread = 0.08 + Math.pow(rnd(), 2) * 0.55;
+      seed.set([rnd(), (0.006 + rnd() * 0.012) * (rnd() < 0.5 ? 1 : -1) * 0.6, r, 0], i * 4);
+      prm.set(params[r], i * 4);
+      off.set([(rnd() - 0.5) * spread, (rnd() - 0.5) * spread, (rnd() - 0.5) * spread], i * 3);
     }
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    const sprite = canvasTex(renderer, 64, (ctx, w) => {
-      const g = ctx.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2);
-      g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.45, 'rgba(255,255,255,.9)'); g.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = g; ctx.fillRect(0, 0, w, w);
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+    geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 4));
+    geo.setAttribute('aParam', new THREE.BufferAttribute(prm, 4));
+    geo.setAttribute('aOff', new THREE.BufferAttribute(off, 3));
+    const mat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      uniforms: {
+        uTime: { value: 0 }, uSize: { value: isSmall ? 0.06 : 0.055 }, uScale: { value: 400 },
+        uOpacity: { value: 0 }, uColor: { value: new THREE.Vector3(0.85, 0.847, 0.83) }, uRot: { value: rot },
+      },
+      vertexShader: `
+        uniform float uTime; uniform float uSize; uniform float uScale; uniform mat3 uRot[${ribbons}];
+        attribute vec4 aSeed; attribute vec4 aParam; attribute vec3 aOff;
+        void main() {
+          float a = 6.2831853 * fract(aSeed.x + uTime * aSeed.y);
+          vec3 p = vec3(aParam.x * cos(a), aParam.y * sin(a) * (1.0 + 0.28 * sin(3.0 * a + aParam.z)), 0.9 * sin(2.0 * a + aParam.w));
+          p = uRot[int(aSeed.z + 0.5)] * p + aOff;
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          gl_PointSize = uSize * (uScale / -mv.z);
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `
+        uniform vec3 uColor; uniform float uOpacity;
+        void main() {
+          float a = smoothstep(0.5, 0.2, length(gl_PointCoord - 0.5)) * uOpacity;
+          if (a < 0.01) discard;
+          gl_FragColor = vec4(uColor, a);
+        }`,
     });
-    const mat = new THREE.PointsMaterial({ size: isSmall ? 0.06 : 0.055, map: sprite, color: 0xD9D8D4, transparent: true, opacity: 0, depthWrite: false, sizeAttenuation: true });
     const pts = new THREE.Points(geo, mat);
     pts.position.z = -2;
     pts.frustumCulled = false;
     scene.add(pts);
     return {
+      resize() { mat.uniforms.uScale.value = (vh * renderer.getPixelRatio()) / 2; },
       update(t, dw) {
-        mat.opacity = 0.8 * dw;
+        mat.uniforms.uOpacity.value = 0.8 * dw;
         pts.visible = dw > 0.01;
         if (!pts.visible) return;
-        const tt = reduced ? 0 : t;
-        for (let i = 0; i < count; i++) {
-          const m = meta[i];
-          const arr = samples[m.r];
-          let u = (m.t0 + tt * m.sp) % 1; if (u < 0) u += 1;
-          const f = u * S, i0 = Math.floor(f), fr = f - i0;
-          const a = arr[i0], b = arr[i0 + 1];
-          pos[i * 3] = a.x + (b.x - a.x) * fr + m.ox;
-          pos[i * 3 + 1] = a.y + (b.y - a.y) * fr + m.oy;
-          pos[i * 3 + 2] = a.z + (b.z - a.z) * fr + m.oz;
-        }
-        geo.attributes.position.needsUpdate = true;
+        mat.uniforms.uTime.value = reduced ? 0 : t;
         pts.rotation.z = Math.sin(t * 0.05) * 0.08;
       },
     };
@@ -618,6 +716,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     const dl = tube(new THREE.LineCurve3(new THREE.Vector3(1.6, 0.98, -1.21), new THREE.Vector3(1.6, 0.98, -0.01)), 0.006, dimMat, 6);
     dim.add(dl);
     for (const z of [-1.21, -0.01]) { const tk = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.006, 0.006), dimMat); tk.position.set(1.6, 0.98, z); dim.add(tk); }
+    bake(pivot, new Set([...legs.map((l) => l.m), ...nodes]));
     const root = pinRoots.kitchen, sec = sections.kitchen;
     const ph = (a, b) => (p) => p > a && p < b;
     addPin(root, 'Evye', pivot, S.toArray(), { sec, show: ph(0.08, 2) });
@@ -685,6 +784,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     const memMat = new THREE.MeshStandardMaterial({ color: 0x7E8E9A, roughness: 0.7, transparent: true, opacity: 0.9 });
     const mem = (w, h, d, x, z) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(0, h / 2, 0); const m = new THREE.Mesh(g, memMat); m.position.set(x, 0.002, z); pivot.add(m); return m; };
     const mems = [mem(0.91, 2.0, 0.012, -0.795, -1.143), mem(0.012, 2.0, 0.9, -1.243, -0.7), mem(1.69, 0.15, 0.012, 0.495, -1.143), mem(0.012, 0.15, 1.4, -1.243, 0.45)];
+    bake(pivot, new Set([z0, z1, z2, ...mems]));
     const root = pinRoots.bath, sec = sections.bath;
     const ph = (a) => (p) => p > a;
     addPin(root, 'Bölge 0 · IPX7', pivot, [-1.25, 0.08, -0.25], { sec, show: ph(0.12) });
@@ -777,24 +877,18 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
   });
 
   /* ================= 08 · Malzeme: tezgâh adası ================= */
-  const matTex = {};
-  const texSize = { marble: 768, porcelain: 768, quartz: 512, oak: 512 };
-  const getTex = (k) => {
-    if (!matTex[k]) {
-      const t = canvasTex(renderer, texSize[k], TEX[k]);
-      t.repeat.set(1, 1);
-      matTex[k] = t;
-    }
-    return matTex[k];
+  const SURF = {
+    marble: { size: 1024, base: [240, 238, 234], rough: 0.22, cc: 0.7, ccr: 0.15, env: 0.9 },
+    quartz: { size: 512, base: [229, 228, 225], rough: 0.3, cc: 0.4, ccr: 0.3, env: 0.85 },
+    porcelain: { size: 1024, base: [50, 50, 49], rough: 0.28, cc: 0.5, ccr: 0.25, env: 0.9 },
+    oak: { size: 512, base: [176, 136, 94], rough: 0.62, cc: 0.04, ccr: 0.8, env: 0.7 },
   };
-  const surf = {
-    marble: () => new THREE.MeshPhysicalMaterial({ map: getTex('marble'), roughness: 0.22, clearcoat: 0.7, clearcoatRoughness: 0.15, envMapIntensity: 0.9 }),
-    quartz: () => new THREE.MeshPhysicalMaterial({ map: getTex('quartz'), roughness: 0.3, clearcoat: 0.4, envMapIntensity: 0.85 }),
-    porcelain: () => new THREE.MeshPhysicalMaterial({ map: getTex('porcelain'), roughness: 0.28, clearcoat: 0.5, envMapIntensity: 0.9 }),
-    oak: () => new THREE.MeshStandardMaterial({ map: getTex('oak'), roughness: 0.62, envMapIntensity: 0.7 }),
-  };
-  const surfCache = {};
-  const surfFor = (k) => (surfCache[k] = surfCache[k] || surf[k]());
+  // Dört yüzey aynı gölgelendiriciyi paylaşır (hepsi clearcoat'lu Physical): malzeme değişince derleme yapılmaz.
+  const surfMats = {};
+  for (const [k, o] of Object.entries(SURF)) {
+    surfMats[k] = new THREE.MeshPhysicalMaterial({ map: placeholderTex(o.base), roughness: o.rough, clearcoat: o.cc, clearcoatRoughness: o.ccr, envMapIntensity: o.env });
+  }
+  const surfFor = (k) => surfMats[k];
 
   const matGroup = addGroup('material', (pivot) => {
     const body = std(0x2A2A29, 0.55, 0.05, 0.6);
@@ -818,6 +912,7 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     }, { srgb: false });
     const shadow = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 2.6), new THREE.MeshBasicMaterial({ map: sh, transparent: true, depthWrite: false }));
     shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.001; pivot.add(shadow);
+    bake(pivot);
     let cur = 'marble', target = 'marble', swapT = 1, swapped = true;
     return {
       setTarget(k) { if (k !== target) { target = k; swapT = 0; swapped = false; } },
@@ -841,9 +936,19 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
     };
   });
 
-  // Dokuları boş zamanda hazırla (ilk geçişte takılma olmasın)
-  const idle = window.requestIdleCallback || ((f) => setTimeout(f, 200));
-  ['quartz', 'porcelain', 'oak'].forEach((k, i) => setTimeout(() => idle(() => { surfFor(k); renderer.initTexture && renderer.initTexture(getTex(k)); }), 2500 + i * 700));
+  // Dokular Worker'da üretilir; geldikçe yer tutucuların yerine geçer ve hemen GPU'ya yüklenir
+  const texturer = makeTexturer();
+  const maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const applyTex = (mat, buf, size) => {
+    const t = dataTex(buf, size);
+    t.anisotropy = maxAniso;
+    mat.map = t;
+    renderer.initTexture(t);
+  };
+  const texJobs = [
+    texturer('plaster', 256).then((b) => plasterMat && applyTex(plasterMat, b, 256)),
+    ...Object.entries(SURF).map(([k, o]) => texturer(k, o.size).then((b) => applyTex(surfMats[k], b, o.size))),
+  ];
 
   /* ------------------------------------------------------------------ */
   const v3 = new THREE.Vector3();
@@ -852,50 +957,98 @@ export async function createScene({ canvas, sections, layers, mats, labelEls, pi
       const s = pin.sec;
       const show = s.vis && pin.show(s.p);
       if (show !== pin.on) { pin.on = show; pin.el.classList.toggle('off', !show); }
-      if (!s.vis) continue;
+      if (!show) continue;
       pin.obj.localToWorld(v3.copy(pin.local));
       v3.project(camera);
       const x = (v3.x * 0.5 + 0.5) * vw;
       const y = (-v3.y * 0.5 + 0.5) * vh - s.offPx;
-      pin.el.style.transform = pin.tag
+      const tf = pin.tag
         ? `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) translate(-50%,-50%)`
         : `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) translate(-4px,-50%)`;
+      if (tf !== pin.tf) { pin.tf = tf; pin.el.style.transform = tf; }
     }
   }
 
+  // Kareler sürekli yavaşsa çözünürlüğü kademeli düşür (en az 1)
+  let lastNow = 0, slow = 0, cool = 0;
+  function adapt() {
+    const now = performance.now();
+    const dt = lastNow ? now - lastNow : 16;
+    lastNow = now;
+    if (dt > 250 || dpr <= 1) return;
+    if (cool > 0) { cool--; return; }
+    slow = dt > 24 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 40) {
+      dpr = Math.max(1, Math.round((dpr - 0.25) * 100) / 100);
+      renderer.setPixelRatio(dpr);
+      particles.resize();
+      slow = 0; cool = 90;
+    }
+  }
+
+  let parked = false;
   const api = {
-    resize(w, h) {
+    // Tuval 100lvh: mobilde adres çubuğu açılıp kapanırken boyut değişmez, yeniden ayırma yapılmaz
+    resize() {
+      ana.invalidate();
+      const w = canvas.clientWidth || window.innerWidth, h = canvas.clientHeight || window.innerHeight;
+      if (w === vw && h === vh) return;
       vw = w; vh = h; aspect = w / h;
-      renderer.setSize(w, h);
+      renderer.setSize(w, h, false);
       camera.aspect = aspect;
       camera.updateProjectionMatrix();
       H = 2 * camera.position.z * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
       W = H * aspect;
+      particles.resize();
     },
     setMaterial(i) { const k = mats[i] && mats[i].tex; if (k) matGroup.setTarget(k); },
     update(t, ctx) {
       ptr.x = lerp(ptr.x, ctx.pointer.x, 0.05);
       ptr.y = lerp(ptr.y, ctx.pointer.y, 0.05);
+      let any = ctx.dw > 0.01;
       for (const g of groups) {
         const s = g.sec;
         g.root.visible = s.vis;
         if (!s.vis) continue;
+        any = true;
         const L = g.layout();
         g.root.position.set(L.x, L.y - (s.offPx / vh) * H, 0);
         g.root.scale.setScalar(L.s);
         g.update(t, s, ctx);
       }
+      if (!any) {
+        // 3D'siz bölümlerde hiç çizme; tuvali de birleştiriciden çıkar
+        if (!parked) { renderer.clear(); canvas.style.visibility = 'hidden'; parked = true; }
+        placePins();
+        lastNow = 0;
+        return;
+      }
+      if (parked) { canvas.style.visibility = ''; parked = false; }
       particles.update(t, ctx.dw);
       scene.updateMatrixWorld();
       if (sections.anatomy.vis) ana.place(sections.anatomy);
       placePins();
       renderer.render(scene, camera);
+      adapt();
     },
   };
-  // ilk derleme: tüm grupları bir kez çiz ki ilk kaydırmada takılmasın
-  api.resize(window.innerWidth, window.innerHeight);
-  groups.forEach((g) => { g.root.visible = true; });
-  renderer.compile(scene, camera);
+  if (/[?&]perf\b/.test(location.search)) {
+    window.__scene = { info: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, dpr }) };
+  }
+
+  // Yükleme ekranı açıkken: dokuları bekle (en çok 3 sn), gölgelendiricileri derle ve
+  // her şeyi bir kez çiz ki geometriler ve dokular GPU'ya şimdi yüklensin, bölüm geçişlerinde değil.
+  await Promise.race([Promise.all(texJobs), new Promise((r) => setTimeout(r, 3000))]);
+  api.resize();
+  const hidden = [];
+  scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+  try {
+    if (renderer.compileAsync && renderer.extensions.has('KHR_parallel_shader_compile')) await renderer.compileAsync(scene, camera);
+    else renderer.compile(scene, camera);
+  } catch (e) { /* derleme render sırasında yapılır */ }
+  renderer.render(scene, camera);
+  hidden.forEach((o) => { o.visible = false; });
   groups.forEach((g) => { g.root.visible = false; });
+  renderer.clear();
   return api;
 }

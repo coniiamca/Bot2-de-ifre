@@ -82,7 +82,7 @@ function measure() {
     s.top = r.top + y;
     s.h = s.el.offsetHeight;
   }
-  scene && scene.resize(vw, vh);
+  scene && scene.resize();
 }
 function computeSections(y) {
   for (const s of sections) {
@@ -101,37 +101,30 @@ addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(m
 new ResizeObserver(() => measure()).observe(document.body);
 document.fonts && document.fonts.ready.then(measure);
 
-/* ---------------- Sayfa renkleri: koyu bölüme girerken ---------------- */
-const COL = {
-  bg: [[230, 229, 226], [18, 18, 17]],
-  ink: [[21, 21, 20], [242, 241, 238]],
-  ink2: [[111, 109, 105], [152, 150, 145]],
-  line: [[21, 21, 20, 0.14], [242, 241, 238, 0.16]],
-};
-let lastDw = -1, dw = 0;
+/* ---------------- Sayfa renkleri: koyu bölüme girerken ----------------
+   Zemin, yalnızca opaklığı değişen sabit bir katmanla kararır (birleştiricide, yeniden boyama yok).
+   Yazı rengi her karede değil, zemin yarıyı geçtiğinde tek seferde değişir. */
+const bgfx = $('#bgfx');
+let lastDw = -1, dw = 0, dark = false;
 function applyColors() {
   const d = byScene.hidden;
   dw = smooth(0.4, 0.95, d.enter) * (1 - smooth(0.05, 0.6, d.exit));
-  if (Math.abs(dw - lastDw) < 0.003 && !(dw === 0 && lastDw !== 0) && !(dw === 1 && lastDw !== 1)) return;
-  lastDw = dw;
-  const m = (pair) => pair[0].map((v, i) => v + (pair[1][i] - v) * dw);
-  const rgb = (c) => `rgb(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])})`;
-  const l = m(COL.line);
-  root.style.setProperty('--bg', rgb(m(COL.bg)));
-  root.style.setProperty('--ink', rgb(m(COL.ink)));
-  root.style.setProperty('--ink-2', rgb(m(COL.ink2)));
-  root.style.setProperty('--line', `rgba(${Math.round(l[0])},${Math.round(l[1])},${Math.round(l[2])},${l[3].toFixed(3)})`);
+  const o = Math.round(dw * 400) / 400;
+  if (o !== lastDw) { lastDw = o; bgfx.style.opacity = String(o); }
+  const nd = dw > 0.5;
+  if (nd !== dark) { dark = nd; root.classList.toggle('dark', dark); }
 }
 
 /* ---------------- Bölüm göstergesi + menü bağlantıları ---------------- */
 const hudN = $('#hud-n'), hudT = $('#hud-t'), hudBar = $('#hud-bar');
 const navLinks = $$('.nav-links a');
-let lastHud = -1;
+let lastHud = -1, lastHp = -1;
 function updateHud(y) {
   const mid = y + vh * 0.5;
   let cur = sections[0];
   for (const s of sections) if (mid >= s.top) cur = s;
-  hudBar.style.setProperty('--hp', cur.p.toFixed(3));
+  const hp = Math.round(cur.p * 200) / 200;
+  if (hp !== lastHp) { lastHp = hp; hudBar.style.transform = 'scaleY(' + hp + ')'; }
   if (cur.i === lastHud) return;
   lastHud = cur.i;
   hudN.textContent = pad(cur.i + 1);
@@ -141,13 +134,13 @@ function updateHud(y) {
 
 /* ---------------- Logo: kaydırma hızına tepki veren su terazisi kabarcığı ---------------- */
 const bubble = $('#bubble');
-let lastY = window.scrollY, vel = 0;
+let lastY = window.scrollY, vel = 0, lastBx = 99;
 function updateBubble(y) {
   const v = lenis ? lenis.velocity : (y - lastY);
   lastY = y;
   vel += (v - vel) * 0.15;
-  const bx = clamp(-vel * 0.9, -10, 10);
-  bubble.style.setProperty('--bx', bx.toFixed(1) + 'px');
+  const bx = Math.round(clamp(-vel * 0.9, -10, 10) * 2) / 2;
+  if (bx !== lastBx) { lastBx = bx; bubble.style.transform = 'translateX(' + bx + 'px)'; }
 }
 
 /* ---------------- Manifesto: kelimeler kaydırdıkça yanar ---------------- */
@@ -169,7 +162,7 @@ function updateManifesto() {
 /* ---------------- Anatomi: katman etiketleri ve panel ---------------- */
 const labelList = $('#ana-labels');
 labelList.innerHTML = LAYERS.map((L, i) =>
-  `<li><button type="button" aria-label="${L.name}, ${L.mm}"><span class="n">${pad(i + 1)}</span><span class="t">${L.name}</span><span class="mm">${L.mm}</span></button></li>`
+  `<li><i class="ln" aria-hidden="true"></i><button type="button" aria-label="${L.name}, ${L.mm}"><span class="n">${pad(i + 1)}</span><span class="t">${L.name}</span><span class="mm">${L.mm}</span></button></li>`
 ).join('');
 const labelEls = $$('li', labelList);
 const ANA_STEP0 = 0.4, ANA_STEP1 = 0.97;

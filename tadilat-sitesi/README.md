@@ -27,6 +27,15 @@ Logo, kaydırma hızına tepki veren bir su terazisi kabarcığıdır.
 
 3D sahne yüklenemezse (eski cihaz, WebGL kapalı) site metin ve etkileşimleriyle eksiksiz çalışmaya devam eder.
 
+## Akıcılık için yapılanlar
+
+- Bütün modeller, dokular ve gölgelendiriciler yükleme ekranı sırasında GPU'ya yüklenir; bölüm geçişlerinde ilk çizim takılması olmaz.
+- Mermer, kuvars, porselen ve meşe dokuları bir Web Worker'da üretilir; dört tezgâh malzemesi aynı gölgelendiriciyi paylaşır.
+- Hareketsiz parçalar malzemeye göre birleştirilir (giriş maketi ~200 yerine 12 çizim çağrısı).
+- Koyu bölümdeki parçacıklar tamamen GPU'da hareket eder.
+- Açık-koyu geçişi yalnızca opaklığı değişen bir katmanla yapılır; etiketler ve işaretler yalnızca `transform` ile taşınır.
+- Çözünürlük üst sınırı 1,5'tir ve kareler sürekli yavaşlarsa kendiliğinden 1'e kadar düşer. 3D'siz bölümlerde hiç çizim yapılmaz.
+
 ## Yerelde çalıştırma
 
 ES modülleri kullandığı için bir yerel sunucu gerekir:

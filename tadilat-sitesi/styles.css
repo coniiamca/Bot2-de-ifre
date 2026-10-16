@@ -27,17 +27,25 @@
   --t-hero: clamp(2.5rem, 6.6vw, 8rem);
 
   --gx: max(16px, 4vw);
+  transition: --bg .35s ease, --ink .35s ease, --ink-2 .35s ease, --line .35s ease;
   --navh: 64px;
   --ease: cubic-bezier(.22, .8, .2, 1);
   color-scheme: light;
 }
+
+/* Koyu bölüm: zemin #bgfx katmanıyla kararır, yazı renkleri burada tek seferde değişir */
+@property --bg { syntax: '<color>'; inherits: true; initial-value: #E6E5E2; }
+@property --ink { syntax: '<color>'; inherits: true; initial-value: #151514; }
+@property --ink-2 { syntax: '<color>'; inherits: true; initial-value: #6F6D69; }
+@property --line { syntax: '<color>'; inherits: true; initial-value: rgba(21, 21, 20, .14); }
+:root.dark { --bg: #121211; --ink: var(--chalk); --ink-2: #989691; --line: rgba(242, 241, 238, .16); }
 
 *, *::before, *::after { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--stone);
   color: var(--ink);
   font-family: var(--f-body);
   font-size: var(--t-m);
@@ -62,11 +70,16 @@ ol, ul { padding: 0; list-style: none; }
 .mute { color: var(--ink-2); }
 
 /* ---------- Görüntü yüzeyi ---------- */
+#bgfx {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background: #121211; opacity: 0; will-change: opacity;
+}
 #gl {
   position: fixed;
   inset: 0;
   width: 100%;
   height: 100vh;
+  height: 100lvh;
   z-index: 1;
   pointer-events: none;
   display: block;
@@ -123,7 +136,7 @@ ol, ul { padding: 0; list-style: none; }
 .level i {
   position: absolute; top: 50%; left: 50%; width: .42em; height: .42em; margin: -.21em 0 0 -.21em;
   border-radius: 50%; background: var(--brass); box-shadow: 0 0 0 2px var(--bg);
-  transform: translateX(var(--bx, 0px)); transition: transform .5s var(--ease);
+  transition: transform .5s var(--ease); will-change: transform;
 }
 .nav-links { display: flex; gap: 22px; margin-left: auto; font-size: var(--t-s); }
 .nav-links a { text-decoration: none; opacity: .72; transition: opacity .2s; }
@@ -159,7 +172,7 @@ ol, ul { padding: 0; list-style: none; }
   color: var(--ink-2); pointer-events: none;
 }
 .hud-bar { position: relative; width: 1px; height: 64px; background: var(--line); overflow: hidden; }
-.hud-bar i { position: absolute; left: 0; top: 0; width: 1px; height: 100%; background: var(--ink); transform-origin: top; transform: scaleY(var(--hp, 0)); }
+.hud-bar i { position: absolute; left: 0; top: 0; width: 1px; height: 100%; background: var(--ink); transform-origin: top; transform: scaleY(0); will-change: transform; }
 .hud-t { writing-mode: vertical-rl; transform: rotate(180deg); }
 .hud-n { color: var(--ink); font-variant-numeric: tabular-nums; }
 
@@ -242,8 +255,8 @@ html:not(.js) .hero-ring circle { stroke-dashoffset: 0; }
 }
 .scroll-cue { display: inline-flex; align-items: center; gap: 12px; font-size: var(--t-s); }
 .scroll-cue i { position: relative; width: 1px; height: 28px; background: var(--line); overflow: hidden; }
-.scroll-cue i::after { content: ""; position: absolute; left: 0; top: -40%; width: 1px; height: 40%; background: var(--ink); animation: cue 2s var(--ease) infinite; }
-@keyframes cue { to { top: 100%; } }
+.scroll-cue i::after { content: ""; position: absolute; left: 0; top: 0; width: 1px; height: 40%; background: var(--ink); transform: translateY(-100%); animation: cue 2s var(--ease) infinite; }
+@keyframes cue { to { transform: translateY(250%); } }
 
 /* ---------- Düğmeler ---------- */
 .btn {
@@ -286,10 +299,10 @@ html:not(.js) .manifesto { color: var(--ink); }
 .ana-panel .ana-std { color: var(--ink); padding-top: 8px; border-top: 1px solid var(--line); font-size: var(--t-xs); }
 .ana-idx { color: var(--ink-2); }
 .ana-labels { position: absolute; left: 0; right: 0; bottom: 0; height: 0; }
-.ana-labels li { position: absolute; left: 0; bottom: 0; transform: translateX(var(--x, -999px)); }
-.ana-labels li::before {
-  content: ""; position: absolute; left: 0; bottom: calc(100% + 8px); width: 1px; height: var(--lh, 0px);
-  background: color-mix(in srgb, var(--ink) 22%, transparent); transition: background .3s;
+.ana-labels li { position: absolute; left: 0; bottom: 0; transform: translateX(-999px); will-change: transform, opacity; }
+.ana-labels .ln {
+  position: absolute; left: 0; bottom: 0; width: 1px; height: 1000px; transform-origin: bottom; transform: scaleY(0);
+  background: color-mix(in srgb, var(--ink) 22%, transparent); transition: background .3s; will-change: transform;
 }
 .ana-labels button {
   position: absolute; bottom: calc(26px + env(safe-area-inset-bottom, 0px)); left: 0; transform: translateX(-50%);
@@ -297,11 +310,10 @@ html:not(.js) .manifesto { color: var(--ink); }
   display: flex; align-items: center; gap: 10px; font-size: var(--t-s); white-space: nowrap; color: var(--ink-2);
   transition: color .3s;
 }
-.ana-labels li::before { left: 0; bottom: calc(26px + env(safe-area-inset-bottom, 0px) + var(--bh, 150px) + 10px); }
 .ana-labels .n { font-family: var(--f-mono); font-size: var(--t-xs); }
 .ana-labels .mm { font-family: var(--f-mono); font-size: var(--t-xs); opacity: .7; }
 .ana-labels li.on button { color: var(--ink); }
-.ana-labels li.on::before { background: var(--brass); }
+.ana-labels li.on .ln { background: var(--brass); }
 .hint { position: absolute; left: max(var(--gx), env(safe-area-inset-left, 0px)); bottom: calc(26px + env(safe-area-inset-bottom, 0px)); color: var(--ink-2); display: none; }
 
 /* ---------- 04 Görünmeyen ---------- */
@@ -349,7 +361,7 @@ html:not(.js) .manifesto { color: var(--ink); }
   display: flex; align-items: center; gap: 7px; white-space: nowrap; padding: 2px 6px 2px 0;
   font-family: var(--f-mono); font-size: var(--t-xs); letter-spacing: .05em; text-transform: uppercase; color: var(--ink);
   background: linear-gradient(90deg, transparent 0 3px, color-mix(in srgb, var(--bg) 88%, transparent) 3px);
-  transition: opacity .35s var(--ease);
+  transition: opacity .35s var(--ease); will-change: transform;
 }
 .pin::before { content: ""; width: 7px; height: 7px; border-radius: 50%; border: 1px solid var(--brass); background: var(--bg); flex: none; }
 .pin.dim { color: var(--ink); }
@@ -538,7 +550,7 @@ html:not(.js) .manifesto { color: var(--ink); }
   .ana-panel #ana-desc { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .ana-labels button { font-size: var(--t-xs); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
   .ana-labels .t, .ana-labels .mm { display: none; }
-  .ana-labels li::before { display: none; }
+  .ana-labels .ln { display: none; }
 
   .hid-head { top: calc(var(--navh) + env(safe-area-inset-top, 0px) + 2vh); right: max(var(--gx), env(safe-area-inset-right, 0px)); gap: 12px; }
   .hid-text { display: none; }
